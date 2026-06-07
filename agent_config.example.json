@@ -28,5 +28,23 @@
     "enforceLocalFirst": true,
     "maxCloudDependencyIntroductions": 0,
     "verbosityPolicy": "concise-technical"
+  },
+  "multimodal": {
+    "enabled": false,
+    "camera": {
+      "enabled": false,
+      "deviceIndex": 0
+    },
+    "audio": {
+      "enabled": false,
+      "sampleSeconds": 2,
+      "sampleRate": 16000
+    },
+    "privacy": {
+      "requireExplicitConsent": true,
+      "storeRawMedia": false,
+      "rawMediaRetentionHours": 0,
+      "storeOnlySummaries": true
+    }
   }
 }

@@ -23,6 +23,11 @@ A local-first personal AI operator architecture that mirrors decision style, tec
 - `system_dna.md`: Canonical digital-twin system prompt
 - `prompts/system.prompt.md`: Behavioral DNA prompt
 - `src/local_orchestrator.py`: Local Python runner with optional bounded tool loop
+- `src/multimodal_orchestrator.py`: Camera/audio/activity-aware runner with consent gate
+- `src/camera_service.py`: Local camera signal capture (optional)
+- `src/audio_service.py`: Local audio signal capture (optional)
+- `src/activity_service.py`: Daily activity/context ingestion
+- `src/context_fusion.py`: Confidence-scored multimodal state fusion
 - `docs/behavior-spec.md`: Decision style and constraints
 - `docs/critique-ledger.md`: Pre-output quality gates
 - `docs/hitl-training.md`: Human-in-the-loop calibration loop
@@ -68,6 +73,43 @@ python src/local_orchestrator.py --task "Inspect project and suggest refactor pl
 ```
 
 Tool mode is intentionally conservative and blocks obvious destructive shell patterns.
+
+## Multimodal Mode (Camera + Voice + Activity)
+
+This mode is local-first and requires explicit consent for sensors.
+
+Install optional sensor dependencies:
+
+```bash
+pip install -r requirements-multimodal.txt
+```
+
+Run a single multimodal iteration:
+
+```bash
+python src/multimodal_orchestrator.py \
+	--task "Summarize my current state and suggest a focused next action" \
+	--enable-camera \
+	--enable-audio \
+	--consent "I AGREE"
+```
+
+Run multiple iterations with context:
+
+```bash
+python src/multimodal_orchestrator.py \
+	--task "Coach my next 30 minutes of work" \
+	--activity-note "Working on architecture docs" \
+	--activity-context-file docs/behavior-spec.md \
+	--enable-camera \
+	--enable-audio \
+	--consent "I AGREE" \
+	--iterations 5 \
+	--interval 3
+```
+
+Current implementation uses heuristic expression/voice signals as a safe scaffold.
+Treat all inferred states as probabilistic.
 
 ## Status
 
