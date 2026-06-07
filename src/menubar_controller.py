@@ -16,6 +16,7 @@ class TwinMenuBar(rumps.App):
         self.ipc = SignedLocalIPC(self.workspace_root)
         self.menu = [
             "Status",
+            "Connector Health",
             "Start Daemon",
             "Stop Daemon",
             None,
@@ -30,13 +31,43 @@ class TwinMenuBar(rumps.App):
         try:
             response = self.ipc.send("status")
             if response.get("ok"):
-                msg = f"active · iterations {response.get('completed_iterations', 0)}"
+                health = response.get("connector_health", {})
+                failures = health.get("consecutive_failures", "n/a")
+                msg = f"active · iterations {response.get('completed_iterations', 0)} · failures {failures}"
                 rumps.notification("Cognitive Twin", "Status", msg)
                 return
         except Exception:
             pass
 
         rumps.notification("Cognitive Twin", "Status", "Daemon is not running")
+
+    @rumps.clicked("Connector Health")
+    def connector_health(self, _):
+        try:
+            response = self.ipc.send("status")
+        except Exception as exc:
+            rumps.alert(f"Failed to reach daemon: {exc}")
+            return
+
+        if not response.get("ok"):
+            rumps.alert(f"Daemon status failed: {response}")
+            return
+
+        health = response.get("connector_health", {})
+        if not isinstance(health, dict) or not health:
+            rumps.alert("No connector health snapshot yet")
+            return
+
+        lines = [
+            f"status: {health.get('status', 'unknown')}",
+            f"last refresh: {health.get('last_refresh_utc', 'n/a')}",
+            f"duration ms: {health.get('duration_ms', 'n/a')}",
+            f"calendar items: {health.get('calendar_items', 'n/a')}",
+            f"task items: {health.get('task_items', 'n/a')}",
+            f"failures: {health.get('consecutive_failures', 'n/a')}",
+            f"next refresh in s: {health.get('next_refresh_in_seconds', 'n/a')}",
+        ]
+        rumps.alert("Connector Health", "", "\n".join(lines))
 
     @rumps.clicked("Start Daemon")
     def start_daemon(self, _):

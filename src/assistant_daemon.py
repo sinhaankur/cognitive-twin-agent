@@ -141,11 +141,21 @@ def run_command(
 
     def _handle_ipc(command: str, payload: dict) -> dict:
         snapshot = runtime.snapshot()
+        health_payload = {}
+        if connector_health_file.exists():
+            try:
+                health_payload = json.loads(connector_health_file.read_text(encoding="utf-8"))
+                if not isinstance(health_payload, dict):
+                    health_payload = {}
+            except Exception:
+                health_payload = {}
+
         if command == "status":
             return {
                 "ok": True,
                 "running": not snapshot.stop_requested,
                 "completed_iterations": snapshot.completed_iterations,
+                "connector_health": health_payload,
             }
         if command == "stop":
             runtime.request_stop()

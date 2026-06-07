@@ -372,6 +372,9 @@ Environment requirement:
 
 The menu-bar app now talks to daemon via signed local IPC (UNIX socket) instead of direct shell control for status/stop/trigger commands.
 
+Menu-bar status pane:
+- Use "Connector Health" to view refresh status, last refresh time, item counts, failures, and next refresh ETA.
+
 Security details:
 - per-machine shared IPC secret stored in OS keychain
 - HMAC-signed command envelopes
