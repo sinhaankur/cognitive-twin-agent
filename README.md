@@ -111,6 +111,52 @@ python src/multimodal_orchestrator.py \
 Current implementation uses heuristic expression/voice signals as a safe scaffold.
 Treat all inferred states as probabilistic.
 
+### Upgraded Local Perception
+
+- Voice: optional local transcription with `faster-whisper`
+- Face: optional local landmark extraction with `mediapipe` for stronger expression cues
+- Fusion: confidence-scored combined state with rationale
+
+Enable transcription:
+
+```bash
+python src/multimodal_orchestrator.py \
+	--task "Summarize my state for the next work block" \
+	--enable-audio \
+	--enable-transcription \
+	--transcription-model base \
+	--consent "I AGREE"
+```
+
+### Approval-Gated Safe Actions
+
+Generate safe action proposals without executing:
+
+```bash
+python src/multimodal_orchestrator.py \
+	--task "Help me recover focus" \
+	--enable-camera \
+	--enable-audio \
+	--enable-transcription \
+	--propose-safe-action \
+	--consent "I AGREE"
+```
+
+Approve and execute proposed safe action:
+
+```bash
+python src/multimodal_orchestrator.py \
+	--task "Help me recover focus" \
+	--enable-camera \
+	--enable-audio \
+	--enable-transcription \
+	--propose-safe-action \
+	--approve-action \
+	--consent "I AGREE"
+```
+
+Safe actions are intentionally reversible and currently write/remove local notes under `memory/actions`.
+
 ## Status
 
 Phase 1 implemented: canonical system prompt plus runnable local orchestrator.

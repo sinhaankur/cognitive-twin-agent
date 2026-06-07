@@ -38,7 +38,14 @@
     "audio": {
       "enabled": false,
       "sampleSeconds": 2,
-      "sampleRate": 16000
+      "sampleRate": 16000,
+      "enableTranscription": true,
+      "transcriptionModel": "base",
+      "transcriptionComputeType": "int8"
+    },
+    "actions": {
+      "proposeSafeAction": true,
+      "requireApprovalBeforeExecution": true
     },
     "privacy": {
       "requireExplicitConsent": true,

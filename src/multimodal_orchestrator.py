@@ -6,6 +6,7 @@ from pathlib import Path
 
 from openai import OpenAI
 
+from action_executor import execute_safe_action, recommend_safe_action
 from activity_service import ActivityService, ActivityServiceConfig
 from audio_service import AudioService, AudioServiceConfig
 from camera_service import CameraService, CameraServiceConfig
@@ -38,8 +39,13 @@ def main() -> None:
     parser.add_argument("--max-tool-steps", type=int, default=int(os.getenv("AGENT_MAX_TOOL_STEPS", "4")))
     parser.add_argument("--enable-camera", action="store_true")
     parser.add_argument("--enable-audio", action="store_true")
+    parser.add_argument("--enable-transcription", action="store_true")
+    parser.add_argument("--transcription-model", default="base")
+    parser.add_argument("--transcription-compute-type", default="int8")
     parser.add_argument("--activity-note", default="")
     parser.add_argument("--activity-context-file", default="")
+    parser.add_argument("--propose-safe-action", action="store_true")
+    parser.add_argument("--approve-action", action="store_true")
     parser.add_argument("--interval", type=float, default=3.0)
     parser.add_argument("--iterations", type=int, default=1)
     parser.add_argument(
@@ -59,7 +65,14 @@ def main() -> None:
     system_dna = load_text(system_dna_path)
 
     camera = CameraService(CameraServiceConfig(enabled=args.enable_camera))
-    audio = AudioService(AudioServiceConfig(enabled=args.enable_audio))
+    audio = AudioService(
+        AudioServiceConfig(
+            enabled=args.enable_audio,
+            enable_transcription=args.enable_transcription,
+            transcription_model=args.transcription_model,
+            transcription_compute_type=args.transcription_compute_type,
+        )
+    )
     activity = ActivityService(
         workspace_root=workspace_root,
         config=ActivityServiceConfig(
@@ -99,6 +112,17 @@ def main() -> None:
 
         print(f"\n=== Iteration {i + 1} ===")
         print(json.dumps({"fused_state": to_payload(fused_state)}, ensure_ascii=True, indent=2))
+
+        if args.propose_safe_action:
+            action = recommend_safe_action(fused_state)
+            action_result = execute_safe_action(
+                toolbox=toolbox,
+                action=action,
+                approved=args.approve_action,
+            )
+            print("\nSAFE_ACTION:\n")
+            print(json.dumps(action_result, ensure_ascii=True, indent=2))
+
         print("\nAGENT_OUTPUT:\n")
         print(output)
 

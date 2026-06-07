@@ -9,6 +9,8 @@ class VisionSignal:
     face_detected: bool = False
     expression: str = "unknown"
     expression_confidence: float = 0.0
+    eye_open_ratio: float = 0.0
+    mouth_open_ratio: float = 0.0
     brightness: float = 0.0
     motion_level: float = 0.0
     timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
@@ -20,7 +22,10 @@ class AudioSignal:
     voice_detected: bool = False
     transcript: str = ""
     transcript_confidence: float = 0.0
+    sentiment: str = "unknown"
+    sentiment_confidence: float = 0.0
     energy_rms: float = 0.0
+    zero_crossing_rate: float = 0.0
     speaking_rate_hint: str = "unknown"
     timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 

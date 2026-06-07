@@ -18,6 +18,9 @@ def fuse_signals(vision: VisionSignal, audio: AudioSignal, activity: ActivitySig
         elif vision.expression == "engaged":
             score += 0.2
             rationale_parts.append("vision suggests engaged posture")
+        if vision.eye_open_ratio > 0 and vision.eye_open_ratio < 0.045:
+            score -= 0.1
+            rationale_parts.append("eye openness suggests fatigue")
 
     if audio.available:
         confidence += 0.25
@@ -27,6 +30,14 @@ def fuse_signals(vision: VisionSignal, audio: AudioSignal, activity: ActivitySig
         elif audio.voice_detected:
             score += 0.05
             rationale_parts.append("audio detected with steady cadence")
+        if audio.transcript:
+            confidence += 0.05
+            if audio.sentiment == "positive":
+                score += 0.12
+                rationale_parts.append("transcript sentiment skews positive")
+            elif audio.sentiment == "negative":
+                score -= 0.14
+                rationale_parts.append("transcript sentiment skews negative")
 
     if activity.available:
         confidence += 0.2
@@ -48,6 +59,8 @@ def fuse_signals(vision: VisionSignal, audio: AudioSignal, activity: ActivitySig
         stress_state = "elevated"
     if audio.available and audio.voice_detected and audio.energy_rms < 0.015:
         stress_state = "calm"
+    if audio.sentiment == "negative" and audio.sentiment_confidence > 0.55:
+        stress_state = "elevated"
 
     user_state = "focused"
     if energy_state == "low":
