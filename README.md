@@ -38,6 +38,9 @@ A local-first personal AI operator architecture that mirrors decision style, tec
 - `src/day_mapper.py`: Local calendar/task context mapping into daily prompt context
 - `src/assistant_daemon.py`: Secure always-on runner for day-to-day planning
 - `deployment/com.cognitive.twin.agent.plist.example`: macOS LaunchAgent template
+- `policies/model-routing.policy.json`: Backbone routing matrix (Qwen3 14B, fallback, deep planner)
+- `policies/memory-governance.policy.json`: Retention, encryption, and memory write policy
+- `policies/multidevice-trust-sync.policy.json`: Device trust levels and sync contract
 - `docs/behavior-spec.md`: Decision style and constraints
 - `docs/critique-ledger.md`: Pre-output quality gates
 - `docs/hitl-training.md`: Human-in-the-loop calibration loop
@@ -53,6 +56,22 @@ A local-first personal AI operator architecture that mirrors decision style, tec
 4. Add 5-10 curated examples in `examples/few-shot-index.md`
 5. Install runtime dependencies: `pip install -r requirements.txt`
 6. Run in review-before-commit mode first
+
+## Production Policy Baseline
+
+This repository now carries an explicit production policy trio:
+
+- `policies/model-routing.policy.json`
+- `policies/memory-governance.policy.json`
+- `policies/multidevice-trust-sync.policy.json`
+
+Current backbone defaults:
+
+- primary: `qwen3:14b`
+- fast fallback: `qwen3:8b`
+- deep planner: `deepseek-r1-distill-qwen-14b`
+
+These are referenced from `agent_config.example.json` under `policyPaths`.
 
 ## Run the Local Orchestrator
 

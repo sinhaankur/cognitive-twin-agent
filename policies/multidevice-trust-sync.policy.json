@@ -1,0 +1,57 @@
+{
+  "version": "1.0.0",
+  "objective": "Synchronize selective context across devices without exposing raw local data.",
+  "topology": {
+    "mode": "primary-secondary",
+    "primaryAuthority": "desktop",
+    "allowedSecondaryTypes": ["laptop", "mobile_readonly"]
+  },
+  "deviceTrustLevels": {
+    "primary": {
+      "canWrite": true,
+      "canRead": true,
+      "canExecuteActions": true
+    },
+    "secondary_full": {
+      "canWrite": true,
+      "canRead": true,
+      "canExecuteActions": false
+    },
+    "secondary_readonly": {
+      "canWrite": false,
+      "canRead": true,
+      "canExecuteActions": false
+    }
+  },
+  "syncScope": {
+    "include": [
+      "semantic_memory_summaries",
+      "episodic_decision_summaries",
+      "connector_health",
+      "task_state"
+    ],
+    "exclude": [
+      "raw_audio",
+      "raw_camera",
+      "oauth_tokens",
+      "ipc_secrets",
+      "keychain_material"
+    ]
+  },
+  "transport": {
+    "requireSignedPayloads": true,
+    "requirePerDeviceKeys": true,
+    "encryptInTransit": true,
+    "allowLocalNetworkOnly": true
+  },
+  "conflictResolution": {
+    "strategy": "event_log_with_vector_clock",
+    "fallback": "manual_review",
+    "autoMergeFor": ["connector_health", "read_only_metrics"]
+  },
+  "revocation": {
+    "allowPerDeviceRevoke": true,
+    "rotateSigningKeysOnRevoke": true,
+    "clearDeviceSessionStateOnRevoke": true
+  }
+}

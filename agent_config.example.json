@@ -1,16 +1,27 @@
 {
   "projectName": "cognitive-twin-agent",
   "mode": "review-before-commit",
+  "policyPaths": {
+    "modelRouting": "policies/model-routing.policy.json",
+    "memoryGovernance": "policies/memory-governance.policy.json",
+    "multideviceTrustSync": "policies/multidevice-trust-sync.policy.json"
+  },
   "modelRouting": {
     "default": {
+      "provider": "ollama",
+      "model": "qwen3:14b",
+      "endpoint": "http://localhost:11434"
+    },
+    "fastFallback": {
       "provider": "ollama",
       "model": "qwen3:8b",
       "endpoint": "http://localhost:11434"
     },
     "deepReasoningFallback": {
-      "provider": "cloud",
-      "model": "gpt-5.3-codex",
-      "enabled": false
+      "provider": "ollama",
+      "model": "deepseek-r1-distill-qwen-14b",
+      "endpoint": "http://localhost:11434",
+      "enabled": true
     }
   },
   "memory": {

@@ -1,0 +1,51 @@
+{
+  "version": "1.0.0",
+  "objective": "Define retention, encryption, and summarization policy for local-first memory.",
+  "tiers": {
+    "ephemeral": {
+      "description": "Current interaction context only",
+      "retentionHours": 6,
+      "storeRaw": false,
+      "encryptAtRest": true
+    },
+    "working": {
+      "description": "Today and near-term execution context",
+      "retentionDays": 7,
+      "storeRaw": false,
+      "encryptAtRest": true
+    },
+    "episodic": {
+      "description": "Timestamped decisions and outcomes",
+      "retentionDays": 90,
+      "storeRaw": false,
+      "encryptAtRest": true
+    },
+    "semantic": {
+      "description": "Distilled long-term preferences and stable patterns",
+      "retentionDays": 365,
+      "storeRaw": false,
+      "encryptAtRest": true
+    }
+  },
+  "sensorPolicy": {
+    "storeRawMedia": false,
+    "rawMediaRetentionHours": 0,
+    "storeDerivedSignalsOnly": true,
+    "requireExplicitConsent": true
+  },
+  "writePolicy": {
+    "requireSummarizationBeforePersist": true,
+    "maxSummaryTokens": 300,
+    "deduplicateOnSemanticSimilarityAbove": 0.92
+  },
+  "deletionPolicy": {
+    "runPurgeOnStartup": true,
+    "runPurgeEveryHours": 12,
+    "hardDeleteExpired": true
+  },
+  "audit": {
+    "logMemoryWrites": true,
+    "logRetentionDeletes": true,
+    "logPath": "memory/runtime/memory_audit.log"
+  }
+}

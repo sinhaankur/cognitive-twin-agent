@@ -1,0 +1,58 @@
+{
+  "version": "1.0.0",
+  "objective": "Route requests across local models by latency, risk, and reasoning depth.",
+  "models": {
+    "primary": {
+      "provider": "ollama",
+      "name": "qwen3:14b",
+      "role": "default_reasoning",
+      "targetLatencyMs": 3500
+    },
+    "fastFallback": {
+      "provider": "ollama",
+      "name": "qwen3:8b",
+      "role": "low_latency_and_battery",
+      "targetLatencyMs": 1800
+    },
+    "deepPlanner": {
+      "provider": "ollama",
+      "name": "deepseek-r1-distill-qwen-14b",
+      "role": "high_complexity_planning",
+      "targetLatencyMs": 8000
+    }
+  },
+  "routingRules": [
+    {
+      "id": "rule_fast_path",
+      "when": {
+        "taskComplexity": ["low", "medium"],
+        "riskLevel": ["low"]
+      },
+      "useModel": "primary"
+    },
+    {
+      "id": "rule_low_power",
+      "when": {
+        "deviceState": ["battery_saver", "thermal_throttle"]
+      },
+      "useModel": "fastFallback"
+    },
+    {
+      "id": "rule_deep_path",
+      "when": {
+        "taskComplexity": ["high"],
+        "riskLevel": ["medium", "high"]
+      },
+      "useModel": "deepPlanner"
+    }
+  ],
+  "escalation": {
+    "maxSelfRetries": 2,
+    "retryOnLowConfidenceBelow": 0.55,
+    "handoffToDeepPlannerAfterFailures": 1
+  },
+  "guardrails": {
+    "requireReversiblePlanForHighRisk": true,
+    "allowCloudFallback": false
+  }
+}
