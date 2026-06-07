@@ -5,6 +5,7 @@ import hmac
 import json
 import secrets
 import socket
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -17,6 +18,8 @@ class SignedLocalIPC:
         self.socket_path = workspace_root / "memory" / "runtime" / "daemon.sock"
         self.service_name = "cognitive-twin-agent"
         self.secret_account = "ipc-shared-secret"
+        self.nonce_store_path = workspace_root / "memory" / "runtime" / "ipc_nonce_store.json"
+        self.nonce_ttl_seconds = 3600
 
     def ensure_secret(self) -> str:
         existing = keyring.get_password(self.service_name, self.secret_account)
@@ -33,6 +36,7 @@ class SignedLocalIPC:
             "command": command,
             "payload": payload,
             "nonce": secrets.token_urlsafe(12),
+            "ts": int(time.time()),
         }
         signature = self._sign(message, secret)
         wire = {**message, "signature": signature}
@@ -81,11 +85,29 @@ class SignedLocalIPC:
                         "command": incoming.get("command", ""),
                         "payload": incoming.get("payload", {}),
                         "nonce": incoming.get("nonce", ""),
+                        "ts": incoming.get("ts", 0),
                     }
                     expected = self._sign(message, secret)
                     if not hmac.compare_digest(signature, expected):
                         conn.sendall(b'{"ok":false,"error":"invalid_signature"}\n')
                         continue
+
+                    nonce = str(message.get("nonce", ""))
+                    ts = int(message.get("ts", 0) or 0)
+                    if not nonce or not ts:
+                        conn.sendall(b'{"ok":false,"error":"missing_nonce_or_timestamp"}\n')
+                        continue
+
+                    now = int(time.time())
+                    if abs(now - ts) > self.nonce_ttl_seconds:
+                        conn.sendall(b'{"ok":false,"error":"stale_message"}\n')
+                        continue
+
+                    if self._is_nonce_seen(nonce):
+                        conn.sendall(b'{"ok":false,"error":"replay_detected"}\n')
+                        continue
+
+                    self._remember_nonce(nonce, ts)
 
                     cmd = str(message.get("command", ""))
                     payload = message.get("payload", {})
@@ -105,3 +127,39 @@ class SignedLocalIPC:
     def _sign(self, message: dict[str, Any], secret: str) -> str:
         canonical = json.dumps(message, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
         return hmac.new(secret.encode("utf-8"), canonical.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    def _is_nonce_seen(self, nonce: str) -> bool:
+        store = self._load_nonce_store()
+        return nonce in store
+
+    def _remember_nonce(self, nonce: str, ts: int) -> None:
+        store = self._load_nonce_store()
+        now = int(time.time())
+        filtered = {
+            n: t
+            for n, t in store.items()
+            if isinstance(t, int) and now - t <= self.nonce_ttl_seconds
+        }
+        filtered[nonce] = ts
+        self._save_nonce_store(filtered)
+
+    def _load_nonce_store(self) -> dict[str, int]:
+        if not self.nonce_store_path.exists():
+            return {}
+        try:
+            raw = json.loads(self.nonce_store_path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                return {}
+            out: dict[str, int] = {}
+            for k, v in raw.items():
+                try:
+                    out[str(k)] = int(v)
+                except Exception:
+                    continue
+            return out
+        except Exception:
+            return {}
+
+    def _save_nonce_store(self, store: dict[str, int]) -> None:
+        self.nonce_store_path.parent.mkdir(parents=True, exist_ok=True)
+        self.nonce_store_path.write_text(json.dumps(store, ensure_ascii=True), encoding="utf-8")

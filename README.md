@@ -217,11 +217,14 @@ Run secure daemon loop:
 python src/assistant_daemon.py run \
 	--token "PASTE_INIT_TOKEN" \
 	--task "Generate my next actionable plan from today's calendar and tasks" \
+	--connector-refresh-seconds 300 \
+	--connector-refresh-jitter-ratio 0.2 \
 	--iterations 12 \
 	--interval 300
 ```
 
 The daemon writes latest output to `memory/runtime/latest_assistant_output.md`.
+Connector refresh health is written to `memory/runtime/connector_health.json`.
 
 ### Real Connector Credentials
 
@@ -242,6 +245,20 @@ Begin OAuth flow and wait for loopback callback automatically:
 ```bash
 python src/assistant_daemon.py google-oauth-begin --auto-callback
 ```
+
+OAuth UX options:
+
+```bash
+python src/assistant_daemon.py google-oauth-begin \
+	--auto-callback \
+	--timeout-seconds 180 \
+	--max-attempts 3
+```
+
+Notes:
+- Browser opens automatically by default.
+- Use `--no-open-browser` for manual handling.
+- Callback timeout triggers retry until attempts are exhausted.
 
 If you want manual code exchange instead:
 
@@ -359,6 +376,7 @@ Security details:
 - per-machine shared IPC secret stored in OS keychain
 - HMAC-signed command envelopes
 - local socket endpoint: `memory/runtime/daemon.sock`
+- nonce replay protection persisted across restarts
 
 ## Status
 

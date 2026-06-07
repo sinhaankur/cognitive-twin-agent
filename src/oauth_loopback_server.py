@@ -42,8 +42,9 @@ def wait_for_oauth_callback(host: str = "127.0.0.1", port: int = 8765, timeout_s
     thread = threading.Thread(target=_serve, daemon=True)
     thread.start()
     thread.join(timeout=timeout_seconds)
+    timed_out = thread.is_alive()
     httpd.server_close()
 
     code = str(_OAuthCallbackHandler.shared.get("code", ""))
     state = str(_OAuthCallbackHandler.shared.get("state", ""))
-    return {"code": code, "state": state}
+    return {"code": code, "state": state, "timed_out": "true" if timed_out else "false"}

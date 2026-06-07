@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 import os
+import random
 import subprocess
 import threading
 import time
+import webbrowser
 from pathlib import Path
 
 from openai import OpenAI
@@ -54,22 +57,41 @@ def consent_command(workspace_root: Path, connector: str, allow: bool) -> None:
     print(f"Consent {state} for connector: {connector}")
 
 
-def google_oauth_begin(auto_capture: bool) -> None:
+def google_oauth_begin(
+    auto_capture: bool,
+    open_browser: bool,
+    timeout_seconds: int,
+    max_attempts: int,
+) -> None:
     manager = GoogleOAuthManager()
-    result = manager.begin_auth()
-    print("Open this URL and approve access:")
-    print(result["authorization_url"])
-    print(f"State: {result['state']}")
+    attempts = max(1, max_attempts)
 
-    if auto_capture:
+    for attempt in range(1, attempts + 1):
+        result = manager.begin_auth()
+        print("Open this URL and approve access:")
+        print(result["authorization_url"])
+        print(f"State: {result['state']}")
+
+        if open_browser:
+            webbrowser.open(result["authorization_url"], new=2)
+            print("Opened browser automatically.")
+
+        if not auto_capture:
+            return
+
         print("Waiting for callback on http://127.0.0.1:8765/callback ...")
-        callback = wait_for_oauth_callback()
+        callback = wait_for_oauth_callback(timeout_seconds=timeout_seconds)
         code = callback.get("code", "")
         state = callback.get("state", "")
-        if not code or not state:
-            raise SystemExit("No OAuth callback received before timeout")
-        manager.exchange_code(code=code, state=state)
-        print("OAuth tokens stored securely in keychain.")
+        if code and state:
+            manager.exchange_code(code=code, state=state)
+            print("OAuth tokens stored securely in keychain.")
+            return
+
+        if attempt < attempts:
+            print(f"OAuth callback timed out, retrying ({attempt}/{attempts})...")
+
+    raise SystemExit("OAuth flow timed out after retries")
 
 
 def google_oauth_exchange(code: str, state: str) -> None:
@@ -93,6 +115,8 @@ def run_command(
     system_dna_path: Path,
     interval: float,
     iterations: int,
+    connector_refresh_seconds: float,
+    connector_refresh_jitter_ratio: float,
 ) -> None:
     manager = SecurityManager(workspace_root)
     ok, reason = manager.verify(token)
@@ -109,6 +133,11 @@ def run_command(
     runtime_dir.mkdir(parents=True, exist_ok=True)
     pid_file = runtime_dir / "daemon.pid"
     pid_file.write_text(str(os.getpid()), encoding="utf-8")
+    connector_health_file = runtime_dir / "connector_health.json"
+
+    last_day_map = None
+    next_refresh_at = 0.0
+    connector_failures = 0
 
     def _handle_ipc(command: str, payload: dict) -> dict:
         snapshot = runtime.snapshot()
@@ -155,7 +184,43 @@ def run_command(
                     cwd=str(workspace_root),
                 )
 
-            day_map = build_day_map(workspace_root)
+            now = time.time()
+            should_refresh = last_day_map is None or now >= next_refresh_at
+            if should_refresh:
+                refresh_started = time.time()
+                try:
+                    day_map = build_day_map(workspace_root)
+                    last_day_map = day_map
+                    connector_failures = 0
+                    status = "ok"
+                except Exception as exc:
+                    connector_failures += 1
+                    status = f"error:{exc}"
+                    if last_day_map is None:
+                        raise
+                    day_map = last_day_map
+
+                duration_ms = int((time.time() - refresh_started) * 1000)
+                jitter = random.uniform(-connector_refresh_jitter_ratio, connector_refresh_jitter_ratio)
+                effective_refresh = max(15.0, connector_refresh_seconds * (1.0 + jitter))
+                next_refresh_at = time.time() + effective_refresh
+
+                connector_health = {
+                    "last_refresh_utc": datetime.now(timezone.utc).isoformat(),
+                    "status": status,
+                    "duration_ms": duration_ms,
+                    "calendar_items": len(day_map.calendar_items),
+                    "task_items": len(day_map.task_items),
+                    "consecutive_failures": connector_failures,
+                    "next_refresh_in_seconds": int(max(0.0, next_refresh_at - time.time())),
+                }
+                connector_health_file.write_text(
+                    json.dumps(connector_health, ensure_ascii=True, indent=2),
+                    encoding="utf-8",
+                )
+            else:
+                day_map = last_day_map
+
             prompt_context = day_map_to_prompt(day_map)
 
             output = run_agent_task(
@@ -209,6 +274,9 @@ def main() -> None:
 
     google_oauth_begin_parser = subparsers.add_parser("google-oauth-begin", parents=[common], help="Start private Google OAuth flow")
     google_oauth_begin_parser.add_argument("--auto-callback", action="store_true")
+    google_oauth_begin_parser.add_argument("--no-open-browser", action="store_true")
+    google_oauth_begin_parser.add_argument("--timeout-seconds", type=int, default=180)
+    google_oauth_begin_parser.add_argument("--max-attempts", type=int, default=3)
 
     google_oauth_exchange_parser = subparsers.add_parser("google-oauth-exchange", parents=[common], help="Exchange Google OAuth code for refresh token")
     google_oauth_exchange_parser.add_argument("--code", required=True)
@@ -225,6 +293,8 @@ def main() -> None:
     run_parser.add_argument("--system-dna", default=os.getenv("AGENT_SYSTEM_DNA", "system_dna.md"))
     run_parser.add_argument("--interval", type=float, default=300.0)
     run_parser.add_argument("--iterations", type=int, default=1)
+    run_parser.add_argument("--connector-refresh-seconds", type=float, default=300.0)
+    run_parser.add_argument("--connector-refresh-jitter-ratio", type=float, default=0.2)
 
     args = parser.parse_args()
     workspace_root = Path(args.workspace_root).resolve()
@@ -248,7 +318,12 @@ def main() -> None:
         return
 
     if args.command == "google-oauth-begin":
-        google_oauth_begin(auto_capture=args.auto_callback)
+        google_oauth_begin(
+            auto_capture=args.auto_callback,
+            open_browser=not args.no_open_browser,
+            timeout_seconds=args.timeout_seconds,
+            max_attempts=args.max_attempts,
+        )
         return
 
     if args.command == "google-oauth-exchange":
@@ -274,6 +349,8 @@ def main() -> None:
             system_dna_path=system_dna_path,
             interval=args.interval,
             iterations=args.iterations,
+            connector_refresh_seconds=args.connector_refresh_seconds,
+            connector_refresh_jitter_ratio=args.connector_refresh_jitter_ratio,
         )
 
 
