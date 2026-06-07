@@ -226,11 +226,46 @@ The daemon writes latest output to `memory/runtime/latest_assistant_output.md`.
 ### Real Connector Credentials
 
 Set connector credentials in `.env` (used only when consent is granted):
-- `GOOGLE_CALENDAR_API_KEY`
+- `GOOGLE_CALENDAR_API_KEY` (optional fallback)
 - `GOOGLE_CALENDAR_ID`
+- `GOOGLE_OAUTH_CLIENT_ID`
+- `GOOGLE_OAUTH_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REDIRECT_URI`
 - `NOTION_API_TOKEN`
 - `NOTION_DATABASE_ID`
 - `TODOIST_API_TOKEN`
+
+### Private Google OAuth Flow (Refresh + Keychain Storage)
+
+Begin OAuth flow and wait for loopback callback automatically:
+
+```bash
+python src/assistant_daemon.py google-oauth-begin --auto-callback
+```
+
+If you want manual code exchange instead:
+
+```bash
+python src/assistant_daemon.py google-oauth-begin
+python src/assistant_daemon.py google-oauth-exchange --code "AUTH_CODE" --state "STATE"
+```
+
+Check token status:
+
+```bash
+python src/assistant_daemon.py google-oauth-status
+```
+
+Tokens are stored in OS keychain and refreshed locally when nearing expiry.
+
+### Connector Delta Sync + Backoff
+
+- Notion sync uses cached delta merge keyed by page id + `last_edited_time`.
+- Todoist sync uses sync-token incremental updates.
+- Both connectors use exponential backoff with Retry-After handling on rate limits.
+
+Generated connector cache files live under:
+- `memory/connectors/cache/`
 
 ### Task Mapping Inputs
 
@@ -315,6 +350,15 @@ python3 src/menubar_controller.py
 
 Environment requirement:
 - set `AGENT_DAEMON_TOKEN` in `.env` to enable Start Daemon and Quick Voice Trigger.
+
+### Signed Local IPC
+
+The menu-bar app now talks to daemon via signed local IPC (UNIX socket) instead of direct shell control for status/stop/trigger commands.
+
+Security details:
+- per-machine shared IPC secret stored in OS keychain
+- HMAC-signed command envelopes
+- local socket endpoint: `memory/runtime/daemon.sock`
 
 ## Status
 

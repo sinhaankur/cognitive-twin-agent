@@ -6,11 +6,14 @@ from pathlib import Path
 
 import rumps
 
+from ipc_channel import SignedLocalIPC
+
 
 class TwinMenuBar(rumps.App):
     def __init__(self) -> None:
         super().__init__("Twin")
         self.workspace_root = Path(os.getenv("AGENT_WORKSPACE_ROOT", ".")).resolve()
+        self.ipc = SignedLocalIPC(self.workspace_root)
         self.menu = [
             "Status",
             "Start Daemon",
@@ -24,11 +27,16 @@ class TwinMenuBar(rumps.App):
 
     @rumps.clicked("Status")
     def status(self, _):
-        pid_file = self.workspace_root / "memory" / "runtime" / "daemon.pid"
-        if pid_file.exists():
-            rumps.notification("Cognitive Twin", "Status", "Daemon appears active")
-        else:
-            rumps.notification("Cognitive Twin", "Status", "Daemon is not running")
+        try:
+            response = self.ipc.send("status")
+            if response.get("ok"):
+                msg = f"active · iterations {response.get('completed_iterations', 0)}"
+                rumps.notification("Cognitive Twin", "Status", msg)
+                return
+        except Exception:
+            pass
+
+        rumps.notification("Cognitive Twin", "Status", "Daemon is not running")
 
     @rumps.clicked("Start Daemon")
     def start_daemon(self, _):
@@ -36,6 +44,14 @@ class TwinMenuBar(rumps.App):
         if not token:
             rumps.alert("Set AGENT_DAEMON_TOKEN before starting daemon")
             return
+
+        try:
+            response = self.ipc.send("status")
+            if response.get("ok"):
+                rumps.notification("Cognitive Twin", "Daemon", "Already running")
+                return
+        except Exception:
+            pass
 
         cmd = [
             "python3",
@@ -57,38 +73,25 @@ class TwinMenuBar(rumps.App):
 
     @rumps.clicked("Stop Daemon")
     def stop_daemon(self, _):
-        pid_file = self.workspace_root / "memory" / "runtime" / "daemon.pid"
-        if not pid_file.exists():
-            rumps.alert("No daemon PID file found")
-            return
-
         try:
-            pid = int(pid_file.read_text(encoding="utf-8").strip())
-            os.kill(pid, 15)
-            pid_file.unlink(missing_ok=True)
-            rumps.notification("Cognitive Twin", "Daemon", "Stop signal sent")
+            response = self.ipc.send("stop")
+            if response.get("ok"):
+                rumps.notification("Cognitive Twin", "Daemon", "Stop requested")
+            else:
+                rumps.alert(f"Daemon refused stop: {response}")
         except Exception as exc:
             rumps.alert(f"Failed to stop daemon: {exc}")
 
     @rumps.clicked("Quick Voice Trigger")
     def quick_voice_trigger(self, _):
-        token = os.getenv("AGENT_DAEMON_TOKEN", "")
-        if not token:
-            rumps.alert("Set AGENT_DAEMON_TOKEN before quick trigger")
-            return
-
-        cmd = [
-            "python3",
-            "src/multimodal_orchestrator.py",
-            "--task",
-            "Give me one immediate next action",
-            "--enable-audio",
-            "--enable-transcription",
-            "--consent",
-            "I AGREE",
-        ]
-        subprocess.Popen(cmd, cwd=str(self.workspace_root))
-        rumps.notification("Cognitive Twin", "Quick Trigger", "Voice-trigger run started")
+        try:
+            response = self.ipc.send("quick_voice_trigger")
+            if response.get("ok"):
+                rumps.notification("Cognitive Twin", "Quick Trigger", "Queued in daemon")
+            else:
+                rumps.alert(f"Quick trigger failed: {response}")
+        except Exception as exc:
+            rumps.alert(f"Failed to reach daemon: {exc}")
 
     @rumps.clicked("Open Latest Output")
     def open_output(self, _):
