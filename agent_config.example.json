@@ -1,0 +1,32 @@
+{
+  "projectName": "cognitive-twin-agent",
+  "mode": "review-before-commit",
+  "modelRouting": {
+    "default": {
+      "provider": "ollama",
+      "model": "qwen3:8b",
+      "endpoint": "http://localhost:11434"
+    },
+    "deepReasoningFallback": {
+      "provider": "cloud",
+      "model": "gpt-5.3-codex",
+      "enabled": false
+    }
+  },
+  "memory": {
+    "vectorStore": "local",
+    "embeddingModel": "nomic-embed-text",
+    "sources": [
+      "code",
+      "architecture",
+      "ux-principles",
+      "writing-style"
+    ]
+  },
+  "guardrails": {
+    "requireCritiquePass": true,
+    "enforceLocalFirst": true,
+    "maxCloudDependencyIntroductions": 0,
+    "verbosityPolicy": "concise-technical"
+  }
+}
