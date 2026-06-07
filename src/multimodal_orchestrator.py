@@ -9,6 +9,7 @@ from openai import OpenAI
 from action_executor import execute_safe_action, recommend_safe_action
 from activity_service import ActivityService, ActivityServiceConfig
 from audio_service import AudioService, AudioServiceConfig
+from calibration import CalibrationManager
 from camera_service import CameraService, CameraServiceConfig
 from context_fusion import fuse_signals
 from local_orchestrator import Toolbox, load_text, run_agent_task
@@ -42,10 +43,14 @@ def main() -> None:
     parser.add_argument("--enable-transcription", action="store_true")
     parser.add_argument("--transcription-model", default="base")
     parser.add_argument("--transcription-compute-type", default="int8")
+    parser.add_argument("--transcription-device", default="auto")
+    parser.add_argument("--model-cache-dir", default="memory/models")
     parser.add_argument("--activity-note", default="")
     parser.add_argument("--activity-context-file", default="")
     parser.add_argument("--propose-safe-action", action="store_true")
     parser.add_argument("--approve-action", action="store_true")
+    parser.add_argument("--record-calibration-label", default="")
+    parser.add_argument("--compute-calibration", action="store_true")
     parser.add_argument("--interval", type=float, default=3.0)
     parser.add_argument("--iterations", type=int, default=1)
     parser.add_argument(
@@ -59,19 +64,27 @@ def main() -> None:
         raise SystemExit('Sensor capture blocked. Re-run with --consent "I AGREE".')
 
     workspace_root = Path(args.workspace_root).resolve()
+    calibration = CalibrationManager(workspace_root)
+    thresholds = calibration.load_profile()
+    if args.compute_calibration:
+        thresholds = calibration.compute_profile()
+
     system_dna_path = Path(args.system_dna)
     if not system_dna_path.is_absolute():
         system_dna_path = workspace_root / system_dna_path
     system_dna = load_text(system_dna_path)
 
-    camera = CameraService(CameraServiceConfig(enabled=args.enable_camera))
+    camera = CameraService(CameraServiceConfig(enabled=args.enable_camera), thresholds=thresholds)
     audio = AudioService(
         AudioServiceConfig(
             enabled=args.enable_audio,
             enable_transcription=args.enable_transcription,
             transcription_model=args.transcription_model,
             transcription_compute_type=args.transcription_compute_type,
-        )
+            transcription_device=args.transcription_device,
+            model_cache_dir=args.model_cache_dir,
+        ),
+        thresholds=thresholds,
     )
     activity = ActivityService(
         workspace_root=workspace_root,
@@ -89,7 +102,19 @@ def main() -> None:
         vision_signal = camera.sample()
         audio_signal = audio.sample()
         activity_signal = activity.sample()
-        fused_state = fuse_signals(vision_signal, audio_signal, activity_signal)
+        fused_state = fuse_signals(vision_signal, audio_signal, activity_signal, thresholds=thresholds)
+
+        if args.record_calibration_label:
+            calibration.record_sample(
+                {
+                    "label": args.record_calibration_label,
+                    "audio_energy_rms": audio_signal.energy_rms,
+                    "vision_motion_level": vision_signal.motion_level,
+                    "vision_eye_open_ratio": vision_signal.eye_open_ratio,
+                    "audio_sentiment": audio_signal.sentiment,
+                    "audio_sentiment_confidence": audio_signal.sentiment_confidence,
+                }
+            )
 
         task_with_state = build_prompt(
             task=args.task,

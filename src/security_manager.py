@@ -8,6 +8,9 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
+from cryptography.fernet import Fernet, InvalidToken
+import keyring
+
 
 @dataclass
 class SecurityState:
@@ -20,6 +23,8 @@ class SecurityManager:
     def __init__(self, workspace_root: Path) -> None:
         self.workspace_root = workspace_root
         self.state_file = workspace_root / "memory" / "security" / "security_state.json"
+        self._key_service_name = "cognitive-twin-agent"
+        self._key_account_name = "state-encryption-key"
 
     def init_user(self, username: str) -> str:
         token = secrets.token_urlsafe(32)
@@ -31,6 +36,7 @@ class SecurityManager:
             token_salt=salt,
             token_hash=token_hash,
         )
+        self._ensure_key()
         self._save(state)
         return token
 
@@ -68,7 +74,9 @@ class SecurityManager:
         if not self.state_file.exists():
             raise RuntimeError("Security is not initialized. Run init first.")
 
-        raw = json.loads(self.state_file.read_text(encoding="utf-8"))
+        encrypted = self.state_file.read_text(encoding="utf-8")
+        raw_payload = self._decrypt(encrypted)
+        raw = json.loads(raw_payload)
         return SecurityState(
             allowed_users=raw.get("allowed_users", []),
             token_salt=raw.get("token_salt", ""),
@@ -82,4 +90,35 @@ class SecurityManager:
             "token_salt": state.token_salt,
             "token_hash": state.token_hash,
         }
-        self.state_file.write_text(json.dumps(data, ensure_ascii=True, indent=2), encoding="utf-8")
+        encrypted = self._encrypt(json.dumps(data, ensure_ascii=True))
+        self.state_file.write_text(encrypted, encoding="utf-8")
+
+    def _ensure_key(self) -> bytes:
+        existing = keyring.get_password(self._key_service_name, self._key_account_name)
+        if existing:
+            return existing.encode("utf-8")
+
+        generated = Fernet.generate_key()
+        keyring.set_password(self._key_service_name, self._key_account_name, generated.decode("utf-8"))
+        return generated
+
+    def _load_key(self) -> bytes:
+        existing = keyring.get_password(self._key_service_name, self._key_account_name)
+        if not existing:
+            raise RuntimeError("Encryption key not found in OS keychain. Re-run init.")
+        return existing.encode("utf-8")
+
+    def _encrypt(self, plaintext: str) -> str:
+        key = self._ensure_key()
+        fernet = Fernet(key)
+        token = fernet.encrypt(plaintext.encode("utf-8"))
+        return token.decode("utf-8")
+
+    def _decrypt(self, encrypted_text: str) -> str:
+        key = self._load_key()
+        fernet = Fernet(key)
+        try:
+            plain = fernet.decrypt(encrypted_text.encode("utf-8"))
+        except InvalidToken as exc:
+            raise RuntimeError("Security state decryption failed") from exc
+        return plain.decode("utf-8")

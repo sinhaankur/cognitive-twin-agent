@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from calibration import ThresholdProfile
 from multimodal_types import VisionSignal
 
 
@@ -13,8 +14,9 @@ class CameraServiceConfig:
 
 
 class CameraService:
-    def __init__(self, config: CameraServiceConfig) -> None:
+    def __init__(self, config: CameraServiceConfig, thresholds: ThresholdProfile | None = None) -> None:
         self.config = config
+        self.thresholds = thresholds or ThresholdProfile()
         self._prev_gray = None
         self._face_mesh = None
 
@@ -132,7 +134,7 @@ class CameraService:
             return "unknown", 0.0
 
         # Heuristic-only layer on top of local facial features.
-        if eye_open_ratio > 0 and eye_open_ratio < 0.045:
+        if eye_open_ratio > 0 and eye_open_ratio < self.thresholds.eye_tired_threshold:
             return "tired", 0.55
         if mouth_open_ratio > 0.09 and motion_level > 0.1:
             return "engaged", 0.58

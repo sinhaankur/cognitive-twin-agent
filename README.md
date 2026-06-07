@@ -29,6 +29,12 @@ A local-first personal AI operator architecture that mirrors decision style, tec
 - `src/activity_service.py`: Daily activity/context ingestion
 - `src/context_fusion.py`: Confidence-scored multimodal state fusion
 - `src/security_manager.py`: User allowlist + token-based access verification
+- `src/consent_manager.py`: Per-connector consent registry
+- `src/connectors.py`: Real connector adapters (Google Calendar, Notion, Todoist)
+- `src/calibration.py`: Threshold calibration from recorded sample sessions
+- `src/sentiment_classifier.py`: Local transformer-based sentiment classifier
+- `src/benchmark_sentiment.py`: Sentiment benchmark runner
+- `src/menubar_controller.py`: Lightweight macOS menu-bar controller
 - `src/day_mapper.py`: Local calendar/task context mapping into daily prompt context
 - `src/assistant_daemon.py`: Secure always-on runner for day-to-day planning
 - `deployment/com.cognitive.twin.agent.plist.example`: macOS LaunchAgent template
@@ -168,6 +174,8 @@ This project now includes a secure, user-scoped daemon so the assistant can run 
 Security model:
 - OS username allowlist
 - token-based authentication
+- state encrypted at rest (Fernet)
+- encryption key stored in OS keychain
 - local file storage only
 - no public network listener
 
@@ -181,6 +189,20 @@ Add another explicitly allowed OS user (optional):
 
 ```bash
 python src/assistant_daemon.py add-user --user teammate_username
+```
+
+Grant connector consent:
+
+```bash
+python src/assistant_daemon.py consent --connector google_calendar --allow
+python src/assistant_daemon.py consent --connector notion --allow
+python src/assistant_daemon.py consent --connector todoist --allow
+```
+
+Revoke connector consent:
+
+```bash
+python src/assistant_daemon.py consent --connector notion --revoke
 ```
 
 Check security status:
@@ -201,6 +223,15 @@ python src/assistant_daemon.py run \
 
 The daemon writes latest output to `memory/runtime/latest_assistant_output.md`.
 
+### Real Connector Credentials
+
+Set connector credentials in `.env` (used only when consent is granted):
+- `GOOGLE_CALENDAR_API_KEY`
+- `GOOGLE_CALENDAR_ID`
+- `NOTION_API_TOKEN`
+- `NOTION_DATABASE_ID`
+- `TODOIST_API_TOKEN`
+
 ### Task Mapping Inputs
 
 Populate connector files to map daily work:
@@ -214,6 +245,76 @@ Expected format for both files is JSON array of objects.
 1. Copy `deployment/com.cognitive.twin.agent.plist.example`.
 2. Replace workspace path and token placeholders.
 3. Load with `launchctl` under your user context.
+
+## Transcription Caching and Device Auto-Selection
+
+Whisper model downloads are cached under `memory/models` by default and reused across runs.
+
+Device behavior:
+- `--transcription-device auto` tries CUDA first and falls back to CPU.
+- Override with `--transcription-device cpu` or `--transcription-device cuda`.
+
+Example:
+
+```bash
+python src/multimodal_orchestrator.py \
+	--task "Summarize my state" \
+	--enable-audio \
+	--enable-transcription \
+	--transcription-device auto \
+	--model-cache-dir memory/models \
+	--consent "I AGREE"
+```
+
+## Calibration from Recorded Sessions
+
+Record samples while running multimodal mode:
+
+```bash
+python src/multimodal_orchestrator.py \
+	--task "Calibration pass" \
+	--enable-camera \
+	--enable-audio \
+	--enable-transcription \
+	--record-calibration-label focused \
+	--consent "I AGREE" \
+	--iterations 20 \
+	--interval 2
+```
+
+Compute calibrated thresholds:
+
+```bash
+python src/multimodal_orchestrator.py \
+	--task "Rebuild thresholds" \
+	--compute-calibration \
+	--iterations 1
+```
+
+Generated profile path: `memory/calibration/threshold_profile.json`.
+
+## Sentiment Classifier and Benchmark
+
+The runtime uses a local transformer sentiment classifier instead of the old keyword heuristic.
+
+Benchmark command:
+
+```bash
+python3 src/benchmark_sentiment.py \
+	--samples benchmarks/sentiment_samples.jsonl \
+	--report benchmarks/latest_sentiment_report.md
+```
+
+## Menu-Bar Controller (macOS)
+
+Start the menu-bar app:
+
+```bash
+python3 src/menubar_controller.py
+```
+
+Environment requirement:
+- set `AGENT_DAEMON_TOKEN` in `.env` to enable Start Daemon and Quick Voice Trigger.
 
 ## Status
 

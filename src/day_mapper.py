@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+
+from connectors import fetch_google_calendar_events, fetch_notion_tasks, fetch_todoist_tasks
+from consent_manager import ConsentManager
 
 
 @dataclass
@@ -14,21 +16,13 @@ class DayMap:
     inferred_focus: str
 
 
-def load_json_list(path: Path) -> list[dict]:
-    if not path.exists() or not path.is_file():
-        return []
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(raw, list):
-            return [item for item in raw if isinstance(item, dict)]
-    except Exception:
-        return []
-    return []
-
-
 def build_day_map(workspace_root: Path) -> DayMap:
-    calendar_items = load_json_list(workspace_root / "memory" / "connectors" / "calendar.json")
-    task_items = load_json_list(workspace_root / "memory" / "connectors" / "tasks.json")
+    consent_manager = ConsentManager(workspace_root)
+
+    calendar_items = fetch_google_calendar_events(workspace_root, consent_manager)
+    notion_items = fetch_notion_tasks(workspace_root, consent_manager)
+    todoist_items = fetch_todoist_tasks(workspace_root, consent_manager)
+    task_items = notion_items + todoist_items
 
     inferred_focus = "general"
     if any(item.get("priority") == "high" for item in task_items):
@@ -45,6 +39,8 @@ def build_day_map(workspace_root: Path) -> DayMap:
 
 
 def day_map_to_prompt(day_map: DayMap) -> str:
+    import json
+
     return (
         "# DAILY CONTEXT\n"
         f"timestamp: {day_map.timestamp}\n"

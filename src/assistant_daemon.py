@@ -8,6 +8,7 @@ from pathlib import Path
 
 from openai import OpenAI
 
+from consent_manager import ConsentManager
 from day_mapper import build_day_map, day_map_to_prompt
 from local_orchestrator import load_text, run_agent_task, Toolbox
 from security_manager import SecurityManager
@@ -30,7 +31,19 @@ def add_user_command(workspace_root: Path, username: str) -> None:
 
 def status_command(workspace_root: Path) -> None:
     manager = SecurityManager(workspace_root)
-    print(json.dumps(manager.status(), ensure_ascii=True, indent=2))
+    consent = ConsentManager(workspace_root)
+    payload = {
+        "security": manager.status(),
+        "connector_consents": consent.status(),
+    }
+    print(json.dumps(payload, ensure_ascii=True, indent=2))
+
+
+def consent_command(workspace_root: Path, connector: str, allow: bool) -> None:
+    consent = ConsentManager(workspace_root)
+    consent.set_consent(connector, allow)
+    state = "granted" if allow else "revoked"
+    print(f"Consent {state} for connector: {connector}")
 
 
 def run_command(
@@ -93,6 +106,11 @@ def main() -> None:
 
     subparsers.add_parser("status", parents=[common], help="Show security status")
 
+    consent_parser = subparsers.add_parser("consent", parents=[common], help="Grant or revoke connector consent")
+    consent_parser.add_argument("--connector", required=True, choices=["google_calendar", "notion", "todoist"])
+    consent_parser.add_argument("--allow", action="store_true")
+    consent_parser.add_argument("--revoke", action="store_true")
+
     run_parser = subparsers.add_parser("run", parents=[common], help="Run secure local daemon loop")
     run_parser.add_argument("--token", required=True)
     run_parser.add_argument("--task", default="Generate my next actionable plan from today's calendar and tasks")
@@ -116,6 +134,12 @@ def main() -> None:
 
     if args.command == "status":
         status_command(workspace_root)
+        return
+
+    if args.command == "consent":
+        if args.allow == args.revoke:
+            raise SystemExit("Specify exactly one of --allow or --revoke")
+        consent_command(workspace_root, args.connector, args.allow)
         return
 
     if args.command == "run":

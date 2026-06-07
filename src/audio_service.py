@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
+from pathlib import Path
 import tempfile
 import wave
 
+from calibration import ThresholdProfile
 from multimodal_types import AudioSignal
+from sentiment_classifier import LocalSentimentClassifier
 
 
 @dataclass
@@ -15,12 +19,17 @@ class AudioServiceConfig:
     enable_transcription: bool = True
     transcription_model: str = "base"
     transcription_compute_type: str = "int8"
+    transcription_device: str = "auto"
+    model_cache_dir: str = "memory/models"
+    sentiment_model: str = "cardiffnlp/twitter-roberta-base-sentiment-latest"
 
 
 class AudioService:
-    def __init__(self, config: AudioServiceConfig) -> None:
+    def __init__(self, config: AudioServiceConfig, thresholds: ThresholdProfile | None = None) -> None:
         self.config = config
+        self.thresholds = thresholds or ThresholdProfile()
         self._whisper_model = None
+        self._sentiment = LocalSentimentClassifier(model_name=self.config.sentiment_model)
 
     def sample(self) -> AudioSignal:
         if not self.config.enabled:
@@ -42,11 +51,11 @@ class AudioService:
         mono = data[:, 0]
         energy_rms = float((mono**2).mean() ** 0.5)
         zero_crossing_rate = float(np.mean(np.abs(np.diff(np.sign(mono))) > 0))
-        voice_detected = energy_rms > 0.01
+        voice_detected = energy_rms > self.thresholds.voice_energy_threshold
 
         speaking_rate_hint = "unknown"
         if voice_detected:
-            if zero_crossing_rate > 0.16 or energy_rms > 0.05:
+            if zero_crossing_rate > 0.16 or energy_rms > self.thresholds.animated_energy_threshold:
                 speaking_rate_hint = "animated"
             else:
                 speaking_rate_hint = "steady"
@@ -57,7 +66,9 @@ class AudioService:
         sentiment_confidence = 0.0
         if voice_detected and self.config.enable_transcription:
             transcript, confidence = self._transcribe(mono)
-            sentiment, sentiment_confidence = self._infer_sentiment(transcript)
+            sentiment_result = self._sentiment.classify(transcript)
+            sentiment = sentiment_result.label
+            sentiment_confidence = sentiment_result.confidence
 
         return AudioSignal(
             available=True,
@@ -101,32 +112,44 @@ class AudioService:
         try:
             from faster_whisper import WhisperModel
 
+            device = self._resolve_device()
+            cache_dir = self._resolve_cache_dir()
             self._whisper_model = WhisperModel(
                 self.config.transcription_model,
+                device=device,
                 compute_type=self.config.transcription_compute_type,
+                download_root=cache_dir,
             )
         except Exception:
             self._whisper_model = None
 
         return self._whisper_model
 
-    def _infer_sentiment(self, transcript: str) -> tuple[str, float]:
-        if not transcript:
-            return "unknown", 0.0
+    def _resolve_device(self) -> str:
+        if self.config.transcription_device != "auto":
+            return self.config.transcription_device
 
-        text = transcript.lower()
-        positive = {"good", "great", "happy", "nice", "calm", "done", "progress"}
-        negative = {"bad", "tired", "stressed", "angry", "blocked", "frustrated", "late"}
+        try:
+            import torch
 
-        pos_hits = sum(1 for token in positive if token in text)
-        neg_hits = sum(1 for token in negative if token in text)
-        total = pos_hits + neg_hits
+            if torch.cuda.is_available():
+                return "cuda"
+        except Exception:
+            pass
 
-        if total == 0:
-            return "neutral", 0.35
+        try:
+            import ctranslate2
 
-        if pos_hits > neg_hits:
-            return "positive", min(0.85, 0.45 + (pos_hits - neg_hits) * 0.12)
-        if neg_hits > pos_hits:
-            return "negative", min(0.85, 0.45 + (neg_hits - pos_hits) * 0.12)
-        return "neutral", 0.45
+            if ctranslate2.get_cuda_device_count() > 0:
+                return "cuda"
+        except Exception:
+            pass
+
+        return "cpu"
+
+    def _resolve_cache_dir(self) -> str:
+        path = Path(self.config.model_cache_dir)
+        if not path.is_absolute():
+            path = Path(os.getenv("AGENT_WORKSPACE_ROOT", ".")) / path
+        path.mkdir(parents=True, exist_ok=True)
+        return str(path)

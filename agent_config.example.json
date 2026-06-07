@@ -41,11 +41,27 @@
       "sampleRate": 16000,
       "enableTranscription": true,
       "transcriptionModel": "base",
-      "transcriptionComputeType": "int8"
+      "transcriptionComputeType": "int8",
+      "transcriptionDevice": "auto",
+      "modelCacheDir": "memory/models"
     },
     "actions": {
       "proposeSafeAction": true,
       "requireApprovalBeforeExecution": true
+    },
+    "connectors": {
+      "googleCalendar": {
+        "enabled": true,
+        "requiresConsent": true
+      },
+      "notion": {
+        "enabled": true,
+        "requiresConsent": true
+      },
+      "todoist": {
+        "enabled": true,
+        "requiresConsent": true
+      }
     },
     "privacy": {
       "requireExplicitConsent": true,

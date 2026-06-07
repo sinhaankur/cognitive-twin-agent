@@ -1,11 +1,18 @@
 from multimodal_types import ActivitySignal, AudioSignal, FusedState, VisionSignal
+from calibration import ThresholdProfile
 
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
-def fuse_signals(vision: VisionSignal, audio: AudioSignal, activity: ActivitySignal) -> FusedState:
+def fuse_signals(
+    vision: VisionSignal,
+    audio: AudioSignal,
+    activity: ActivitySignal,
+    thresholds: ThresholdProfile | None = None,
+) -> FusedState:
+    thresholds = thresholds or ThresholdProfile()
     score = 0.0
     confidence = 0.2
     rationale_parts: list[str] = []
@@ -18,7 +25,7 @@ def fuse_signals(vision: VisionSignal, audio: AudioSignal, activity: ActivitySig
         elif vision.expression == "engaged":
             score += 0.2
             rationale_parts.append("vision suggests engaged posture")
-        if vision.eye_open_ratio > 0 and vision.eye_open_ratio < 0.045:
+        if vision.eye_open_ratio > 0 and vision.eye_open_ratio < thresholds.eye_tired_threshold:
             score -= 0.1
             rationale_parts.append("eye openness suggests fatigue")
 
@@ -55,11 +62,11 @@ def fuse_signals(vision: VisionSignal, audio: AudioSignal, activity: ActivitySig
         energy_state = "medium"
 
     stress_state = "medium"
-    if vision.available and vision.motion_level > 0.2:
+    if vision.available and vision.motion_level > thresholds.elevated_motion_threshold:
         stress_state = "elevated"
     if audio.available and audio.voice_detected and audio.energy_rms < 0.015:
         stress_state = "calm"
-    if audio.sentiment == "negative" and audio.sentiment_confidence > 0.55:
+    if audio.sentiment == "negative" and audio.sentiment_confidence > thresholds.negative_sentiment_threshold:
         stress_state = "elevated"
 
     user_state = "focused"

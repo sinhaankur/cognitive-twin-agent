@@ -1,0 +1,6 @@
+{"text":"I am feeling good and focused today.","label":"positive"}
+{"text":"Great progress on the architecture and I feel calm.","label":"positive"}
+{"text":"This is okay, just another normal work session.","label":"neutral"}
+{"text":"I am blocked and frustrated by this bug.","label":"negative"}
+{"text":"I feel tired and stressed after the meeting.","label":"negative"}
+{"text":"The sprint review is complete.","label":"neutral"}
