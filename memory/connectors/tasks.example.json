@@ -1,0 +1,14 @@
+[
+  {
+    "title": "Implement onboarding flow",
+    "priority": "high",
+    "status": "in-progress",
+    "owner": "self"
+  },
+  {
+    "title": "Review API contract",
+    "priority": "medium",
+    "status": "todo",
+    "owner": "self"
+  }
+]

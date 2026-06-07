@@ -28,6 +28,10 @@ A local-first personal AI operator architecture that mirrors decision style, tec
 - `src/audio_service.py`: Local audio signal capture (optional)
 - `src/activity_service.py`: Daily activity/context ingestion
 - `src/context_fusion.py`: Confidence-scored multimodal state fusion
+- `src/security_manager.py`: User allowlist + token-based access verification
+- `src/day_mapper.py`: Local calendar/task context mapping into daily prompt context
+- `src/assistant_daemon.py`: Secure always-on runner for day-to-day planning
+- `deployment/com.cognitive.twin.agent.plist.example`: macOS LaunchAgent template
 - `docs/behavior-spec.md`: Decision style and constraints
 - `docs/critique-ledger.md`: Pre-output quality gates
 - `docs/hitl-training.md`: Human-in-the-loop calibration loop
@@ -156,6 +160,60 @@ python src/multimodal_orchestrator.py \
 ```
 
 Safe actions are intentionally reversible and currently write/remove local notes under `memory/actions`.
+
+## Secure Single-User App Runtime
+
+This project now includes a secure, user-scoped daemon so the assistant can run like an always-on local application.
+
+Security model:
+- OS username allowlist
+- token-based authentication
+- local file storage only
+- no public network listener
+
+Initialize security for your OS user:
+
+```bash
+python src/assistant_daemon.py init --user "$USER"
+```
+
+Add another explicitly allowed OS user (optional):
+
+```bash
+python src/assistant_daemon.py add-user --user teammate_username
+```
+
+Check security status:
+
+```bash
+python src/assistant_daemon.py status
+```
+
+Run secure daemon loop:
+
+```bash
+python src/assistant_daemon.py run \
+	--token "PASTE_INIT_TOKEN" \
+	--task "Generate my next actionable plan from today's calendar and tasks" \
+	--iterations 12 \
+	--interval 300
+```
+
+The daemon writes latest output to `memory/runtime/latest_assistant_output.md`.
+
+### Task Mapping Inputs
+
+Populate connector files to map daily work:
+- `memory/connectors/calendar.json`
+- `memory/connectors/tasks.json`
+
+Expected format for both files is JSON array of objects.
+
+### macOS Auto-Start (LaunchAgent)
+
+1. Copy `deployment/com.cognitive.twin.agent.plist.example`.
+2. Replace workspace path and token placeholders.
+3. Load with `launchctl` under your user context.
 
 ## Status
 

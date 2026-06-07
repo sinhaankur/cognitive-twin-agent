@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.cognitive.twin.agent</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/usr/bin/env</string>
+      <string>python3</string>
+      <string>src/assistant_daemon.py</string>
+      <string>run</string>
+      <string>--token</string>
+      <string>REPLACE_WITH_TOKEN</string>
+      <string>--iterations</string>
+      <string>999999</string>
+      <string>--interval</string>
+      <string>300</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>REPLACE_WITH_WORKSPACE_PATH</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>REPLACE_WITH_WORKSPACE_PATH/memory/runtime/daemon.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>REPLACE_WITH_WORKSPACE_PATH/memory/runtime/daemon.err.log</string>
+  </dict>
+</plist>
