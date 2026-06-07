@@ -11,6 +11,18 @@ A local-first personal AI operator architecture that mirrors decision style, tec
 2. Behavioral Rehearsal
 3. Deterministic Guardrails
 
+## Licensing and Commercial Access
+
+This project is proprietary and licensed for paid customers only.
+
+- License file: `LICENSE`
+- Access model: paid, individual-user license by written approval
+- Contact for purchase/licensing: `ankursinha.ai@gmail.com`
+
+Important:
+- Private repository access does not automatically grant usage rights.
+- Usage is authorized only after payment and explicit license confirmation.
+
 ## Architecture
 
 - Layer A: Behavioral Persona
@@ -19,6 +31,7 @@ A local-first personal AI operator architecture that mirrors decision style, tec
 
 ## Repo Layout
 
+- `LICENSE`: Proprietary commercial license (all rights reserved)
 - `agent_config.example.json`: Runtime + routing config template
 - `system_dna.md`: Canonical digital-twin system prompt
 - `prompts/system.prompt.md`: Behavioral DNA prompt
@@ -45,6 +58,7 @@ A local-first personal AI operator architecture that mirrors decision style, tec
 - `docs/critique-ledger.md`: Pre-output quality gates
 - `docs/hitl-training.md`: Human-in-the-loop calibration loop
 - `docs/prompt-relevance-review.md`: Notes on why and how the long-form prompt is used
+- `docs/customer-journey-map.md`: Purchase-to-daily-use journey and operating flow
 - `examples/few-shot-index.md`: Placeholder for high-quality examples
 - `memory/`: Local memory indexes and vector metadata (implementation-specific)
 
@@ -72,6 +86,14 @@ Current backbone defaults:
 - deep planner: `deepseek-r1-distill-qwen-14b`
 
 These are referenced from `agent_config.example.json` under `policyPaths`.
+
+## Customer Journey and Operating Flow
+
+See `docs/customer-journey-map.md` for:
+
+- paid access journey (discover -> qualify -> purchase -> provision -> activate)
+- runtime operating path (`Input -> Security Gate -> Consent Gate -> Context Fusion -> Planner -> Human Approval -> Action/Output -> Local Audit`)
+- success metrics and guardrails for daily operation
 
 ## Run the Local Orchestrator
 
