@@ -20,10 +20,13 @@ A local-first personal AI operator architecture that mirrors decision style, tec
 ## Repo Layout
 
 - `agent_config.example.json`: Runtime + routing config template
+- `system_dna.md`: Canonical digital-twin system prompt
 - `prompts/system.prompt.md`: Behavioral DNA prompt
+- `src/local_orchestrator.py`: Local Python runner with optional bounded tool loop
 - `docs/behavior-spec.md`: Decision style and constraints
 - `docs/critique-ledger.md`: Pre-output quality gates
 - `docs/hitl-training.md`: Human-in-the-loop calibration loop
+- `docs/prompt-relevance-review.md`: Notes on why and how the long-form prompt is used
 - `examples/few-shot-index.md`: Placeholder for high-quality examples
 - `memory/`: Local memory indexes and vector metadata (implementation-specific)
 
@@ -33,8 +36,39 @@ A local-first personal AI operator architecture that mirrors decision style, tec
 2. Point model endpoints to your local runners (Ollama/LM Studio)
 3. Fill behavioral constraints in `docs/behavior-spec.md`
 4. Add 5-10 curated examples in `examples/few-shot-index.md`
-5. Run in review-before-commit mode first
+5. Install runtime dependencies: `pip install -r requirements.txt`
+6. Run in review-before-commit mode first
+
+## Run the Local Orchestrator
+
+LM Studio default endpoint:
+
+```bash
+python src/local_orchestrator.py \
+	--task "Draft a naming strategy for a self-hosted deployment platform" \
+	--context README.md \
+	--base-url http://localhost:1234/v1 \
+	--model local-model
+```
+
+Ollama OpenAI-compatible endpoint:
+
+```bash
+python src/local_orchestrator.py \
+	--task "Propose a local-first architecture for a design QA agent" \
+	--context docs/behavior-spec.md \
+	--base-url http://localhost:11434/v1 \
+	--model qwen3:8b
+```
+
+Enable bounded tool mode (read/write/list/run command):
+
+```bash
+python src/local_orchestrator.py --task "Inspect project and suggest refactor plan" --allow-tools
+```
+
+Tool mode is intentionally conservative and blocks obvious destructive shell patterns.
 
 ## Status
 
-Bootstrapped scaffold. Implementation runner intentionally left framework-agnostic.
+Phase 1 implemented: canonical system prompt plus runnable local orchestrator.
