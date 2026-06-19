@@ -66,6 +66,21 @@ struct SettingsView: View {
                     Toggle("Speak replies aloud", isOn: $model.speakReplies)
                 }
 
+                Section("Who she is") {
+                    HStack {
+                        Text("Name")
+                        TextField("Anita", text: $model.assistantName)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    Button {
+                        model.openVoiceLearn?()
+                    } label: {
+                        Label("Teach her a loved one's voice", systemImage: "heart.text.square")
+                    }
+                    Text("Let \(model.assistantName) learn how someone spoke — from their own messages — and carry their warmth forward. Stays on this Mac.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
                 Section("Privacy") {
                     LabeledContent("Conversation memory", value: "stored on this Mac only")
                     Button(role: .destructive) {

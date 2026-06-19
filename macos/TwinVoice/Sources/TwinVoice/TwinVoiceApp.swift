@@ -20,12 +20,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var chatWindow: NSWindow!    // the chat panel (toggled)
     private var settingsWindow: NSWindow?
 
+    private var voiceLearnWindow: NSWindow?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // background app, NO Dock icon
         model.openSettings = { [weak self] in self?.showSettings() }
+        model.openVoiceLearn = { [weak self] in self?.showVoiceLearn() }
         makeOrbWindow()
         makeChatWindow()
         model.start()                            // ready + greets independently
+    }
+
+    private func showVoiceLearn() {
+        if let w = voiceLearnWindow {
+            w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return
+        }
+        let w = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 480),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        w.title = "Teach \(model.assistantName) a voice"
+        w.isReleasedWhenClosed = false
+        w.contentView = NSHostingView(rootView: VoiceLearnView().environmentObject(model))
+        w.center(); w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        voiceLearnWindow = w
     }
 
     /// Open Settings as a real window (reliable from the borderless panel).
@@ -128,6 +145,13 @@ final class AppModel: ObservableObject {
     /// Wired by the AppDelegate to open settings as a real window (a .sheet won't
     /// reliably present from the borderless floating panel).
     var openSettings: (() -> Void)?
+    /// Opens the gentle "teach a loved one's voice" window.
+    var openVoiceLearn: (() -> Void)?
+
+    /// Teach Anita a loved one's voice from their messages. Returns sample count.
+    func addVoice(person: String, text: String) async -> Int {
+        await agent.addVoice(person: person, text: text)
+    }
     @Published var availableModels: [String] = []
     @Published var speakReplies = true        // toggle voice talk-back
     @Published var turns: [ChatTurn] = []     // the chat conversation

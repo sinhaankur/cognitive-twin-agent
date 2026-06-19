@@ -41,6 +41,20 @@ final class AgentClient {
         }
     }
 
+    /// POST /api/voice/add — teach Anita a loved one's voice from their writing.
+    func addVoice(person: String, text: String) async -> Int {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/voice/add"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["person": person, "text": text])
+        req.timeoutInterval = 15
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (obj["samples"] as? Int) ?? 0
+        } catch { return 0 }
+    }
+
     /// GET /api/reflections — thoughts Anita had about your projects while away.
     func reflections() async -> [String] {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/reflections"))

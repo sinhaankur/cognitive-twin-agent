@@ -150,6 +150,23 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/memory/clear":
             from .. import memory
             self._json(200, {"ok": memory.clear()})
+        elif self.path == "/api/voice/add":
+            # Teach Anita a loved one's voice from their writing samples.
+            from .. import voice_profile as vp
+            data = self._read_json()
+            text = data.get("text") or ""
+            person = (data.get("person") or "").strip()
+            n = vp.add_samples(text, person=person)
+            self._json(200, {"ok": True, "samples": n, "status": vp.status()})
+        elif self.path == "/api/voice/clear":
+            from .. import voice_profile as vp
+            self._json(200, {"ok": vp.clear_voice()})
+        elif self.path == "/api/remember":
+            from .. import voice_profile as vp
+            data = self._read_json()
+            fact = (data.get("fact") or "").strip()
+            n = vp.remember(fact) if fact else len(vp.custom_facts())
+            self._json(200, {"ok": bool(fact), "count": n})
         elif self.path == "/api/reflect":
             # Anita thinks about your projects (while you're away) and saves a
             # thought. Best-effort; needs project seeds in memory + a reachable model.
