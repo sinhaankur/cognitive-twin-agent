@@ -9,10 +9,14 @@
 //!   - Rust/WASM: use the modules directly.
 //!   - Swift/C (iOS, macOS): the `ffi` module exposes a tiny C ABI.
 
+pub mod agent;
+pub mod llm;
 pub mod persona;
 pub mod memory;
 pub mod router;
 
+pub use agent::{Agent, AgentReply};
+pub use llm::{ChatClient, ChatMessage, LlmError};
 pub use memory::{summary_for_prompt, top_topics, Entry};
 pub use persona::Persona;
 pub use router::{classify, Policy, RouteDecision, Router};
@@ -98,6 +102,32 @@ pub mod ffi {
             unsafe { cstr(persona_json) },
             &recents,
         ))
+    }
+
+    /// Run one full agent turn against a local Ollama model and return the
+    /// answer. Inputs: model name, persona JSON, recent-prompts JSON array, and
+    /// the user's message. Returns the answer text (or an "[error] …" string).
+    /// This is the one call an iOS/macOS shell needs to talk to the twin.
+    #[no_mangle]
+    pub extern "C" fn ctwin_ask(
+        model: *const c_char,
+        persona_json: *const c_char,
+        recent_prompts_json: *const c_char,
+        user_input: *const c_char,
+    ) -> *mut c_char {
+        let model = unsafe { cstr(model) };
+        let persona = Persona::from_json(unsafe { cstr(persona_json) });
+        let recents: Vec<String> =
+            serde_json::from_str(unsafe { cstr(recent_prompts_json) }).unwrap_or_default();
+        let input = unsafe { cstr(user_input) };
+
+        let client = llm::OllamaClient::new(if model.is_empty() { "llama3.2" } else { model });
+        let mut agent = Agent::new(client).with_persona(persona);
+        agent.set_history(recents);
+        match agent.ask(input) {
+            Ok(reply) => out(reply.answer),
+            Err(e) => out(format!("[error] {e}")),
+        }
     }
 
     /// Free a string returned by this library.
