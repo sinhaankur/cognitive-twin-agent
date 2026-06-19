@@ -198,7 +198,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// Greet the user once on launch (good morning + weather), spoken aloud.
+    /// Greet the user once on launch (good morning + weather), spoken aloud, then
+    /// share any thoughts she had about their projects while they were away.
     private var didGreet = false
     private func greetOnLaunch() async {
         guard !didGreet else { return }
@@ -208,9 +209,33 @@ final class AppModel: ObservableObject {
             await MainActor.run {
                 self.answer = reply.answer
                 if let m = reply.model { self.modelName = m }
+                self.turns.append(ChatTurn(text: reply.answer, isUser: false))
                 if self.speakReplies { self.phase = .speaking; self.voice.speak(reply.answer) }
             }
         } catch { /* greeting is best-effort */ }
+        await shareReflections()
+        startReflecting()
+    }
+
+    /// If she's been thinking about your projects, surface those thoughts.
+    private func shareReflections() async {
+        let thoughts = await agent.reflections()
+        guard !thoughts.isEmpty else { return }
+        await MainActor.run {
+            for t in thoughts.prefix(2) {
+                self.turns.append(ChatTurn(text: "💭 \(t)", isUser: false))
+            }
+        }
+    }
+
+    /// While she's running, let her quietly think about your projects now and
+    /// then (every ~20 min) so there's something waiting next time.
+    private var reflectTimer: Timer?
+    private func startReflecting() {
+        reflectTimer?.invalidate()
+        reflectTimer = Timer.scheduledTimer(withTimeInterval: 1200, repeats: true) { [weak self] _ in
+            Task { await self?.agent.reflect() }
+        }
     }
 
     /// Auto-start the local Python agent server if it isn't already up, so the
@@ -222,6 +247,7 @@ final class AppModel: ObservableObject {
                 await greetOnLaunch()
                 return
             }
+            ensureOllama()        // her brain's brain — start it if it's down
             launchPythonServer()
             // poll until it answers
             for _ in 0..<30 {
@@ -231,6 +257,28 @@ final class AppModel: ObservableObject {
                     await greetOnLaunch()
                     return
                 }
+            }
+        }
+    }
+
+    /// Make sure Ollama (the local model runtime) is running. Reliability: Anita
+    /// shouldn't go brain-dead just because Ollama stopped. Best-effort, quiet.
+    private var ollamaProcess: Process?
+    private func ensureOllama() {
+        // already running? leave it.
+        let probe = Process()
+        probe.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        probe.arguments = ["-x", "ollama"]
+        try? probe.run(); probe.waitUntilExit()
+        if probe.terminationStatus == 0 { return }
+
+        // try `ollama serve` from common install locations
+        for path in ["/opt/homebrew/bin/ollama", "/usr/local/bin/ollama"] {
+            if FileManager.default.fileExists(atPath: path) {
+                let p = Process()
+                p.executableURL = URL(fileURLWithPath: path)
+                p.arguments = ["serve"]
+                do { try p.run(); ollamaProcess = p; return } catch {}
             }
         }
     }

@@ -41,6 +41,32 @@ final class AgentClient {
         }
     }
 
+    /// GET /api/reflections — thoughts Anita had about your projects while away.
+    func reflections() async -> [String] {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/reflections"))
+        req.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            let items = obj["items"] as? [[String: Any]] ?? []
+            return items.compactMap { $0["thought"] as? String }
+        } catch { return [] }
+    }
+
+    /// POST /api/reflect — have her think about your projects now; returns the thought.
+    @discardableResult
+    func reflect() async -> String? {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/reflect"))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 120
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            if (obj["ok"] as? Bool) == true { return obj["thought"] as? String }
+            return nil
+        } catch { return nil }
+    }
+
     /// POST /api/model — switch the active model. Returns true on success.
     func setModel(_ name: String) async -> Bool {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/model"))
