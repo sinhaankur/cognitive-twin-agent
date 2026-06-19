@@ -148,6 +148,159 @@ def thoughts_of_the_day(tasks_file: str = "tasks.md") -> str:
     return "\n".join(out)
 
 
+# ---- web (opt-in internet access) --------------------------------------------
+# Local-first by default, but the twin can reach the internet when you allow it.
+# Off unless CTWIN_WEB=1 (so the default install never makes network calls).
+
+def _web_enabled() -> bool:
+    import os as _os
+    return _os.environ.get("CTWIN_WEB", "").strip() in {"1", "true", "yes", "on"}
+
+
+@R.add("greeting", "Produce a time-aware greeting (good morning/afternoon/evening) "
+       "with today's date and — if internet is on — the current local weather. Use "
+       "to open a session or when the user says hi / asks for a greeting.")
+def greeting() -> str:
+    now = _dt.datetime.now()
+    h = now.hour
+    part = ("morning" if h < 12 else "afternoon" if h < 18 else "evening")
+    out = [f"Good {part}! It's {now.strftime('%A, %B %d')}, {now.strftime('%H:%M')}."]
+
+    if _web_enabled():
+        w = _weather_now()
+        if w:
+            out.append(w)
+    else:
+        out.append("(Turn on internet with CTWIN_WEB=1 for live weather.)")
+    return " ".join(out)
+
+
+def _weather_now() -> str:
+    """Current weather via open-meteo (no API key). IP-geolocates first."""
+    import json as _json
+    import urllib.request as _req
+    import urllib.error as _err
+    ua = {"User-Agent": "CognitiveTwin/0.1"}
+    try:
+        # rough location from IP
+        with _req.urlopen(_req.Request("https://ipapi.co/json/", headers=ua), timeout=8) as r:
+            loc = _json.loads(r.read().decode("utf-8", "replace"))
+        lat, lon = loc.get("latitude"), loc.get("longitude")
+        city = loc.get("city", "")
+        if lat is None or lon is None:
+            return ""
+        url = (f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
+               "&current=temperature_2m,weather_code&temperature_unit=celsius")
+        with _req.urlopen(_req.Request(url, headers=ua), timeout=8) as r:
+            wx = _json.loads(r.read().decode("utf-8", "replace"))
+        cur = wx.get("current", {})
+        temp = cur.get("temperature_2m")
+        desc = _WMO.get(cur.get("weather_code"), "")
+        where = f" in {city}" if city else ""
+        if temp is not None:
+            return f"It's {round(temp)}°C{where}{(' — ' + desc) if desc else ''}."
+        return ""
+    except (_err.URLError, _err.HTTPError, ValueError, KeyError):
+        return ""
+
+
+# WMO weather codes → short text
+_WMO = {
+    0: "clear", 1: "mostly clear", 2: "partly cloudy", 3: "overcast",
+    45: "foggy", 48: "foggy", 51: "light drizzle", 53: "drizzle", 55: "heavy drizzle",
+    61: "light rain", 63: "rain", 65: "heavy rain", 71: "light snow", 73: "snow",
+    75: "heavy snow", 80: "rain showers", 81: "rain showers", 82: "heavy showers",
+    95: "thunderstorm", 96: "thunderstorm", 99: "thunderstorm",
+}
+
+
+@R.add("web_search", "Search the internet and return the top results (title, URL, "
+       "snippet). Use this to answer questions about current events, facts, or "
+       "anything you don't already know. Requires internet access to be enabled.",
+       {"type": "object", "properties": {
+           "query": {"type": "string", "description": "what to search for"}},
+        "required": ["query"]})
+def web_search(query: str) -> str:
+    if not _web_enabled():
+        return ("[web disabled] Internet access is off (local-first default). "
+                "Enable it with CTWIN_WEB=1.")
+    import html as _htmlmod
+    import re as _re
+    import urllib.parse as _parse
+    import urllib.request as _req
+    import urllib.error as _err
+    q = (query or "").strip()
+    if not q:
+        return "[refused] empty query."
+    # DuckDuckGo Lite — stable markup, expects a POST. No API key.
+    data = _parse.urlencode({"q": q}).encode()
+    ua = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36")
+    try:
+        r = _req.Request("https://lite.duckduckgo.com/lite/", data=data,
+                         headers={"User-Agent": ua})
+        with _req.urlopen(r, timeout=15) as resp:
+            page = resp.read(400_000).decode("utf-8", errors="replace")
+    except (_err.URLError, _err.HTTPError) as e:
+        return f"[error] search failed: {e}"
+
+    def _clean(s: str) -> str:
+        s = _re.sub(r"(?s)<[^>]+>", "", s)
+        return _htmlmod.unescape(_re.sub(r"\s+", " ", s)).strip()
+
+    # Lite markup: <a ... href="URL" class='result-link'>TITLE</a> and
+    # <td class='result-snippet'>SNIPPET</td>
+    links = _re.findall(
+        r'<a[^>]*href="(http[^"]+)"[^>]*class=[\'"]result-link[\'"][^>]*>(.*?)</a>',
+        page, _re.S)
+    snippets = _re.findall(
+        r'<td[^>]*class=[\'"]result-snippet[\'"][^>]*>(.*?)</td>', page, _re.S)
+
+    results: list[str] = []
+    for i, (href, title) in enumerate(links[:5]):
+        snip = _clean(snippets[i]) if i < len(snippets) else ""
+        results.append(f"{i+1}. {_clean(title)}\n   {href}\n   {snip}")
+
+    if not results:
+        return f"[no results] for '{q}'."
+    return (f"Top results for “{q}”:\n\n" + "\n\n".join(results)
+            + "\n\nTo read one in full, use fetch_url with its link.")
+
+
+@R.add("fetch_url", "Fetch a web page and return its readable text. Use when the "
+       "user asks about something online or gives a URL. Requires internet access "
+       "to be enabled.",
+       {"type": "object", "properties": {
+           "url": {"type": "string", "description": "an http(s) URL"}},
+        "required": ["url"]})
+def fetch_url(url: str) -> str:
+    if not _web_enabled():
+        return ("[web disabled] Internet access is off (local-first default). "
+                "Enable it with CTWIN_WEB=1.")
+    import re as _re
+    import urllib.request as _req
+    import urllib.error as _err
+    url = (url or "").strip()
+    if not _re.match(r"^https?://", url, _re.IGNORECASE):
+        return "[refused] Only http(s) URLs are allowed."
+    try:
+        r = _req.Request(url, headers={"User-Agent": "CognitiveTwin/0.1 (local)"})
+        with _req.urlopen(r, timeout=15) as resp:
+            ctype = resp.headers.get("Content-Type", "")
+            raw = resp.read(600_000)  # cap ~600KB
+        text = raw.decode("utf-8", errors="replace")
+        if "html" in ctype.lower() or text.lstrip().startswith("<"):
+            text = _re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", text)
+            text = _re.sub(r"(?s)<[^>]+>", " ", text)
+            text = _re.sub(r"\s+", " ", text)
+        text = text.strip()
+        return text[:4000] + ("…[truncated]" if len(text) > 4000 else "")
+    except (_err.URLError, _err.HTTPError) as e:
+        return f"[error] couldn't fetch {url}: {e}"
+    except Exception as e:
+        return f"[error] {e}"
+
+
 # ---- screen control (opt-in, permissioned, safe) -----------------------------
 # These delegate to control.py, which enforces the opt-in gate + per-action
 # confirmation. They no-op with a clear message when control is off.
