@@ -41,6 +41,14 @@ struct SettingsView: View {
 
                     Text("Models run locally via Ollama. Pull more with `ollama pull <name>` in Terminal.")
                         .font(.caption).foregroundStyle(.secondary)
+
+                    HStack(spacing: 6) {
+                        Image(systemName: model.appleAvailable ? "apple.logo" : "exclamationmark.triangle")
+                            .font(.caption)
+                        Text(model.appleStatus)
+                            .font(.caption)
+                    }
+                    .foregroundStyle(model.appleAvailable ? .green : .secondary)
                 }
 
                 Section("Voice") {

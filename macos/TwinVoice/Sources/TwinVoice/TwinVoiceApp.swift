@@ -65,7 +65,14 @@ final class AppModel: ObservableObject {
 
     let voice = VoiceEngine()
     private let agent = AgentClient()
+    private let appleAI = AppleIntelligence()
     private var serverProcess: Process?
+
+    // Special model id for the on-device Apple model.
+    static let appleModelID = "Apple Intelligence (on-device)"
+    var usingAppleAI: Bool { modelName == Self.appleModelID }
+    var appleAvailable: Bool { AppleIntelligence.isAvailable }
+    var appleStatus: String { AppleIntelligence.statusText }
 
     func start() {
         voice.requestPermission()
@@ -108,16 +115,26 @@ final class AppModel: ObservableObject {
         handle(text)
     }
 
-    /// Load installed models (for the settings picker).
+    /// Load installed models (for the settings picker). Apple Intelligence is
+    /// offered first when it's available on this Mac (most private option).
     func refreshModels() {
         Task {
-            let models = await agent.models()
+            var models = await agent.models()
+            if AppleIntelligence.isAvailable {
+                models.insert(Self.appleModelID, at: 0)
+            }
             await MainActor.run { self.availableModels = models }
         }
     }
 
-    /// Switch the active model live.
+    /// Switch the active model live. Apple Intelligence is handled in-app; Ollama
+    /// models are switched on the server.
     func selectModel(_ name: String) {
+        if name == Self.appleModelID {
+            appleAI.reset()
+            modelName = name
+            return
+        }
         Task {
             let ok = await agent.setModel(name)
             if ok { await MainActor.run { self.modelName = name } }
@@ -156,20 +173,30 @@ final class AppModel: ObservableObject {
         phase = .thinking
         Task {
             do {
-                let reply = try await agent.ask(text)
+                let answerText: String
+                if usingAppleAI {
+                    // Fully on-device via Apple's foundation model — no server.
+                    let persona = "You are a concise, helpful local-first personal assistant. Keep answers short and spoken-friendly."
+                    answerText = try await appleAI.ask(text, persona: persona)
+                } else {
+                    let reply = try await agent.ask(text)
+                    if let m = reply.model { await MainActor.run { self.modelName = m } }
+                    answerText = reply.answer
+                }
                 await MainActor.run {
-                    self.answer = reply.answer
-                    if let m = reply.model { self.modelName = m }
+                    self.answer = answerText
                     if self.speakReplies {
                         self.phase = .speaking
-                        self.voice.speak(reply.answer)
+                        self.voice.speak(answerText)
                     } else {
                         self.phase = .idle
                     }
                 }
             } catch {
                 await MainActor.run {
-                    self.answer = "Couldn't reach the agent. Is it running?"
+                    self.answer = self.usingAppleAI
+                        ? "Apple Intelligence isn't available right now."
+                        : "Couldn't reach the agent. Is it running?"
                     self.phase = .idle
                 }
             }
