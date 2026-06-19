@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Foundation
+import ServiceManagement
 
 @main
 struct TwinVoiceApp: App {
@@ -141,7 +142,36 @@ final class AppModel: ObservableObject {
     func start() {
         voice.requestPermission()
         voice.onFinal = { [weak self] text in self?.handle(text) }
+        enableLaunchAtLogin()      // so Anita is always there after a reboot
         ensureServer()
+        startWatchdog()            // keep her alive if the brain ever stops
+    }
+
+    /// Register Anita to launch automatically at login (macOS 13+ SMAppService),
+    /// so she's present every time without the user starting her.
+    private func enableLaunchAtLogin() {
+        if #available(macOS 13.0, *) {
+            do {
+                if SMAppService.mainApp.status != .enabled {
+                    try SMAppService.mainApp.register()
+                }
+            } catch { /* not fatal — she still runs this session */ }
+        }
+    }
+
+    /// A gentle watchdog: every few seconds, make sure the brain is reachable;
+    /// if it has died, quietly bring it back. Reliability = her presence.
+    private var watchdog: Timer?
+    private func startWatchdog() {
+        watchdog?.invalidate()
+        watchdog = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                let up = await self.agent.health()
+                self.serverUp = up
+                if !up { self.ensureServer() }
+            }
+        }
     }
 
     /// Greet the user once on launch (good morning + weather), spoken aloud.
