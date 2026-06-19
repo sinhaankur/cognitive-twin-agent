@@ -1,20 +1,51 @@
 import SwiftUI
+import AppKit
 import Foundation
 
 @main
 struct TwinVoiceApp: App {
     @StateObject private var model = AppModel()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         WindowGroup("Twin Voice") {
             ContentView()
                 .environmentObject(model)
-                .frame(minWidth: 460, minHeight: 520)
+                .frame(minWidth: 420, idealWidth: 480, maxWidth: 720,
+                       minHeight: 560, idealHeight: 640, maxHeight: 900)
                 .background(VisualEffectBackground())   // native translucent "glass"
                 .onAppear { model.start() }
         }
-        .windowStyle(.hiddenTitleBar)
+        // A real, titled, movable window (keeps the title bar + traffic lights, but
+        // we make the bar transparent so the glass shows through — a proper app
+        // window, not a chrome-less floating panel).
         .windowResizability(.contentSize)
+        .windowStyle(.titleBar)
+        .windowToolbarStyle(.unifiedCompact)
+        .commands {
+            CommandGroup(replacing: .newItem) {}   // no "New Window" — single window app
+        }
+    }
+}
+
+/// App-level setup so it behaves like a proper Mac app: shows in the Dock,
+/// activates on launch, centers its window, and quits when the window closes.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)        // Dock icon + menu bar
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async {
+            if let w = NSApp.windows.first {
+                w.titlebarAppearsTransparent = true
+                w.titleVisibility = .hidden
+                w.isMovableByWindowBackground = true   // drag anywhere to move
+                w.center()
+                w.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
     }
 }
 
