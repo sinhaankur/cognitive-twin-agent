@@ -139,21 +139,20 @@ def synthesize(text: str) -> Path | None:
         return None
 
     if engine == "xtts":
-        code = (
-            "import sys;from TTS.api import TTS;"
-            "tts=TTS('tts_models/multilingual/multi-dataset/xtts_v2');"
-            "tts.tts_to_file(text=sys.argv[1], speaker_wav=sys.argv[2], "
-            "language='en', file_path=sys.argv[3])"
-        )
+        # Use the tuned synthesis worker (steadier, warmer clone). Ship the script
+        # next to this module so the venv python can run it.
+        worker = Path(__file__).resolve().parent / "_xtts_say.py"
+        cmd = [py, str(worker), text, str(ref), str(out)]
     else:  # f5
         code = (
             "import sys;from f5_tts.api import F5TTS;"
             "m=F5TTS();m.infer(ref_file=sys.argv[2], ref_text='', gen_text=sys.argv[1], "
             "file_wave=sys.argv[3])"
         )
+        cmd = [py, "-c", code, text, str(ref), str(out)]
     try:
-        r = subprocess.run([py, "-c", code, text, str(ref), str(out)],
-                           capture_output=True, timeout=180)
+        env = dict(os.environ, COQUI_TOS_AGREED="1")
+        r = subprocess.run(cmd, capture_output=True, timeout=240, env=env)
         if r.returncode == 0 and out.is_file():
             return out
     except (OSError, subprocess.SubprocessError):
