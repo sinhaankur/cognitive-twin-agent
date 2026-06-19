@@ -37,22 +37,19 @@ struct ContentView: View {
 
             Spacer(minLength: 4)
 
-            // --- mic button + status ---
+            // --- mic button + status (Siri-style: doubles as Stop) ---
             Button(action: { model.micTapped() }) {
                 HStack(spacing: 8) {
-                    Image(systemName: model.voice.isListening ? "stop.fill" : "mic.fill")
-                    Text(model.voice.isListening ? "Listening…" : "Speak")
+                    Image(systemName: buttonIcon)
+                    Text(buttonLabel)
                 }
                 .font(.system(size: 14, weight: .semibold))
                 .padding(.horizontal, 22).padding(.vertical, 11)
-                .background(
-                    Capsule().fill(model.voice.isListening
-                                   ? Color.red.opacity(0.9)
-                                   : Color.accentColor)
-                )
+                .background(Capsule().fill(buttonColor))
                 .foregroundStyle(.white)
             }
             .buttonStyle(.plain)
+            .keyboardShortcut(.space, modifiers: [])   // Space to talk/stop, like a push button
 
             statusLine
                 .padding(.bottom, 14)
@@ -64,6 +61,23 @@ struct ContentView: View {
             phase += speed
             model.syncPhase()
         }
+    }
+
+    // Siri-style button: Speak → Listening (stop) → Stop (interrupt speech).
+    private var buttonIcon: String {
+        if model.voice.isSpeaking { return "stop.circle.fill" }
+        if model.voice.isListening { return "stop.fill" }
+        return "mic.fill"
+    }
+    private var buttonLabel: String {
+        if model.voice.isSpeaking { return "Stop" }
+        if model.voice.isListening { return "Listening…" }
+        return "Speak"
+    }
+    private var buttonColor: Color {
+        if model.voice.isSpeaking { return Color.orange.opacity(0.9) }
+        if model.voice.isListening { return Color.red.opacity(0.9) }
+        return Color.accentColor
     }
 
     private var statusLine: some View {

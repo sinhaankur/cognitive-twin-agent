@@ -21,6 +21,7 @@ final class VoiceEngine: ObservableObject {
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
+    private var didDeliverFinal = false   // guard: deliver onFinal once per turn
     private let synth = AVSpeechSynthesizer()
     // strong ref: AVSpeechSynthesizer.delegate is weak, so we must retain it or
     // the speaking-state callbacks (which light up the orb) never fire.
@@ -51,6 +52,8 @@ final class VoiceEngine: ObservableObject {
 
     func startListening() {
         guard !isListening else { return }
+        stopSpeaking()               // never listen over our own voice
+        didDeliverFinal = false      // fresh turn
         transcript = ""
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
@@ -80,8 +83,8 @@ final class VoiceEngine: ObservableObject {
                 if result.isFinal {
                     let text = result.bestTranscription.formattedString
                     Task { @MainActor in
-                        self.stopListening()
-                        if !text.isEmpty { self.onFinal?(text) }
+                        self.stopListening(submit: false)   // stop quietly…
+                        self.deliverFinal(text)             // …then deliver once
                     }
                 }
             }
@@ -91,26 +94,52 @@ final class VoiceEngine: ObservableObject {
         }
     }
 
-    func stopListening() {
+    func stopListening(submit: Bool = true) {
         guard isListening else { return }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         request?.endAudio()
-        task?.finish()
+        task?.cancel()        // cancel (not finish) so no late isFinal re-fires
         request = nil
         task = nil
         isListening = false
         level = 0
-        // If we have a transcript but no final fired, send it.
-        let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !text.isEmpty { onFinal?(text) }
+        if submit {
+            let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            deliverFinal(text)
+        }
+    }
+
+    /// Deliver the final transcript to the app exactly once per listening turn.
+    private func deliverFinal(_ text: String) {
+        guard !didDeliverFinal else { return }
+        didDeliverFinal = true
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !clean.isEmpty { onFinal?(clean) }
     }
 
     func speak(_ text: String) {
+        // Never stack utterances — stop anything in progress first.
+        if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
         let utter = AVSpeechUtterance(string: text)
         utter.rate = 0.5
         utter.voice = AVSpeechSynthesisVoice(language: "en-US")
         synth.speak(utter)
+    }
+
+    /// Stop talking immediately (tap-to-interrupt, like Siri).
+    func stopSpeaking() {
+        if synth.isSpeaking || synth.isPaused {
+            synth.stopSpeaking(at: .immediate)
+        }
+        isSpeaking = false
+    }
+
+    /// One control to rule them all: if speaking, shut up; if listening, stop and
+    /// submit; otherwise start listening. This is the Siri tap behaviour.
+    func primaryTap() {
+        if isSpeaking { stopSpeaking(); return }
+        toggleListening()
     }
 
     /// RMS of the audio buffer → a smoothed 0…1 level for the wave.

@@ -9,7 +9,8 @@ Inspired by [OpenJarvis](https://github.com/open-jarvis/OpenJarvis) ("Personal A
 on personal devices"). This is an original implementation — same spirit, my code.
 
 > Status: working MVP — model + skills + a bounded tool-calling agent loop +
-> policy-driven local model routing + a Siri-style voice UI + CLI.
+> policy-driven local model routing + local private memory + a Siri-style voice
+> UI (web + native macOS app) + CLI.
 > Open source (MIT). The `src/` tree holds earlier scaffolding (OAuth connectors,
 > IPC, menubar, multimodal) kept as future layers; the runnable agent is the
 > `cognitive_twin/` package.
@@ -122,6 +123,29 @@ How the voice loop stays local:
 
 No model installed for the policy? The voice path falls back to a tool-capable
 installed model (same logic as the CLI) so it still answers — locally.
+
+## Memory — local, private, secure
+
+The twin learns your patterns and stores them **on your machine only** — a single
+file (`~/.cognitive-twin/memory.jsonl`, override with `CTWIN_MEMORY_DIR`) written
+owner-only (chmod `0600`). There is no network code in the memory module; nothing
+is profiled off-device.
+
+```bash
+python -m cognitive_twin memory          # what's stored (counts + top topics)
+python -m cognitive_twin memory clear    # wipe it — you're in control
+```
+
+From that log the agent derives a short, private summary of your recurring
+interests and folds it into its system prompt, so it reasons more **like you** —
+the actual point of a "twin." A new skill uses the same signal:
+
+```bash
+python -m cognitive_twin "give me thoughts of the day"
+```
+
+`thoughts_of_the_day` connects today's tasks with your recurring interests and
+writes a short reflection in your own voice — all from local context.
 
 ## Adding a skill
 

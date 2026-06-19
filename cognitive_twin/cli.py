@@ -51,7 +51,9 @@ def build_agent(model: str | None = None, *, route: bool = True) -> Agent:
     # policies/model-routing.policy.json. An explicit --model or --no-route turns
     # it off and pins the one model.
     router = Router() if route else None
-    agent = Agent(client=client, registry=default_registry, router=router)
+    # use_memory=True: the real app learns the user's patterns locally (private,
+    # on-device). Tests construct Agent directly and leave it off.
+    agent = Agent(client=client, registry=default_registry, router=router, use_memory=True)
     # Remember the configured default so fallback can prefer it over a random
     # installed model (which might not support tool-calling).
     agent.configured_model = model  # type: ignore[attr-defined]
@@ -183,11 +185,23 @@ def _voice_command(rest: list[str]) -> int:
     return 0
 
 
+def _memory_command(rest: list[str]) -> int:
+    """`ctwin memory [clear]` — inspect or clear the local, private memory."""
+    from . import memory
+    if rest and rest[0] == "clear":
+        print("cleared local memory." if memory.clear() else "nothing to clear.")
+    else:
+        print(memory.status())
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    # `ctwin voice [...]` is a subcommand handled before the main parser.
+    # subcommands handled before the main parser
     raw = list(sys.argv[1:] if argv is None else argv)
     if raw and raw[0] == "voice":
         return _voice_command(raw[1:])
+    if raw and raw[0] == "memory":
+        return _memory_command(raw[1:])
 
     ap = argparse.ArgumentParser(prog="ctwin", description="Local-first personal AI agent.")
     ap.add_argument("prompt", nargs="*", help="one-shot prompt; omit for an interactive REPL")

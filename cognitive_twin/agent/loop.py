@@ -20,6 +20,7 @@ from typing import Any, Protocol
 from ..llm.ollama_client import ChatMessage
 from ..skills.base import SkillRegistry, default_registry
 from .router import RouteDecision, Router
+from .. import memory as _memory
 
 
 class ModelClient(Protocol):
@@ -60,6 +61,7 @@ class Agent:
         max_steps: int = 6,
         persona: str | None = None,
         router: Router | None = None,
+        use_memory: bool = False,
     ) -> None:
         self.client = client
         self.registry = registry or default_registry
@@ -69,6 +71,9 @@ class Agent:
         # model per the routing policy and applies it to the client. Left None in
         # tests so the scripted/mock client is used as-is.
         self.router = router
+        # Local, private memory: fold the user's habits into the persona so the
+        # twin reasons more like them, and record interactions. Off in tests.
+        self.use_memory = use_memory
 
     def run(self, user_input: str) -> AgentResult:
         decision: RouteDecision | None = None
@@ -78,8 +83,16 @@ class Agent:
             if hasattr(self.client, "model"):
                 self.client.model = decision.model  # type: ignore[attr-defined]
 
+        # Twin-mimicry: prepend a private, on-device summary of the user's
+        # recurring interests so the model answers in tune with how they think.
+        system_content = self.persona
+        if self.use_memory:
+            ctx = _memory.summary_for_prompt()
+            if ctx:
+                system_content = self.persona + "\n\n" + ctx
+
         messages: list[ChatMessage] = [
-            ChatMessage(role="system", content=self.persona),
+            ChatMessage(role="system", content=system_content),
             ChatMessage(role="user", content=user_input),
         ]
         tools = self.registry.tool_specs()
@@ -91,8 +104,12 @@ class Agent:
 
             if not reply.tool_calls:
                 # model produced a final answer
+                answer = reply.content.strip()
+                if self.use_memory:
+                    _memory.record(user_input, answer,
+                                   model=getattr(self.client, "model", None))
                 return AgentResult(
-                    answer=reply.content.strip(), steps=step, tool_calls=used, route=decision
+                    answer=answer, steps=step, tool_calls=used, route=decision
                 )
 
             # execute each requested tool call, append results, loop again

@@ -102,6 +102,52 @@ def daily_digest(tasks_file: str = "tasks.md", calendar_file: str = "") -> str:
     return "\n".join(out)
 
 
+@R.add(
+    "thoughts_of_the_day",
+    "Generate the user's 'thoughts of the day': a short, personal reflection "
+    "drawing on LOCAL context — today's date, the user's tasks, and their private "
+    "on-device history of recurring interests. Use this when the user asks for "
+    "thoughts of the day, a daily reflection, or what's on their mind.",
+    {"type": "object", "properties": {
+        "tasks_file": {"type": "string", "description": "tasks/notes filename (default tasks.md)"},
+    }},
+)
+def thoughts_of_the_day(tasks_file: str = "tasks.md") -> str:
+    """Return raw, local material for a daily reflection. The model shapes this
+    into thoughts written in the user's own voice (twin-mimicry)."""
+    from .. import memory  # local import to avoid a cycle at module load
+
+    today = _dt.date.today()
+    out: list[str] = [f"Today is {today.strftime('%A, %B %d, %Y')}."]
+
+    # today's tasks
+    try:
+        tp = _safe_path(tasks_file)
+        if tp.is_file():
+            lines = [ln.strip().lstrip("-* ").strip()
+                     for ln in tp.read_text(encoding="utf-8", errors="replace").splitlines()
+                     if ln.strip()]
+            if lines:
+                out.append("On the plate today: " + "; ".join(lines[:8]) + ".")
+    except ValueError:
+        pass
+
+    # private, on-device patterns
+    p = memory.patterns()
+    if p.get("topics"):
+        out.append("Lately the user keeps returning to: " + ", ".join(p["topics"]) + ".")
+    recent = memory.recent_prompts(3)
+    if recent:
+        out.append("Recently they asked about: " + " / ".join(recent) + ".")
+
+    out.append(
+        "\nWrite 2–3 short 'thoughts of the day' for this person, in their own "
+        "reflective voice — connecting today's tasks with their recurring "
+        "interests. Be concrete and personal, not generic motivation."
+    )
+    return "\n".join(out)
+
+
 def _today_events(ics: str, today: _dt.date) -> list[str]:
     """Minimal .ics: collect SUMMARY of VEVENTs whose DTSTART is today."""
     events: list[str] = []

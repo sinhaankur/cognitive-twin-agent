@@ -69,13 +69,28 @@ final class AppModel: ObservableObject {
     }
 
     func micTapped() {
-        if voice.isListening { voice.stopListening() } else {
+        // Siri-style single control:
+        //  - if it's talking, tapping interrupts (stops speech)
+        //  - if it's listening, tapping stops + submits
+        //  - otherwise, start a fresh turn
+        if voice.isSpeaking {
+            voice.stopSpeaking()
+            phase = .idle
+            return
+        }
+        if voice.isListening {
+            voice.stopListening()
+        } else {
+            voice.stopSpeaking()   // cancel any lingering speech
             answer = ""
+            transcript = ""
             voice.startListening()
         }
     }
 
     private func handle(_ text: String) {
+        // A new request cancels whatever it was saying (no pile-ups).
+        voice.stopSpeaking()
         transcript = text
         phase = .thinking
         Task {
