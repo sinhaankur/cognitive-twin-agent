@@ -11,3 +11,4 @@ macos/TwinVoice/.build/
 core/target/
 Cargo.lock
 core/CognitiveTwinCore.xcframework/
+macos/TwinVoice/AppIcon.icns

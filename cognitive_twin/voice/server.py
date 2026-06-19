@@ -92,10 +92,20 @@ class _Handler(BaseHTTPRequestHandler):
             })
         elif self.path == "/api/models":
             agent = self.server.agent  # type: ignore[attr-defined]
-            models = []
-            if hasattr(agent.client, "available_models"):
+            backend = getattr(agent, "backend", None)
+            if backend is not None:
+                # merged, provider-tagged list across Ollama + OpenAI backends
+                models = backend.list_models()
+            elif hasattr(agent.client, "available_models"):
                 models = agent.client.available_models()
+            else:
+                models = []
             self._json(200, {"models": models})
+        elif self.path == "/api/reflections":
+            # thoughts Anita had about your projects while you were away
+            from .. import soul
+            items = soul.pending_reflections(clear=False)
+            self._json(200, {"items": items, "soul": soul.status()})
         else:
             self._json(404, {"error": "not found"})
 
@@ -120,8 +130,14 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": "no model"})
                 return
             agent = self.server.agent  # type: ignore[attr-defined]
+            backend = getattr(agent, "backend", None)
             # Pin the chosen model and turn routing off so the user's choice sticks.
-            if hasattr(agent.client, "model"):
+            # With a multi-backend, the model id may select a different provider
+            # (e.g. "lmstudio/..."), so swap the whole client, not just its name.
+            if backend is not None:
+                temp = getattr(agent.client, "temperature", 0.4)
+                agent.client = backend.client_for(name, temperature=temp)
+            elif hasattr(agent.client, "model"):
                 agent.client.model = name
             agent.configured_model = name
             agent.router = None
@@ -134,6 +150,21 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/memory/clear":
             from .. import memory
             self._json(200, {"ok": memory.clear()})
+        elif self.path == "/api/reflect":
+            # Anita thinks about your projects (while you're away) and saves a
+            # thought. Best-effort; needs project seeds in memory + a reachable model.
+            from .. import soul
+            agent = self.server.agent  # type: ignore[attr-defined]
+            instruction = soul.reflection_prompt()
+            if not instruction:
+                self._json(200, {"ok": False, "reason": "no projects yet"})
+                return
+            try:
+                answer, _ = _run_once_capture(agent, instruction)
+                soul.add_reflection(answer)
+                self._json(200, {"ok": True, "thought": answer})
+            except Exception as e:
+                self._json(200, {"ok": False, "reason": str(e)})
         else:
             self._json(404, {"error": "not found"})
 

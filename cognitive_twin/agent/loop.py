@@ -130,6 +130,12 @@ class Agent:
                 if self.use_memory:
                     _memory.record(user_input, answer,
                                    model=getattr(self.client, "model", None))
+                    # let her grow a little with each exchange
+                    try:
+                        from .. import soul as _soul
+                        _soul.evolve_personality()
+                    except Exception:
+                        pass
                 return AgentResult(
                     answer=answer, steps=step, tool_calls=used, route=decision
                 )
