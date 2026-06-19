@@ -125,7 +125,70 @@ def _run_once(agent: Agent, prompt: str, explain: bool, *, repl: bool = False) -
     return True
 
 
+def _run_once_capture(agent: Agent, prompt: str) -> tuple[str, dict | None]:
+    """Run one prompt and RETURN (answer, route_dict) instead of printing — used
+    by the voice server. Shares the routed-model fallback behaviour of _run_once
+    (if the policy's model isn't pulled, pin a tool-capable installed one)."""
+    client = agent.client
+    pinned: str | None = None
+    route_dict: dict | None = None
+
+    if agent.router is not None and hasattr(client, "available_models"):
+        decision = agent.router.route(prompt)
+        installed = client.available_models()  # type: ignore[attr-defined]
+        base = decision.model.split(":")[0]
+        have = any(m == decision.model or m.split(":")[0] == base for m in installed)
+        used_model = decision.model
+        if not have and installed:
+            configured = getattr(agent, "configured_model", None)
+            pinned = _choose_fallback(configured, installed)
+            used_model = pinned or decision.model
+        route_dict = {
+            "model": used_model,
+            "policyModel": decision.model,
+            "rule": decision.rule_id,
+            "complexity": decision.task_complexity,
+            "risk": decision.risk_level,
+            "fellBack": pinned is not None,
+        }
+
+    saved_router = None
+    if pinned is not None:
+        client.model = pinned  # type: ignore[attr-defined]
+        saved_router, agent.router = agent.router, None
+    try:
+        result = agent.run(prompt)
+    finally:
+        if saved_router is not None:
+            agent.router = saved_router
+
+    return result.answer, route_dict
+
+
+def _voice_command(rest: list[str]) -> int:
+    """`ctwin voice` — launch the Siri-style voice UI. Default: native menubar
+    (needs rumps); --web runs the browser version (no extra deps)."""
+    va = argparse.ArgumentParser(prog="ctwin voice", description="Local Siri-style voice UI.")
+    va.add_argument("--web", action="store_true", help="run the browser UI instead of the menubar")
+    va.add_argument("--port", type=int, default=7878)
+    va.add_argument("--no-open", action="store_true", help="(web) don't auto-open the browser")
+    va.add_argument("--model", help="pin a model (otherwise policy routing chooses)")
+    a = va.parse_args(rest)
+    if a.web:
+        from .voice.server import serve
+        serve(a.port, open_browser=not a.no_open, model=a.model)
+    else:
+        from .voice.menubar import run
+        run(a.port)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    # `ctwin voice [...]` is a subcommand handled before the main parser.
+    raw = list(sys.argv[1:] if argv is None else argv)
+    if raw and raw[0] == "voice":
+        return _voice_command(raw[1:])
+
     ap = argparse.ArgumentParser(prog="ctwin", description="Local-first personal AI agent.")
     ap.add_argument("prompt", nargs="*", help="one-shot prompt; omit for an interactive REPL")
     ap.add_argument("--model", help="Ollama model — pins this model and disables routing")

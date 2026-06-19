@@ -1,0 +1,14 @@
+# Optional dependencies for Twin Voice (the Siri-style voice UI).
+#
+# The voice app works WITHOUT these:
+#   - text-to-speech uses macOS `say` (built in, no install)
+#   - speech-to-text uses the browser's Web Speech API in the web UI
+#
+# Install these to unlock:
+#   - local Whisper speech-to-text (fully on-device, for the CLI/menubar path)
+#   - the native macOS menubar launcher
+#
+#   pip install -r requirements-voice.txt
+
+faster-whisper>=1.1.0      # local, on-device speech-to-text
+rumps>=0.4.0               # native macOS menubar app (macOS only)

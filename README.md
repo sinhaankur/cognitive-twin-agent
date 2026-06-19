@@ -9,7 +9,7 @@ Inspired by [OpenJarvis](https://github.com/open-jarvis/OpenJarvis) ("Personal A
 on personal devices"). This is an original implementation — same spirit, my code.
 
 > Status: working MVP — model + skills + a bounded tool-calling agent loop +
-> policy-driven local model routing + CLI.
+> policy-driven local model routing + a Siri-style voice UI + CLI.
 > Open source (MIT). The `src/` tree holds earlier scaffolding (OAuth connectors,
 > IPC, menubar, multimodal) kept as future layers; the runnable agent is the
 > `cognitive_twin/` package.
@@ -33,6 +33,7 @@ python -m cognitive_twin                          # interactive REPL
 python -m cognitive_twin --skills                 # list available skills
 python -m cognitive_twin --model llama3.2 "..."   # pin one model (routing off)
 python -m cognitive_twin --route-explain "..."    # show which model the policy picked
+python -m cognitive_twin voice --web              # 🎙 Siri-style voice UI (browser)
 ```
 
 Put a `tasks.md` in your workspace (`~/.cognitive-twin/workspace/`, override with
@@ -83,6 +84,44 @@ isn't pulled, the agent stays local and falls back to an installed one.
 The heuristic is deliberately simple and honest — a starting signal, not a learned
 policy. Swapping in a learned classifier later is a drop-in. `guardrails.allowCloudFallback`
 is `false`: routing never leaves the machine.
+
+## Twin Voice — a local-first, Siri-style front end
+
+Talk to the twin. Speak a question, it answers out loud — built in the spirit of
+[Unhosted](https://github.com/unhosted-ai): the work stays on your machine.
+
+```bash
+python -m cognitive_twin voice            # native macOS menubar (needs rumps)
+python -m cognitive_twin voice --web      # browser UI, zero extra deps
+```
+
+The browser UI uses [kopiro/siriwave](https://github.com/kopiro/siriwave) for the
+reactive Siri wave (bundled locally — no CDN). The wave tracks state: resting →
+**listening** (big, fast) → **thinking** (quiet shimmer) → **speaking** (lively).
+
+How the voice loop stays local:
+
+| Piece | How | Local? |
+|---|---|---|
+| Text-to-speech | macOS `say` | ✅ built in, offline |
+| Speech-to-text (web UI) | browser Web Speech API | ⚠️ browser-dependent (some use a cloud service) |
+| Speech-to-text (CLI/menubar) | local Whisper (`faster-whisper`) | ✅ on-device, optional install |
+| Reasoning | the agent loop + Ollama | ✅ on-device |
+| Server | stdlib HTTP on `127.0.0.1` only | ✅ never exposed off the machine |
+
+### What works today (honest status)
+
+| Capability | Status | Notes |
+|---|---|---|
+| `say` talk-back | **shipped** | offline macOS voice; `/api/speak` |
+| Siri web UI (siriwave) | **shipped** | served at `127.0.0.1:7878`, verified |
+| Browser speech → agent → spoken reply | **shipped** | full loop via the web UI |
+| Live model routing in the voice path | **shipped** | reuses the tested router + fallback |
+| Local Whisper STT | **optional** | `pip install -r requirements-voice.txt` |
+| Native menubar launcher | **optional** | needs `rumps`; thin wrapper over the server |
+
+No model installed for the policy? The voice path falls back to a tool-capable
+installed model (same logic as the CLI) so it still answers — locally.
 
 ## Adding a skill
 

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Twin Voice</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      background: radial-gradient(ellipse at 50% 30%, #14161f 0%, #06070b 70%);
+      color: #f4f5f7;
+      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 100vh; gap: 18px; overflow: hidden; -webkit-user-select: none; user-select: none;
+    }
+    #wave {
+      width: min(640px, 92vw); height: 180px;
+      border-radius: 18px;
+    }
+    #status {
+      font-size: 13px; letter-spacing: .04em; color: #aab1c4; min-height: 20px;
+      text-align: center; text-transform: lowercase;
+    }
+    #transcript {
+      font-size: 19px; font-weight: 500; color: #fff; min-height: 26px;
+      text-align: center; max-width: min(640px, 92vw); padding: 0 12px;
+    }
+    #answer {
+      font-size: 15px; color: #d6dae6; text-align: center; line-height: 1.6;
+      max-width: min(620px, 90vw); padding: 4px 14px; min-height: 24px;
+      max-height: 34vh; overflow-y: auto;
+    }
+    .row { display: flex; gap: 12px; align-items: center; }
+    button {
+      appearance: none; border: 1px solid #2a2e3c; background: #11131b; color: #f4f5f7;
+      font: inherit; font-size: 13px; padding: 10px 18px; border-radius: 999px;
+      cursor: pointer; transition: background .2s, border-color .2s, transform .1s;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    button:hover { background: #1a1d28; border-color: #3a3f52; }
+    button:active { transform: translateY(1px); }
+    button.primary { background: #0a84ff; border-color: #0a84ff; }
+    button.primary:hover { background: #2b95ff; }
+    button.listening { background: #ff453a; border-color: #ff453a; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
+    .dot.on { background: #30d158; }
+    #foot { position: fixed; bottom: 14px; font-size: 11px; color: #5a6173; letter-spacing: .05em; }
+    #foot a { color: #7a90c0; }
+    .pill {
+      font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+      color: #8a92a6; border: 1px solid #262a37; border-radius: 999px; padding: 3px 9px;
+    }
+    #typed { display: none; gap: 8px; align-items: center; }
+    #typed input {
+      background: #0e1018; border: 1px solid #2a2e3c; color: #fff; border-radius: 999px;
+      padding: 9px 16px; font: inherit; font-size: 14px; width: min(420px, 70vw); outline: none;
+    }
+    #typed input:focus { border-color: #0a84ff; }
+  </style>
+</head>
+<body>
+  <canvas id="wave"></canvas>
+  <div id="transcript"></div>
+  <div id="answer"></div>
+  <div id="status">tap to speak</div>
+
+  <div class="row">
+    <button id="mic" class="primary"><span class="dot" id="micdot"></span> Speak</button>
+    <button id="typeToggle">Type instead</button>
+  </div>
+  <form id="typed">
+    <input id="typedInput" placeholder="Ask the twin…" autocomplete="off" />
+    <button type="submit" class="primary">Ask</button>
+  </form>
+
+  <div id="foot">Twin Voice · local-first · <span class="pill" id="modelPill">…</span></div>
+
+  <script src="/siriwave.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
