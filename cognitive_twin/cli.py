@@ -51,7 +51,34 @@ def build_agent(model: str | None = None, *, route: bool = True) -> Agent:
     # policies/model-routing.policy.json. An explicit --model or --no-route turns
     # it off and pins the one model.
     router = Router() if route else None
-    return Agent(client=client, registry=default_registry, router=router)
+    agent = Agent(client=client, registry=default_registry, router=router)
+    # Remember the configured default so fallback can prefer it over a random
+    # installed model (which might not support tool-calling).
+    agent.configured_model = model  # type: ignore[attr-defined]
+    return agent
+
+
+# Model families known to support tool/function calling in Ollama. Used to pick a
+# sane fallback when the policy's model isn't pulled. Not exhaustive — just a
+# preference order over "first installed", which may be a tool-less tiny model.
+_TOOL_CAPABLE_HINTS = ("qwen2.5", "qwen3", "llama3.1", "llama3.2", "mistral", "deepseek")
+
+
+def _choose_fallback(configured: str | None, installed: list[str]) -> str | None:
+    """Pick the best installed model to fall back to: the configured default if
+    it's present, else a known tool-capable model, else the first installed."""
+    if not installed:
+        return None
+    if configured:
+        base = configured.split(":")[0]
+        for m in installed:
+            if m == configured or m.split(":")[0] == base:
+                return m
+    for hint in _TOOL_CAPABLE_HINTS:
+        for m in installed:
+            if m.split(":")[0].startswith(hint):
+                return m
+    return installed[0]
 
 
 def _run_once(agent: Agent, prompt: str, explain: bool, *, repl: bool = False) -> bool:
@@ -68,7 +95,8 @@ def _run_once(agent: Agent, prompt: str, explain: bool, *, repl: bool = False) -
         base = decision.model.split(":")[0]
         have = any(m == decision.model or m.split(":")[0] == base for m in installed)
         if not have and installed:
-            pinned = installed[0]
+            configured = getattr(agent, "configured_model", None)
+            pinned = _choose_fallback(configured, installed)
             if explain:
                 print(
                     f"route · policy wanted {decision.model} ({decision.rule_id}); "
