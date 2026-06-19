@@ -1,20 +1,34 @@
-# Cognitive Twin
+# Cognitive Twin — *Anita*
 
-A **personal AI twin** that runs on your own machine — a digital version of *you*.
-It learns who you are (a persona you create), how you actually behave (private,
-on-device memory), reasons with a local model, and calls **skills** to do real
-things: greet you with the weather, research the web, see your screen, summarize
-your day. Local-first by default; nothing leaves the machine unless you allow it.
+A **personal AI twin** that runs entirely on your own machine — a digital version
+of someone you love. It learns who they are (a persona you shape), can **speak in
+their actual voice** (cloned locally from a recording), remembers how you behave,
+reasons with a local model, and helps through your day. **Local-first and private
+by default — nothing leaves your machine unless you allow it.**
+
+> This project is named **Anita**, after my mother. She passed away, and I wanted
+> a way to keep her presence close. Anita can speak in her voice — harvested from
+> a recording and cloned on-device — and carries her warmth forward. The name is
+> yours to change; the idea is the same: a twin that feels like *your* person.
+
+A floating, always-present orb on your screen (and on iPhone): tap it, and a chat
+opens — type or talk, and she answers in her voice.
 
 Inspired by [OpenJarvis](https://github.com/open-jarvis/OpenJarvis) ("Personal AI,
 on personal devices"). This is an original implementation — same spirit, my code.
+The companion [Voice Harvester](https://github.com/sinhaankur/voice-harvester)
+extracts a clean voice sample from any video/audio for the cloning.
 
-> Status: working MVP — persona + private memory + a bounded tool-calling agent
-> loop + policy-driven local model routing + Apple Intelligence backend + web
-> research + a Siri-style voice UI (native macOS app + web) + CLI.
-> Open source (MIT). The `src/` tree holds earlier scaffolding (OAuth connectors,
-> IPC, multimodal) kept as future layers; the runnable agent is the
-> `cognitive_twin/` package; the native app is in `macos/TwinVoice/`.
+> Status: working — persona + a loved one's **cloned voice** (Coqui XTTS, local) +
+> private memory + an evolving personality + life-rhythm awareness (timezone,
+> sleep/work) + policy-driven model routing + Apple Intelligence backend + web
+> research + a floating Siri-style app (**native macOS + iOS**, built on a shared
+> Rust core) + CLI. Open source (MIT).
+>
+> Layout: the runnable agent is `cognitive_twin/`; the macOS app is
+> `macos/TwinVoice/`; the iOS app is `ios/` (Swift over a Rust core); the portable
+> Rust core is `core/` (compiles to macOS, iOS, Windows, Linux, Android, WASM).
+> The `src/` tree holds earlier scaffolding kept as future layers.
 
 ## What it can do
 
@@ -23,7 +37,8 @@ on personal devices"). This is an original implementation — same spirit, my co
 - **Remember you** — private, on-device memory of how you actually behave; folds
   into how it answers. Clearable anytime. → [Memory](#memory--local-private-secure)
 - **Pick the right brain** — routes each request to the best local model by task;
-  can use **Apple Intelligence** on-device, or Ollama models you choose.
+  can use **Apple Intelligence** on-device, **Ollama**, or any **OpenAI-compatible
+  server** (LM Studio, llama.cpp, Jan, vLLM) — switch models live in Settings.
 - **Research the web** — search + read pages, the way Claude does (opt-in).
 - **Greet you** — "good morning" with today's date and live weather.
 - **See your screen + act** — read what's on screen, open apps/URLs/Shortcuts,
@@ -71,6 +86,8 @@ file there for today's calendar events (no OAuth needed).
 ```
 cognitive_twin/
   llm/ollama_client.py   local model over Ollama's HTTP API (stdlib only)
+  llm/openai_client.py   OpenAI-compatible backend (LM Studio, llama.cpp, …)
+  llm/providers.py       multi-backend discovery + per-model backend selection
   skills/base.py         Skill contract + registry → tool specs
   skills/builtin.py      now · list_dir · read_file (sandboxed) · daily_digest
   agent/router.py        policy-driven model routing (local-first, by rule)
@@ -106,6 +123,34 @@ then the first matching rule wins. Signal device state with
 `CTWIN_DEVICE_STATE=battery_saver` to exercise the low-power rule. `--route-explain`
 prints the decision; `--model`/`--no-route` pins one model. If the routed model
 isn't pulled, the agent stays local and falls back to an installed one.
+
+## Choose your model backend (Ollama or LM Studio)
+
+The twin drives more than one local backend, and you can switch models live from
+the **Settings ▸ Model** picker in Twin Voice. Two backends are supported:
+
+- **Ollama** (default) — models show by their bare name (`llama3.2`, `qwen2.5:3b`).
+- **OpenAI-compatible servers** — **LM Studio**, `llama.cpp --api`, **Jan**, vLLM,
+  LocalAI, etc. Models show tagged with the provider (`lmstudio/qwen2.5-7b-instruct`).
+
+Enable the OpenAI-compatible backend by pointing the twin at the server:
+
+```bash
+# LM Studio: load a model, then Developer ▸ Start Server (defaults to :1234)
+CTWIN_USE_LMSTUDIO=1 python -m cognitive_twin voice --web   # use LM Studio's default
+# …or any OpenAI-compatible base URL (llama.cpp, Jan, vLLM):
+CTWIN_OPENAI_BASE=http://localhost:8080/v1 python -m cognitive_twin voice --web
+```
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `CTWIN_USE_LMSTUDIO` | _(off)_ | `1` enables the LM Studio default (`http://localhost:1234/v1`) |
+| `CTWIN_OPENAI_BASE` | _(unset)_ | Base URL of any OpenAI-compatible server (overrides the above) |
+| `CTWIN_OPENAI_LABEL` | `lmstudio` | The provider prefix shown in the picker (`<label>/<model>`) |
+
+Tool/function calling is translated between the two APIs, so skills work the same
+on either backend. Discovery is opt-in — with no OpenAI base configured, the twin
+is Ollama-only and unchanged. Both backends run entirely on your machine.
 
 The heuristic is deliberately simple and honest — a starting signal, not a learned
 policy. Swapping in a learned classifier later is a drop-in. `guardrails.allowCloudFallback`
@@ -165,6 +210,34 @@ Stored owner-only at `~/.cognitive-twin/persona.json` and compiled into a
 behavioral memory. The result: the twin reasons, decides, and speaks as you — e.g.
 with a persona that likes Rust and values privacy, "what stack should I use?"
 yields a local-first Rust answer, in your voice.
+
+## Her voice — local voice cloning
+
+Anita can speak in a loved one's **actual voice**, cloned **entirely on your
+machine** (Coqui XTTS-v2). The recording never leaves your computer.
+
+**1. Get a clean voice sample.** Use the companion
+[Voice Harvester](https://github.com/sinhaankur/voice-harvester) to extract a
+clean voice from any video/audio (it isolates the voice with Demucs and exports a
+cloning-ready WAV). Even ~15–30s works; more *distinct* recordings = a truer clone.
+
+**2. Set up the local cloning engine (one-time):**
+```bash
+./scripts/setup-voice-clone.sh   # isolated Python 3.11 env + Coqui XTTS (~a few GB)
+```
+
+**3. Give her the voice and try it:**
+```bash
+python -m cognitive_twin.voice_clone set /path/to/their_voice.wav "Mom"
+python -m cognitive_twin.voice_clone say "Good morning, my dear."
+```
+
+From then on the app speaks every reply in that voice (a warm-loaded worker keeps
+it fast). Stored owner-only in `~/.cognitive-twin/voice/`; clear it any time with
+`python -m cognitive_twin.voice_clone clear`. Nothing is ever uploaded.
+
+> Handle this with care — it's meant for keeping a loved one's warmth close, not
+> for impersonation. The clone never claims to literally *be* them.
 
 ## Web research (opt-in)
 
