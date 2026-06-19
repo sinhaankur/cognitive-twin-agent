@@ -91,20 +91,30 @@ def has_reference() -> bool:
 
 
 # --- engine detection ---------------------------------------------------------
-def detect_engine() -> str | None:
-    """Which local cloning engine is available, if any. Checks a dedicated venv
-    first (CTWIN_TTS_PYTHON), then the current interpreter."""
+_SENTINEL = object()       # "engine not checked yet"
+_engine_cache: object = _SENTINEL
+
+
+def detect_engine(refresh: bool = False) -> str | None:
+    """Which local cloning engine is available, if any. Cached after the first
+    check — the probe spawns a subprocess (import TTS), which is slow (~6s), so we
+    only do it once per process unless refresh=True."""
+    global _engine_cache
+    if not refresh and _engine_cache is not _SENTINEL:
+        return _engine_cache  # type: ignore[return-value]
     py = _engine_python()
-    if py is None:
-        return None
-    for mod, name in (("TTS", "xtts"), ("f5_tts", "f5")):
-        try:
-            r = subprocess.run([py, "-c", f"import {mod}"], capture_output=True, timeout=20)
-            if r.returncode == 0:
-                return name
-        except (OSError, subprocess.SubprocessError):
-            pass
-    return None
+    result: str | None = None
+    if py is not None:
+        for mod, name in (("TTS", "xtts"), ("f5_tts", "f5")):
+            try:
+                r = subprocess.run([py, "-c", f"import {mod}"], capture_output=True, timeout=20)
+                if r.returncode == 0:
+                    result = name
+                    break
+            except (OSError, subprocess.SubprocessError):
+                pass
+    _engine_cache = result
+    return result
 
 
 def _engine_python() -> str | None:

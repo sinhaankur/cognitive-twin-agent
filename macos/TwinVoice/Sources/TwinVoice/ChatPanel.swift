@@ -28,8 +28,17 @@ struct ChatPanel: View {
             SiriOrb(amplitude: model.amplitude, phase: phase, tint: model.tint)
                 .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 1) {
-                Text(model.assistantName).font(.system(size: 13, weight: .semibold))
-                Text(model.serverUp ? SettingsView.displayName(model.modelName) : "waking…")
+                HStack(spacing: 5) {
+                    Text(model.assistantName).font(.system(size: 13, weight: .semibold))
+                    if model.clonedVoiceReady {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 9)).foregroundStyle(.pink)
+                            .help("Speaking in her voice")
+                    }
+                }
+                Text(model.serverUp
+                     ? (model.clonedVoiceReady ? "her voice" : SettingsView.displayName(model.modelName))
+                     : "waking…")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.secondary)
             }

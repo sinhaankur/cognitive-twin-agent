@@ -113,6 +113,9 @@ class _Handler(BaseHTTPRequestHandler):
             from .. import soul
             items = soul.pending_reflections(clear=False)
             self._json(200, {"items": items, "soul": soul.status()})
+        elif self.path == "/api/voice/clone/status":
+            from .. import voice_clone
+            self._json(200, {"ready": voice_clone.is_ready(), "status": voice_clone.status()})
         else:
             self._json(404, {"error": "not found"})
 
@@ -188,9 +191,6 @@ class _Handler(BaseHTTPRequestHandler):
             res = voice_clone.set_reference(path, person=person) if path else {"ok": False}
             res["status"] = voice_clone.status()
             self._json(200, res)
-        elif self.path == "/api/voice/clone/status":
-            from .. import voice_clone
-            self._json(200, {"ready": voice_clone.is_ready(), "status": voice_clone.status()})
         elif self.path == "/api/remember":
             from .. import voice_profile as vp
             data = self._read_json()
@@ -230,7 +230,22 @@ def make_server(port: int = DEFAULT_PORT, model: str | None = None) -> Threading
     # interactive_confirm=False: the GUI has no terminal y/N; we use _voice_confirm.
     httpd.agent = build_agent(model, route=True, interactive_confirm=False)  # type: ignore[attr-defined]
     control.set_confirm(_voice_confirm)  # ensure our confirm wins after build
+    _warm_voice_clone()  # preload engine detection + the XTTS model in the background
     return httpd
+
+
+def _warm_voice_clone() -> None:
+    """Warm the cloned-voice path off the main thread: cache engine detection so
+    /api/voice/clone/status is instant, and preload the XTTS model so her first
+    spoken reply is fast (not a ~40s cold load)."""
+    def warm():
+        try:
+            from .. import voice_clone
+            if voice_clone.detect_engine() and voice_clone.has_reference():
+                voice_clone._ensure_worker()  # loads the model, stays warm
+        except Exception:
+            pass
+    threading.Thread(target=warm, daemon=True).start()
 
 
 def serve(port: int = DEFAULT_PORT, *, open_browser: bool = True, model: str | None = None) -> None:

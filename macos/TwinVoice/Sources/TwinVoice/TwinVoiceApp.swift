@@ -178,7 +178,7 @@ final class AppModel: ObservableObject {
     }
     // The twin's name — the user's to choose. Defaults to Anita.
     @Published var assistantName: String =
-        UserDefaults.standard.string(forKey: "assistantName") ?? "Anita" {
+        UserDefaults.standard.string(forKey: "assistantName") ?? "Anita Sinha" {
         didSet { UserDefaults.standard.set(assistantName, forKey: "assistantName") }
     }
     // Orb size — adapts to screen, user-adjustable (persisted).
@@ -353,6 +353,7 @@ final class AppModel: ObservableObject {
         // weather) by default. The CLI stays local-first unless CTWIN_WEB is set.
         var childEnv = env
         childEnv["CTWIN_WEB"] = "1"
+        childEnv["COQUI_TOS_AGREED"] = "1"   // XTTS license: agreed (so her voice works headless)
         p.environment = childEnv
         do { try p.run(); serverProcess = p } catch { /* surfaced via serverUp staying false */ }
     }
