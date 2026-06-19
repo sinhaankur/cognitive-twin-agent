@@ -131,6 +131,7 @@ final class AppModel: ObservableObject {
     @Published var availableModels: [String] = []
     @Published var speakReplies = true        // toggle voice talk-back
     @Published var turns: [ChatTurn] = []     // the chat conversation
+    @Published var hasThoughtWaiting = false  // she has a reflection to share → orb glows
     // The twin's name — the user's to choose. Defaults to Anita.
     @Published var assistantName: String =
         UserDefaults.standard.string(forKey: "assistantName") ?? "Anita" {
@@ -229,13 +230,22 @@ final class AppModel: ObservableObject {
     }
 
     /// While she's running, let her quietly think about your projects now and
-    /// then (every ~20 min) so there's something waiting next time.
+    /// then (every ~20 min). When a new thought lands, the orb gently signals it.
     private var reflectTimer: Timer?
     private func startReflecting() {
         reflectTimer?.invalidate()
         reflectTimer = Timer.scheduledTimer(withTimeInterval: 1200, repeats: true) { [weak self] _ in
-            Task { await self?.agent.reflect() }
+            Task {
+                if let thought = await self?.agent.reflect(), !thought.isEmpty {
+                    await MainActor.run { self?.hasThoughtWaiting = true }
+                }
+            }
         }
+    }
+
+    /// Called when the user opens the chat — clear the "thought waiting" cue.
+    func chatOpened() {
+        hasThoughtWaiting = false
     }
 
     /// Auto-start the local Python agent server if it isn't already up, so the

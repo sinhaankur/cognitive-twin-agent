@@ -100,6 +100,17 @@ class Agent:
             who = _persona.to_prompt()
             if who:
                 parts.append(who)
+            # speak in a loved one's voice (e.g. learned from their texts)
+            try:
+                from .. import voice_profile as _vp
+                vp = _vp.voice_prompt()
+                if vp:
+                    parts.append(vp)
+                cm = _vp.custom_prompt()
+                if cm:
+                    parts.append(cm)
+            except Exception:
+                pass
             # her evolving self — who she's become through your conversations
             try:
                 from .. import soul as _soul

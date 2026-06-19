@@ -21,6 +21,11 @@ from pathlib import Path
 from .agent.loop import Agent
 from .agent.router import Router
 from .llm.ollama_client import OllamaClient, OllamaError
+from .llm.openai_client import OpenAIError
+from .llm import providers
+
+# Either backend can raise its own "brain unreachable / model missing" error.
+LLM_ERRORS = (OllamaError, OpenAIError)
 from . import skills  # noqa: F401  (registry exists)
 from .skills import builtin  # noqa: F401  (registers built-in skills)
 from .skills.base import default_registry
@@ -47,10 +52,24 @@ def build_agent(model: str | None = None, *, route: bool = True,
         or "llama3.2"
     )
     host = os.environ.get("CTWIN_OLLAMA_HOST") or cfg.get("host") or "http://localhost:11434"
-    client = OllamaClient(model=model, host=host)
+
+    # Multi-backend: Ollama plus an optional OpenAI-compatible server (LM Studio,
+    # llama.cpp, Jan, …). The backend stays Ollama-only unless an OpenAI base is
+    # configured, so default installs are unchanged.
+    backend = providers.MultiBackend(
+        ollama_host=host,
+        openai_base=providers.openai_base_url(cfg),
+        openai_label=providers.openai_label(cfg),
+    )
+    # Build the client for the configured model id; a `label/name` id selects the
+    # OpenAI backend, a bare name selects Ollama.
+    client = backend.client_for(model)
     # Policy-driven routing is on by default — pick a local model per request from
     # policies/model-routing.policy.json. An explicit --model or --no-route turns
-    # it off and pins the one model.
+    # it off and pins the one model. Routing only applies to Ollama models, so if
+    # the pinned model is on the OpenAI backend, leave routing off.
+    if route and backend.is_openai_model(model):
+        route = False
     router = Router() if route else None
     # use_memory=True: the real app learns the user's patterns locally (private,
     # on-device). Tests construct Agent directly and leave it off.
@@ -58,6 +77,9 @@ def build_agent(model: str | None = None, *, route: bool = True,
     # Remember the configured default so fallback can prefer it over a random
     # installed model (which might not support tool-calling).
     agent.configured_model = model  # type: ignore[attr-defined]
+    # Attach the backend so the voice server can discover models across providers
+    # and switch the active client when the user picks a different one.
+    agent.backend = backend  # type: ignore[attr-defined]
     # Screen-control actions confirm via an interactive y/N prompt — but only for
     # the terminal path. The voice server installs its own (non-blocking) confirm.
     if interactive_confirm:
@@ -121,7 +143,7 @@ def _run_once(agent: Agent, prompt: str, explain: bool, *, repl: bool = False) -
         saved_router, agent.router = agent.router, None
     try:
         result = agent.run(prompt)
-    except OllamaError as e:
+    except LLM_ERRORS as e:
         print(f"⚠ {e}{suffix}", file=sys.stderr)
         return False
     finally:
@@ -216,6 +238,39 @@ def _persona_command(rest: list[str]) -> int:
     return 0
 
 
+def _voiceprofile_command(rest: list[str]) -> int:
+    """`ctwin voiceprofile add "Name" <file>` / `status` / `clear` — teach Anita
+    to speak like someone, from samples of how they wrote."""
+    from . import voice_profile as vp
+    if rest and rest[0] == "add" and len(rest) >= 2:
+        person = rest[1]
+        text = ""
+        if len(rest) >= 3 and Path(rest[2]).is_file():
+            text = Path(rest[2]).read_text(encoding="utf-8")
+        else:
+            print(f"Paste {person}'s messages, then Ctrl-D:")
+            text = sys.stdin.read()
+        n = vp.add_samples(text, person=person)
+        print(f"Learned {n} samples of {person}'s voice.")
+    elif rest and rest[0] == "clear":
+        print("cleared." if vp.clear_voice() else "nothing to clear.")
+    else:
+        print(vp.status())
+    return 0
+
+
+def _remember_command(rest: list[str]) -> int:
+    """`ctwin remember "fact"` — teach Anita something to keep."""
+    from . import voice_profile as vp
+    if rest:
+        n = vp.remember(" ".join(rest))
+        print(f"Got it. ({n} things remembered)")
+    else:
+        facts = vp.custom_facts()
+        print("\n".join(f"- {f}" for f in facts) if facts else "nothing remembered yet.")
+    return 0
+
+
 def _control_command(rest: list[str]) -> int:
     """`ctwin control [on|status]` — show or hint at screen-control state."""
     from . import control
@@ -254,6 +309,10 @@ def main(argv: list[str] | None = None) -> int:
         return _control_command(raw[1:])
     if raw and raw[0] == "persona":
         return _persona_command(raw[1:])
+    if raw and raw[0] == "voiceprofile":
+        return _voiceprofile_command(raw[1:])
+    if raw and raw[0] == "remember":
+        return _remember_command(raw[1:])
 
     ap = argparse.ArgumentParser(prog="ctwin", description="Local-first personal AI agent.")
     ap.add_argument("prompt", nargs="*", help="one-shot prompt; omit for an interactive REPL")
@@ -288,7 +347,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise OllamaError("Ollama isn't running. Start it with `ollama serve`, then try again.")
         else:
             client.ensure_ready()  # type: ignore[attr-defined]
-    except OllamaError as e:
+    except LLM_ERRORS as e:
         print(f"⚠ {e}", file=sys.stderr)
         return 1
 
