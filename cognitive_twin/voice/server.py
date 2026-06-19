@@ -27,7 +27,19 @@ from typing import Any
 
 from . import tts
 from . import stt
+from .. import control
 from ..cli import build_agent, _run_once_capture  # agent wiring (see cli.py)
+
+
+# In the voice path there's no y/N dialog yet, so mutating screen actions are
+# auto-denied unless the user opts into auto-confirm (CTWIN_CONTROL_AUTOCONFIRM=1).
+# Read actions ("see the screen") are always allowed when control is enabled.
+def _voice_confirm(action: str) -> bool:
+    import os as _os
+    return _os.environ.get("CTWIN_CONTROL_AUTOCONFIRM", "").strip() in {"1", "true", "yes"}
+
+
+control.set_confirm(_voice_confirm)
 
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
@@ -115,7 +127,9 @@ class _Handler(BaseHTTPRequestHandler):
 def make_server(port: int = DEFAULT_PORT, model: str | None = None) -> ThreadingHTTPServer:
     """Build the HTTP server with a shared, routing-enabled agent attached."""
     httpd = ThreadingHTTPServer((HOST, port), _Handler)
-    httpd.agent = build_agent(model, route=True)  # type: ignore[attr-defined]
+    # interactive_confirm=False: the GUI has no terminal y/N; we use _voice_confirm.
+    httpd.agent = build_agent(model, route=True, interactive_confirm=False)  # type: ignore[attr-defined]
+    control.set_confirm(_voice_confirm)  # ensure our confirm wins after build
     return httpd
 
 

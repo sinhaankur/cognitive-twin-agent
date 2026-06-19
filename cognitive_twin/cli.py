@@ -36,7 +36,8 @@ def _load_config() -> dict:
     return {}
 
 
-def build_agent(model: str | None = None, *, route: bool = True) -> Agent:
+def build_agent(model: str | None = None, *, route: bool = True,
+                interactive_confirm: bool = True) -> Agent:
     cfg = _load_config()
     model = (
         model
@@ -57,6 +58,10 @@ def build_agent(model: str | None = None, *, route: bool = True) -> Agent:
     # Remember the configured default so fallback can prefer it over a random
     # installed model (which might not support tool-calling).
     agent.configured_model = model  # type: ignore[attr-defined]
+    # Screen-control actions confirm via an interactive y/N prompt — but only for
+    # the terminal path. The voice server installs its own (non-blocking) confirm.
+    if interactive_confirm:
+        _install_confirm()
     return agent
 
 
@@ -195,6 +200,33 @@ def _memory_command(rest: list[str]) -> int:
     return 0
 
 
+def _control_command(rest: list[str]) -> int:
+    """`ctwin control [on|status]` — show or hint at screen-control state."""
+    from . import control
+    if rest and rest[0] == "on":
+        print("Enable screen control for a session by setting CTWIN_CONTROL=1, e.g.:")
+        print("  CTWIN_CONTROL=1 python -m cognitive_twin \"what app am I in?\"")
+    else:
+        print(control.status())
+    return 0
+
+
+def _install_confirm() -> None:
+    """Wire the control layer's confirmation hook to an interactive y/N prompt
+    so every mutating screen action asks the user first."""
+    from . import control
+
+    def ask(action: str) -> bool:
+        try:
+            ans = input(f"⚠ {action} [y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return False
+        return ans in {"y", "yes"}
+
+    control.set_confirm(ask)
+
+
 def main(argv: list[str] | None = None) -> int:
     # subcommands handled before the main parser
     raw = list(sys.argv[1:] if argv is None else argv)
@@ -202,6 +234,8 @@ def main(argv: list[str] | None = None) -> int:
         return _voice_command(raw[1:])
     if raw and raw[0] == "memory":
         return _memory_command(raw[1:])
+    if raw and raw[0] == "control":
+        return _control_command(raw[1:])
 
     ap = argparse.ArgumentParser(prog="ctwin", description="Local-first personal AI agent.")
     ap.add_argument("prompt", nargs="*", help="one-shot prompt; omit for an interactive REPL")

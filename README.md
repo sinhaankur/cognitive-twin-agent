@@ -147,6 +147,33 @@ python -m cognitive_twin "give me thoughts of the day"
 `thoughts_of_the_day` connects today's tasks with your recurring interests and
 writes a short reflection in your own voice — all from local context.
 
+## Screen control — opt-in, permissioned, safe
+
+The twin can *see* your screen and take a few *safe* actions — but only if you
+turn it on. It deliberately does **not** do blind mouse/keyboard control.
+
+```bash
+python -m cognitive_twin control                       # show state (OFF by default)
+CTWIN_CONTROL=1 python -m cognitive_twin "what app am I in?"   # enable for a run
+```
+
+Safety model:
+
+- **Off by default.** Nothing works unless you set `CTWIN_CONTROL=1` (or enable it
+  at runtime). 
+- **Read actions** — `see_screen`, `read_screen` — never change anything (they use
+  macOS Accessibility; grant permission the first time in System Settings →
+  Privacy & Security → Accessibility).
+- **Safe actions** — `open_app`, `open_url`, `run_shortcut` — are **confirmed per
+  action**. In the terminal you get a `y/N` prompt; deny and nothing runs. App
+  names / URLs / shortcut names are validated and passed as arguments to specific
+  binaries — never interpolated into a shell.
+- In the voice app, mutating actions are auto-denied unless you opt into
+  `CTWIN_CONTROL_AUTOCONFIRM=1` (there's no dialog yet); read actions work when
+  control is enabled.
+
+This is the "assistant that can act," kept honest: local, scoped, and reversible.
+
 ## Adding a skill
 
 ```python

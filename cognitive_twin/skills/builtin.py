@@ -148,6 +148,46 @@ def thoughts_of_the_day(tasks_file: str = "tasks.md") -> str:
     return "\n".join(out)
 
 
+# ---- screen control (opt-in, permissioned, safe) -----------------------------
+# These delegate to control.py, which enforces the opt-in gate + per-action
+# confirmation. They no-op with a clear message when control is off.
+
+@R.add("see_screen", "See what's on screen right now: the frontmost app and its "
+       "open windows. Read-only. Use when the user asks what they're looking at.")
+def see_screen() -> str:
+    from .. import control
+    return control.current_app() + "\n" + control.list_windows()
+
+
+@R.add("read_screen", "Read the visible text of the frontmost window (read-only). "
+       "Use to answer questions about on-screen content.")
+def read_screen() -> str:
+    from .. import control
+    return control.read_screen_text()
+
+
+@R.add("open_app", "Open a macOS app by name (asks the user to confirm first).",
+       {"type": "object", "properties": {"name": {"type": "string", "description": "app name, e.g. Safari"}},
+        "required": ["name"]})
+def open_app(name: str) -> str:
+    from .. import control
+    return control.open_app(name)
+
+
+@R.add("open_url", "Open an http(s) URL in the browser (asks the user to confirm first).",
+       {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]})
+def open_url(url: str) -> str:
+    from .. import control
+    return control.open_url(url)
+
+
+@R.add("run_shortcut", "Run a macOS Shortcut by name (asks the user to confirm first).",
+       {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]})
+def run_shortcut(name: str) -> str:
+    from .. import control
+    return control.run_shortcut(name)
+
+
 def _today_events(ics: str, today: _dt.date) -> list[str]:
     """Minimal .ics: collect SUMMARY of VEVENTs whose DTSTART is today."""
     events: list[str] = []
