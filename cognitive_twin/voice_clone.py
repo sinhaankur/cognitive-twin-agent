@@ -160,10 +160,60 @@ def synthesize(text: str) -> Path | None:
     return None
 
 
+# --- persistent warm worker (keeps the model loaded → fast replies) -----------
+_worker: subprocess.Popen | None = None
+
+
+def _ensure_worker():
+    """Start (once) a long-lived XTTS process with the model preloaded, so each
+    reply renders in ~1-2s instead of a 10-15s cold load. XTTS only."""
+    global _worker
+    if _worker is not None and _worker.poll() is None:
+        return _worker
+    if detect_engine() != "xtts":
+        return None
+    py = _engine_python()
+    ref = reference_path()
+    if py is None or ref is None:
+        return None
+    worker_script = Path(__file__).resolve().parent / "_xtts_say.py"
+    try:
+        env = dict(os.environ, COQUI_TOS_AGREED="1")
+        _worker = subprocess.Popen(
+            [py, str(worker_script), "--serve", str(ref)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, text=True, env=env)
+        # wait for the "ready" line (model loaded)
+        line = _worker.stdout.readline()
+        if '"ready"' in line:
+            return _worker
+    except (OSError, subprocess.SubprocessError):
+        _worker = None
+    return _worker
+
+
+def synthesize_fast(text: str) -> Path | None:
+    """Render via the warm worker if possible; else fall back to one-shot."""
+    if not text.strip() or not is_ready():
+        return None
+    w = _ensure_worker()
+    out = _voice_dir() / OUT
+    if w is not None and w.poll() is None:
+        try:
+            w.stdin.write(json.dumps({"text": text, "out": str(out)}) + "\n")
+            w.stdin.flush()
+            resp = json.loads(w.stdout.readline() or "{}")
+            if resp.get("ok") and out.is_file():
+                return out
+        except (OSError, ValueError):
+            pass
+    return synthesize(text)  # cold fallback
+
+
 def speak(text: str) -> bool:
     """Render in the cloned voice and play it. Returns True if it played; False
     means the caller should fall back to the built-in voice."""
-    out = synthesize(text)
+    out = synthesize_fast(text)
     if out is None:
         return False
     player = shutil.which("afplay")  # macOS
