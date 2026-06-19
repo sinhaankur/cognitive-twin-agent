@@ -6,3 +6,5 @@ memory/runtime/
 memory/security/
 memory/connectors/cache/
 *.log
+macos/TwinVoice/Twin Voice.app/
+macos/TwinVoice/.build/
