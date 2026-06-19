@@ -1,4 +1,9 @@
-openai>=1.0.0
+# The agent core has NO runtime dependencies — it talks to Ollama over plain HTTP
+# (Python stdlib urllib) and is local-first by design. No cloud SDKs.
+#
+# Legacy subsystems under src/ (oauth connectors, secure storage) need these; they
+# are NOT required to run the agent (`python -m cognitive_twin`). Install only if
+# you're working on those layers.
 cryptography>=43.0.0
 keyring>=25.0.0
 requests>=2.32.0
