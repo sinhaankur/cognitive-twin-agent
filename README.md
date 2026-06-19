@@ -8,7 +8,8 @@ build a digest of your day — with no cloud dependency.
 Inspired by [OpenJarvis](https://github.com/open-jarvis/OpenJarvis) ("Personal AI,
 on personal devices"). This is an original implementation — same spirit, my code.
 
-> Status: working MVP — model + skills + a bounded tool-calling agent loop + CLI.
+> Status: working MVP — model + skills + a bounded tool-calling agent loop +
+> policy-driven local model routing + CLI.
 > Open source (MIT). The `src/` tree holds earlier scaffolding (OAuth connectors,
 > IPC, menubar, multimodal) kept as future layers; the runnable agent is the
 > `cognitive_twin/` package.
@@ -30,7 +31,8 @@ python -m cognitive_twin "what's the date?"
 python -m cognitive_twin "summarize my day"      # uses the daily_digest skill
 python -m cognitive_twin                          # interactive REPL
 python -m cognitive_twin --skills                 # list available skills
-python -m cognitive_twin --model llama3.2 "..."   # choose a model
+python -m cognitive_twin --model llama3.2 "..."   # pin one model (routing off)
+python -m cognitive_twin --route-explain "..."    # show which model the policy picked
 ```
 
 Put a `tasks.md` in your workspace (`~/.cognitive-twin/workspace/`, override with
@@ -44,13 +46,43 @@ cognitive_twin/
   llm/ollama_client.py   local model over Ollama's HTTP API (stdlib only)
   skills/base.py         Skill contract + registry → tool specs
   skills/builtin.py      now · list_dir · read_file (sandboxed) · daily_digest
-  agent/loop.py          persona + tools → model → run tool → feed back → repeat
+  agent/router.py        policy-driven model routing (local-first, by rule)
+  agent/loop.py          route → persona + tools → model → run tool → feed back → repeat
   cli.py                 one-shot + REPL entrypoint
 ```
 
 The loop is **bounded** (a step limit) and skills never crash it (errors are fed
 back to the model to recover) — deterministic guardrails over an autonomous loop.
 Persona comes from `system_dna.md`.
+
+## Model routing (local-first, by policy)
+
+Rather than send every request to one model — or to the cloud — the agent picks a
+**local model per request** from a policy file. This is the "right model for the
+job, on device" idea behind local-first agent research like
+[OpenJarvis](https://github.com/open-jarvis/OpenJarvis); here it's data-driven and
+inspectable.
+
+`policies/model-routing.policy.json` defines the models and the rules:
+
+```jsonc
+"routingRules": [
+  { "id": "rule_low_power", "when": { "deviceState": ["battery_saver"] }, "useModel": "fastFallback" },
+  { "id": "rule_deep_path", "when": { "taskComplexity": ["high"], "riskLevel": ["medium","high"] }, "useModel": "deepPlanner" },
+  { "id": "rule_fast_path", "when": { "taskComplexity": ["low","medium"], "riskLevel": ["low"] }, "useModel": "primary" }
+]
+```
+
+A small, transparent heuristic (`agent/router.py`) classifies each prompt into
+`taskComplexity` + `riskLevel` (length + a few keyword cues — no extra model call),
+then the first matching rule wins. Signal device state with
+`CTWIN_DEVICE_STATE=battery_saver` to exercise the low-power rule. `--route-explain`
+prints the decision; `--model`/`--no-route` pins one model. If the routed model
+isn't pulled, the agent stays local and falls back to an installed one.
+
+The heuristic is deliberately simple and honest — a starting signal, not a learned
+policy. Swapping in a learned classifier later is a drop-in. `guardrails.allowCloudFallback`
+is `false`: routing never leaves the machine.
 
 ## Adding a skill
 

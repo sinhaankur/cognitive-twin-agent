@@ -19,6 +19,7 @@ from typing import Any, Protocol
 
 from ..llm.ollama_client import ChatMessage
 from ..skills.base import SkillRegistry, default_registry
+from .router import RouteDecision, Router
 
 
 class ModelClient(Protocol):
@@ -30,6 +31,8 @@ class AgentResult:
     answer: str
     steps: int
     tool_calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    # which model the router picked for this run (None when routing is off)
+    route: RouteDecision | None = None
 
 
 def _load_persona() -> str:
@@ -56,13 +59,25 @@ class Agent:
         registry: SkillRegistry | None = None,
         max_steps: int = 6,
         persona: str | None = None,
+        router: Router | None = None,
     ) -> None:
         self.client = client
         self.registry = registry or default_registry
         self.max_steps = max_steps
         self.persona = persona if persona is not None else _load_persona()
+        # Optional policy-driven model router. When set, each run picks a local
+        # model per the routing policy and applies it to the client. Left None in
+        # tests so the scripted/mock client is used as-is.
+        self.router = router
 
     def run(self, user_input: str) -> AgentResult:
+        decision: RouteDecision | None = None
+        if self.router is not None:
+            decision = self.router.route(user_input)
+            # apply the chosen local model to the client if it supports it
+            if hasattr(self.client, "model"):
+                self.client.model = decision.model  # type: ignore[attr-defined]
+
         messages: list[ChatMessage] = [
             ChatMessage(role="system", content=self.persona),
             ChatMessage(role="user", content=user_input),
@@ -76,7 +91,9 @@ class Agent:
 
             if not reply.tool_calls:
                 # model produced a final answer
-                return AgentResult(answer=reply.content.strip(), steps=step, tool_calls=used)
+                return AgentResult(
+                    answer=reply.content.strip(), steps=step, tool_calls=used, route=decision
+                )
 
             # execute each requested tool call, append results, loop again
             for call in reply.tool_calls:
@@ -89,7 +106,7 @@ class Agent:
         last = next((m for m in reversed(messages) if m.role == "assistant"), None)
         answer = (last.content.strip() if last and last.content else
                   "[stopped] reached the step limit before finishing.")
-        return AgentResult(answer=answer, steps=self.max_steps, tool_calls=used)
+        return AgentResult(answer=answer, steps=self.max_steps, tool_calls=used, route=decision)
 
 
 def _parse_tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
