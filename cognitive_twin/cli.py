@@ -200,6 +200,22 @@ def _memory_command(rest: list[str]) -> int:
     return 0
 
 
+def _persona_command(rest: list[str]) -> int:
+    """`ctwin persona [setup|clear]` — create/inspect the twin's persona."""
+    from . import persona
+    if rest and rest[0] == "setup":
+        persona.setup()
+    elif rest and rest[0] == "clear":
+        print("cleared persona." if persona.clear() else "nothing to clear.")
+    else:
+        print(persona.status())
+        p = persona.load()
+        if not p.is_empty():
+            print("\n--- how the twin sees you ---")
+            print(persona.to_prompt())
+    return 0
+
+
 def _control_command(rest: list[str]) -> int:
     """`ctwin control [on|status]` — show or hint at screen-control state."""
     from . import control
@@ -236,6 +252,8 @@ def main(argv: list[str] | None = None) -> int:
         return _memory_command(raw[1:])
     if raw and raw[0] == "control":
         return _control_command(raw[1:])
+    if raw and raw[0] == "persona":
+        return _persona_command(raw[1:])
 
     ap = argparse.ArgumentParser(prog="ctwin", description="Local-first personal AI agent.")
     ap.add_argument("prompt", nargs="*", help="one-shot prompt; omit for an interactive REPL")

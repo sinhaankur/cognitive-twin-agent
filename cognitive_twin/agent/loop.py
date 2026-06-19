@@ -21,6 +21,7 @@ from ..llm.ollama_client import ChatMessage
 from ..skills.base import SkillRegistry, default_registry
 from .router import RouteDecision, Router
 from .. import memory as _memory
+from .. import persona as _persona
 
 
 class ModelClient(Protocol):
@@ -74,6 +75,14 @@ class Agent:
         # Local, private memory: fold the user's habits into the persona so the
         # twin reasons more like them, and record interactions. Off in tests.
         self.use_memory = use_memory
+        # Short-term conversation context (this session only, in memory) so
+        # follow-ups work: "what's the date?" → "and tomorrow?". Capped.
+        self.history: list[ChatMessage] = []
+        self.history_turns = 6   # keep the last N user+assistant messages
+
+    def reset_conversation(self) -> None:
+        """Forget the current session's back-and-forth (not the on-disk memory)."""
+        self.history = []
 
     def run(self, user_input: str) -> AgentResult:
         decision: RouteDecision | None = None
@@ -83,13 +92,18 @@ class Agent:
             if hasattr(self.client, "model"):
                 self.client.model = decision.model  # type: ignore[attr-defined]
 
-        # Twin-mimicry: prepend a private, on-device summary of the user's
-        # recurring interests so the model answers in tune with how they think.
-        system_content = self.persona
+        # Build the full system prompt: base persona (system_dna.md) + the user's
+        # editable persona profile (who they are) + a private summary of how they
+        # actually behave. Together: the twin reasons + speaks as this person.
+        parts = [self.persona]
         if self.use_memory:
+            who = _persona.to_prompt()
+            if who:
+                parts.append(who)
             ctx = _memory.summary_for_prompt()
             if ctx:
-                system_content = self.persona + "\n\n" + ctx
+                parts.append(ctx)
+        system_content = "\n\n".join(parts)
 
         messages: list[ChatMessage] = [
             ChatMessage(role="system", content=system_content),
