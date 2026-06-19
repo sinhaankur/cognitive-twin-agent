@@ -109,7 +109,7 @@ struct PersonaEditor: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save(); dismiss() }
                 }
-                ToolbarItem(placement: .cancelAction) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
             }

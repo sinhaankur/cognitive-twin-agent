@@ -1,0 +1,42 @@
+# xcodegen spec for the iOS Twin (Anita) app.
+# Generate the Xcode project:  cd ios && xcodegen generate
+# Then open Anita.xcodeproj, or build from the CLI (see build-ios.sh).
+name: Anita
+options:
+  bundleIdPrefix: com.sinhaankur
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+targets:
+  Anita:
+    type: application
+    platform: iOS
+    sources:
+      - path: TwinVoice/Sources
+    # Link the portable Rust core (built into an xcframework).
+    dependencies:
+      - framework: ../core/CognitiveTwinCore.xcframework
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sinhaankur.anita
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        # Apple-Silicon Mac: build the active arch only (the xcframework sim slice
+        # is arm64), so the simulator build doesn't try x86_64.
+        ONLY_ACTIVE_ARCH: YES
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+        # The bridging header lets Swift call the Rust C ABI (ctwin_*).
+        SWIFT_OBJC_BRIDGING_HEADER: TwinVoice/Sources/Anita-Bridging-Header.h
+        # Permission strings (required for mic + speech on device).
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Anita listens to your voice so you can talk with her — audio stays on your device."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Anita transcribes your speech on-device to understand you."
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        # Header search so the bridging header finds the xcframework's header.
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - ../core/include
+        TARGETED_DEVICE_FAMILY: "1,2"   # iPhone + iPad

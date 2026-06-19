@@ -12,3 +12,6 @@ core/target/
 Cargo.lock
 core/CognitiveTwinCore.xcframework/
 macos/TwinVoice/AppIcon.icns
+ios/Anita.xcodeproj/
+ios/DerivedData/
+*.xcuserstate
