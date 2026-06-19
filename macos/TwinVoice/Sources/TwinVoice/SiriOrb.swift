@@ -84,6 +84,24 @@ struct SiriOrb: View {
                     Circle()
                         .fill(tint.opacity(0.18))
                         .blendMode(.softLight)
+
+                    // --- reactive voice waveform (the "alive" layer) ---
+                    // A luminous wave across the orb that ripples with amplitude:
+                    // gentle flat line at rest, tall/fast while listening, flowing
+                    // while speaking. Two offset layers for depth.
+                    ForEach(0..<2, id: \.self) { layer in
+                        VoiceWave(
+                            amplitude: 0.06 + amplitude * 0.9,
+                            phase: phase * (1.4 + CGFloat(layer) * 0.5),
+                            frequency: 2.2 + CGFloat(layer) * 1.1
+                        )
+                        .stroke(
+                            (layer == 0 ? Color.white : tint).opacity(0.55 + amplitude * 0.4),
+                            style: StrokeStyle(lineWidth: 2.0 - CGFloat(layer) * 0.7, lineCap: .round)
+                        )
+                        .frame(width: s * 0.92, height: s * 0.55)
+                        .blendMode(.plusLighter)
+                    }
                 }
                 .frame(width: s, height: s)
                 .blur(radius: r * 0.10)               // melt the blobs together
@@ -113,5 +131,36 @@ struct SiriOrb: View {
             .scaleEffect(breathe)
             .animation(.easeInOut(duration: 0.25), value: amplitude)
         }
+    }
+}
+
+/// A horizontal voice wave that swells in the middle and tapers at the edges —
+/// the Siri-style ripple. `amplitude` (0…1) sets the height, `phase` flows it,
+/// `frequency` sets how many ripples. Animates smoothly via animatableData.
+struct VoiceWave: Shape {
+    var amplitude: CGFloat
+    var phase: CGFloat
+    var frequency: CGFloat
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(amplitude, phase) }
+        set { amplitude = newValue.first; phase = newValue.second }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let midY = rect.midY
+        let maxAmp = rect.height * 0.5 * min(1, amplitude)
+        let step: CGFloat = 2
+        var x: CGFloat = 0
+        p.move(to: CGPoint(x: 0, y: midY))
+        while x <= rect.width {
+            let t = x / rect.width                      // 0…1 across
+            let envelope = sin(.pi * t)                 // 0 at edges, 1 in middle
+            let y = midY + sin(t * frequency * 2 * .pi + phase) * maxAmp * envelope
+            p.addLine(to: CGPoint(x: x, y: y))
+            x += step
+        }
+        return p
     }
 }
