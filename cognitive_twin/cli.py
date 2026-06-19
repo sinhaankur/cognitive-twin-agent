@@ -259,6 +259,20 @@ def _voiceprofile_command(rest: list[str]) -> int:
     return 0
 
 
+def _rhythms_command(rest: list[str]) -> int:
+    """`ctwin rhythms` — show what Anita has learned about your day; or
+    `ctwin rhythms set <key> <value>` to state one (e.g. sleep 23:00)."""
+    from . import rhythms
+    if len(rest) >= 3 and rest[0] == "set":
+        rhythms.set_override(rest[1], " ".join(rest[2:]))
+        print(f"noted: {rest[1]} = {' '.join(rest[2:])}")
+    else:
+        print(rhythms.status())
+        print()
+        print(rhythms.summary_for_prompt())
+    return 0
+
+
 def _remember_command(rest: list[str]) -> int:
     """`ctwin remember "fact"` — teach Anita something to keep."""
     from . import voice_profile as vp
@@ -313,6 +327,8 @@ def main(argv: list[str] | None = None) -> int:
         return _voiceprofile_command(raw[1:])
     if raw and raw[0] == "remember":
         return _remember_command(raw[1:])
+    if raw and raw[0] == "rhythms":
+        return _rhythms_command(raw[1:])
 
     ap = argparse.ArgumentParser(prog="ctwin", description="Local-first personal AI agent.")
     ap.add_argument("prompt", nargs="*", help="one-shot prompt; omit for an interactive REPL")

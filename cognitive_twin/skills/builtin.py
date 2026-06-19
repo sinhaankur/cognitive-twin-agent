@@ -141,9 +141,8 @@ def thoughts_of_the_day(tasks_file: str = "tasks.md") -> str:
         out.append("Recently they asked about: " + " / ".join(recent) + ".")
 
     out.append(
-        "\nWrite 2–3 short 'thoughts of the day' for this person, in their own "
-        "reflective voice — connecting today's tasks with their recurring "
-        "interests. Be concrete and personal, not generic motivation."
+        "\nGive ONE single-sentence thought of the day for this person — short, "
+        "warm, and specific to their day. One line only, no list, no preamble."
     )
     return "\n".join(out)
 

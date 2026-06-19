@@ -159,9 +159,9 @@ def reflection_prompt() -> str:
     return (
         "While the user is away, think about what they've been working on: "
         + ", ".join(seeds)
-        + ". Offer one short, genuinely useful thought, question, or idea about "
-        "one of these — the kind of thing someone who cares about their work "
-        "would bring up later. One or two sentences, personal and specific."
+        + ". Offer ONE single-sentence thought or idea about one of these — the "
+        "kind of thing someone who cares about their work would bring up later. "
+        "One line only, personal and specific, no preamble."
     )
 
 

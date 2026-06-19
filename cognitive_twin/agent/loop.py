@@ -119,6 +119,14 @@ class Agent:
                     parts.append(grown)
             except Exception:
                 pass
+            # awareness of your day: timezone, sleep/work rhythm, activities
+            try:
+                from .. import rhythms as _rhythms
+                day = _rhythms.summary_for_prompt()
+                if day:
+                    parts.append(day)
+            except Exception:
+                pass
             ctx = _memory.summary_for_prompt()
             if ctx:
                 parts.append(ctx)
