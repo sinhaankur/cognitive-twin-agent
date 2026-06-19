@@ -15,6 +15,9 @@ pub mod persona;
 pub mod memory;
 pub mod router;
 
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
+
 pub use agent::{Agent, AgentReply};
 pub use llm::{ChatClient, ChatMessage, LlmError};
 pub use memory::{summary_for_prompt, top_topics, Entry};
