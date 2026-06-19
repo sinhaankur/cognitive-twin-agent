@@ -59,6 +59,9 @@ final class AppModel: ObservableObject {
     @Published var answer = ""
     @Published var modelName = "…"
     @Published var serverUp = false
+    @Published var showSettings = false
+    @Published var availableModels: [String] = []
+    @Published var speakReplies = true        // toggle voice talk-back
 
     let voice = VoiceEngine()
     private let agent = AgentClient()
@@ -99,6 +102,33 @@ final class AppModel: ObservableObject {
         do { try p.run(); serverProcess = p } catch { /* surfaced via serverUp staying false */ }
     }
 
+    /// Submit a typed question (from the input bar).
+    func submitText(_ text: String) {
+        voice.stopSpeaking()
+        handle(text)
+    }
+
+    /// Load installed models (for the settings picker).
+    func refreshModels() {
+        Task {
+            let models = await agent.models()
+            await MainActor.run { self.availableModels = models }
+        }
+    }
+
+    /// Switch the active model live.
+    func selectModel(_ name: String) {
+        Task {
+            let ok = await agent.setModel(name)
+            if ok { await MainActor.run { self.modelName = name } }
+        }
+    }
+
+    /// Wipe the local conversation memory (privacy control).
+    func clearMemory() {
+        Task { await agent.clearMemory() }
+    }
+
     func micTapped() {
         // Siri-style single control:
         //  - if it's talking, tapping interrupts (stops speech)
@@ -130,8 +160,12 @@ final class AppModel: ObservableObject {
                 await MainActor.run {
                     self.answer = reply.answer
                     if let m = reply.model { self.modelName = m }
-                    self.phase = .speaking
-                    self.voice.speak(reply.answer)
+                    if self.speakReplies {
+                        self.phase = .speaking
+                        self.voice.speak(reply.answer)
+                    } else {
+                        self.phase = .idle
+                    }
                 }
             } catch {
                 await MainActor.run {

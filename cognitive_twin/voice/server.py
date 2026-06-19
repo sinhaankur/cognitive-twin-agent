@@ -83,13 +83,19 @@ class _Handler(BaseHTTPRequestHandler):
             self._serve_file("app.js", "application/javascript; charset=utf-8")
         elif self.path == "/api/health":
             agent = self.server.agent  # type: ignore[attr-defined]
-            model = getattr(agent, "configured_model", None)
+            model = getattr(agent.client, "model", None) or getattr(agent, "configured_model", None)
             self._json(200, {
                 "ok": True,
                 "tts": tts.is_available(),
                 "stt_local": stt.is_available(),
                 "model": model,
             })
+        elif self.path == "/api/models":
+            agent = self.server.agent  # type: ignore[attr-defined]
+            models = []
+            if hasattr(agent.client, "available_models"):
+                models = agent.client.available_models()
+            self._json(200, {"models": models})
         else:
             self._json(404, {"error": "not found"})
 
@@ -107,11 +113,27 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(200, {"answer": f"(error: {e})", "route": None})
                 return
             self._json(200, {"answer": answer, "route": route})
+        elif self.path == "/api/model":
+            data = self._read_json()
+            name = (data.get("model") or "").strip()
+            if not name:
+                self._json(400, {"error": "no model"})
+                return
+            agent = self.server.agent  # type: ignore[attr-defined]
+            # Pin the chosen model and turn routing off so the user's choice sticks.
+            if hasattr(agent.client, "model"):
+                agent.client.model = name
+            agent.configured_model = name
+            agent.router = None
+            self._json(200, {"ok": True, "model": name})
         elif self.path == "/api/speak":
             data = self._read_json()
             text = (data.get("text") or "").strip()
             ok = tts.speak(text, blocking=False) if text else False
             self._json(200, {"ok": ok})
+        elif self.path == "/api/memory/clear":
+            from .. import memory
+            self._json(200, {"ok": memory.clear()})
         else:
             self._json(404, {"error": "not found"})
 

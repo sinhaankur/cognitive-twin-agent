@@ -52,16 +52,22 @@ struct SiriOrb: View {
                     Circle().fill(Color.black.opacity(0.55))
 
                     ForEach(blobs.indices, id: \.self) { i in
-                        let a = phase * (0.4 + CGFloat(i) * 0.06) + CGFloat(i) * (.pi * 2 / CGFloat(blobs.count))
-                        // orbit radius pulses with amplitude → "energetic" when active
-                        let orbit = r * (0.18 + 0.10 * sin(phase * 0.5 + CGFloat(i)))
-                            + r * amplitude * 0.12
+                        // alternate rotation direction per blob + varied speeds →
+                        // a richer, never-repeating swirl that feels alive at rest.
+                        let dir: CGFloat = (i % 2 == 0) ? 1 : -1
+                        let spin = phase * (0.35 + CGFloat(i) * 0.07) * dir
+                        let a = spin + CGFloat(i) * (.pi * 2 / CGFloat(blobs.count))
+                        // orbit radius breathes on its own + pulses with amplitude
+                        let orbit = r * (0.16 + 0.12 * sin(phase * 0.45 + CGFloat(i) * 1.7))
+                            + r * amplitude * 0.16
+                        // each blob also gently scales, so highlights shimmer
+                        let blobScale = 1.0 + 0.10 * sin(phase * 0.7 + CGFloat(i))
                         Circle()
                             .fill(blobs[i])
-                            .frame(width: r * 1.05, height: r * 1.05)
+                            .frame(width: r * 1.05 * blobScale, height: r * 1.05 * blobScale)
                             .offset(x: cos(a) * orbit, y: sin(a) * orbit)
                             .blendMode(.plusLighter)
-                            .opacity(0.85)
+                            .opacity(0.82)
                     }
 
                     // central white-hot core (grows when speaking/listening)

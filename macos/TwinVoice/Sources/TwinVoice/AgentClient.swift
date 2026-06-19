@@ -28,6 +28,43 @@ final class AgentClient {
         }
     }
 
+    /// GET /api/models — list installed local models.
+    func models() async -> [String] {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/models"))
+        req.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (obj["models"] as? [String]) ?? []
+        } catch {
+            return []
+        }
+    }
+
+    /// POST /api/model — switch the active model. Returns true on success.
+    func setModel(_ name: String) async -> Bool {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/model"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["model": name])
+        req.timeoutInterval = 8
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (obj["ok"] as? Bool) ?? false
+        } catch {
+            return false
+        }
+    }
+
+    /// POST /api/memory/clear — wipe the local conversation memory.
+    func clearMemory() async {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/memory/clear"))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 6
+        _ = try? await URLSession.shared.data(for: req)
+    }
+
     /// POST /api/ask — send a transcript, get the agent's answer + route info.
     func ask(_ text: String) async throws -> AgentReply {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/ask"))
