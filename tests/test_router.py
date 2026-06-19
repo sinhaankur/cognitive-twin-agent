@@ -19,6 +19,9 @@ from cognitive_twin.skills.base import SkillRegistry  # noqa: E402
 
 
 # A policy mirroring the committed one, inline so the test doesn't depend on disk.
+# Order matters: device constraints first, then risk, then complexity, then fast
+# path, then a catch-all — this is the safety-first ordering the committed policy
+# uses (and that live testing proved is the correct one).
 POLICY = {
     "version": "test",
     "models": {
@@ -29,10 +32,11 @@ POLICY = {
     "routingRules": [
         {"id": "rule_low_power", "when": {"deviceState": ["battery_saver", "thermal_throttle"]},
          "useModel": "fastFallback"},
-        {"id": "rule_deep_path", "when": {"taskComplexity": ["high"], "riskLevel": ["medium", "high"]},
-         "useModel": "deepPlanner"},
-        {"id": "rule_fast_path", "when": {"taskComplexity": ["low", "medium"], "riskLevel": ["low"]},
+        {"id": "rule_high_risk", "when": {"riskLevel": ["high"]}, "useModel": "deepPlanner"},
+        {"id": "rule_deep_path", "when": {"taskComplexity": ["high"]}, "useModel": "deepPlanner"},
+        {"id": "rule_fast_path", "when": {"taskComplexity": ["low", "medium"], "riskLevel": ["low", "medium"]},
          "useModel": "primary"},
+        {"id": "rule_default", "when": {}, "useModel": "primary"},
     ],
     "guardrails": {"allowCloudFallback": False},
 }
@@ -66,21 +70,55 @@ def test_route_fast_path():
     print("✓ route: simple → primary via fast path")
 
 
-def test_route_deep_path():
+def test_route_complex_low_risk_goes_deep():
+    """High complexity even at low risk should reach the deeper model — this
+    case fell through to 'none' before live testing exposed the gap."""
     r = Router(POLICY)
-    d = r.route("plan and deploy a risky migration to production, step by step")
-    # high complexity (plan/step by step) + high risk (deploy/production) → deep
+    d = r.route("analyze the trade-offs and design a migration plan, step by step")
+    assert d.task_complexity == "high", d.task_complexity
     assert d.rule_id == "rule_deep_path", d.rule_id
     assert d.model == "deepseek-r1-distill-qwen-14b", d.model
-    print("✓ route: complex + risky → deep planner")
+    print("✓ route: complex + low-risk → deep planner (no fall-through)")
 
 
-def test_route_low_power_overrides():
+def test_route_short_destructive_escalates():
+    """REGRESSION: a short, high-risk command (no planning cue) must still
+    escalate to the careful planner — not silently use the default model."""
     r = Router(POLICY)
-    d = r.route("what's the date?", device_state="battery_saver")
-    assert d.rule_id == "rule_low_power", d.rule_id
-    assert d.model == "qwen3:8b", d.model
-    print("✓ route: battery_saver → fast fallback (low-power rule wins)")
+    d = r.route("delete the production database and drop all backups")
+    assert d.risk_level == "high", d.risk_level
+    assert d.rule_id == "rule_high_risk", d.rule_id
+    assert d.model == "deepseek-r1-distill-qwen-14b", d.model
+    print("✓ route: short destructive command → high-risk planner (regression)")
+
+
+def test_route_low_power_overrides_even_simple():
+    """Device constraints win first: a throttled device must not run the big
+    model just because the task is simple."""
+    r = Router(POLICY)
+    for dev in ("battery_saver", "thermal_throttle"):
+        d = r.route("what's the date?", device_state=dev)
+        assert d.rule_id == "rule_low_power", (dev, d.rule_id)
+        assert d.model == "qwen3:8b", (dev, d.model)
+    print("✓ route: battery/thermal → fast fallback wins over fast path")
+
+
+def test_route_never_falls_through():
+    """Across a spread of inputs, every request resolves to a real model and a
+    named rule — the catch-all guarantees no 'none'."""
+    r = Router(POLICY)
+    prompts = [
+        "hi", "what's 2+2", "summarize my day",
+        "write a long essay " * 10,  # long → high complexity
+        "rm -rf the server", "deploy to prod",
+        "explain why the sky is blue in detail",
+    ]
+    for p in prompts:
+        for dev in (None, "battery_saver"):
+            d = r.route(p, device_state=dev)
+            assert d.rule_id != "none", (p, dev)
+            assert d.model in {"qwen3:14b", "qwen3:8b", "deepseek-r1-distill-qwen-14b"}, d.model
+    print("✓ route: no input falls through unrouted (catch-all holds)")
 
 
 def test_missing_policy_file_uses_default():
@@ -114,7 +152,8 @@ def test_agent_applies_routed_model_to_client():
     agent = Agent(client=client, registry=SkillRegistry(), persona="t", router=Router(POLICY))
     res = agent.run("analyze and deploy a risky production migration step by step")
     assert client.models_seen[0] == "deepseek-r1-distill-qwen-14b", client.models_seen
-    assert res.route is not None and res.route.rule_id == "rule_deep_path"
+    # risky + complex → high-risk rule fires first under the safety-first order
+    assert res.route is not None and res.route.rule_id == "rule_high_risk"
     print("✓ agent: routed model applied to client before chat")
 
 

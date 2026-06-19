@@ -23,27 +23,43 @@
   },
   "routingRules": [
     {
-      "id": "rule_fast_path",
-      "when": {
-        "taskComplexity": ["low", "medium"],
-        "riskLevel": ["low"]
-      },
-      "useModel": "primary"
-    },
-    {
       "id": "rule_low_power",
+      "comment": "Device constraints win first — a throttled/low-battery device must not run the big model.",
       "when": {
         "deviceState": ["battery_saver", "thermal_throttle"]
       },
       "useModel": "fastFallback"
     },
     {
-      "id": "rule_deep_path",
+      "id": "rule_high_risk",
+      "comment": "Any high-risk request gets the careful planner, regardless of how short it is.",
       "when": {
-        "taskComplexity": ["high"],
-        "riskLevel": ["medium", "high"]
+        "riskLevel": ["high"]
       },
       "useModel": "deepPlanner"
+    },
+    {
+      "id": "rule_deep_path",
+      "comment": "Complex planning, even at lower risk, benefits from the deeper model.",
+      "when": {
+        "taskComplexity": ["high"]
+      },
+      "useModel": "deepPlanner"
+    },
+    {
+      "id": "rule_fast_path",
+      "comment": "Everything else — quick, low-risk asks — goes to the default model.",
+      "when": {
+        "taskComplexity": ["low", "medium"],
+        "riskLevel": ["low", "medium"]
+      },
+      "useModel": "primary"
+    },
+    {
+      "id": "rule_default",
+      "comment": "Catch-all so nothing ever falls through unrouted.",
+      "when": {},
+      "useModel": "primary"
     }
   ],
   "escalation": {
