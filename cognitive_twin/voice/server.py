@@ -73,6 +73,13 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *args: Any) -> None:  # quiet by default
         pass
 
+    def _cloned_ready(self) -> bool:
+        try:
+            from .. import voice_clone
+            return voice_clone.is_ready()
+        except Exception:
+            return False
+
     # ---- routes -------------------------------------------------------------
     def do_GET(self) -> None:
         if self.path in ("/", "/index.html"):
@@ -145,8 +152,19 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/speak":
             data = self._read_json()
             text = (data.get("text") or "").strip()
-            ok = tts.speak(text, blocking=False) if text else False
-            self._json(200, {"ok": ok})
+            ok = False
+            if text:
+                # Prefer the loved one's cloned voice if it's set up; otherwise
+                # fall back to the warm built-in voice so speech always works.
+                try:
+                    from .. import voice_clone
+                    if voice_clone.is_ready():
+                        ok = voice_clone.speak(text)
+                except Exception:
+                    ok = False
+                if not ok:
+                    ok = tts.speak(text, blocking=False)
+            self._json(200, {"ok": ok, "cloned": ok and self._cloned_ready()})
         elif self.path == "/api/memory/clear":
             from .. import memory
             self._json(200, {"ok": memory.clear()})
@@ -161,6 +179,18 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/voice/clear":
             from .. import voice_profile as vp
             self._json(200, {"ok": vp.clear_voice()})
+        elif self.path == "/api/voice/clone":
+            # set the loved one's voice sample for cloning (by file path)
+            from .. import voice_clone
+            data = self._read_json()
+            path = (data.get("path") or "").strip()
+            person = (data.get("person") or "").strip()
+            res = voice_clone.set_reference(path, person=person) if path else {"ok": False}
+            res["status"] = voice_clone.status()
+            self._json(200, res)
+        elif self.path == "/api/voice/clone/status":
+            from .. import voice_clone
+            self._json(200, {"ready": voice_clone.is_ready(), "status": voice_clone.status()})
         elif self.path == "/api/remember":
             from .. import voice_profile as vp
             data = self._read_json()
