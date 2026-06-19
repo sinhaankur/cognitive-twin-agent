@@ -41,6 +41,33 @@ final class AgentClient {
         }
     }
 
+    /// POST /api/speak — speak text aloud server-side, in the cloned voice if set
+    /// up (falls back to the built-in voice). Returns true if it spoke as cloned.
+    @discardableResult
+    func speak(_ text: String) async -> Bool {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/speak"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text])
+        req.timeoutInterval = 180
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (obj["cloned"] as? Bool) ?? false
+        } catch { return false }
+    }
+
+    /// Is a cloned voice ready on the server?
+    func cloneReady() async -> Bool {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/voice/clone/status"))
+        req.timeoutInterval = 5
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (obj["ready"] as? Bool) ?? false
+        } catch { return false }
+    }
+
     /// POST /api/voice/add — teach Anita a loved one's voice from their writing.
     func addVoice(person: String, text: String) async -> Int {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/voice/add"))

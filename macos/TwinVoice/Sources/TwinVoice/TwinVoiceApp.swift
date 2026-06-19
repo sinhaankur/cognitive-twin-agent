@@ -156,6 +156,26 @@ final class AppModel: ObservableObject {
     @Published var speakReplies = true        // toggle voice talk-back
     @Published var turns: [ChatTurn] = []     // the chat conversation
     @Published var hasThoughtWaiting = false  // she has a reflection to share → orb glows
+    @Published var clonedVoiceReady = false   // her actual (cloned) voice is set up
+
+    /// Speak a reply in her cloned voice if available, else the built-in voice.
+    /// The orb shows the speaking state for the rough duration either way.
+    func speakReply(_ text: String) {
+        phase = .speaking
+        if clonedVoiceReady {
+            // Cloned voice renders + plays server-side (her real voice).
+            Task {
+                let ok = await agent.speak(text)
+                if !ok { await MainActor.run { self.voice.speak(text) } }  // fallback
+                // settle the orb after a rough estimate of speech length
+                let secs = min(20.0, 1.0 + Double(text.count) * 0.06)
+                try? await Task.sleep(nanoseconds: UInt64(secs * 1_000_000_000))
+                await MainActor.run { if self.phase == .speaking { self.phase = .idle } }
+            }
+        } else {
+            voice.speak(text)
+        }
+    }
     // The twin's name — the user's to choose. Defaults to Anita.
     @Published var assistantName: String =
         UserDefaults.standard.string(forKey: "assistantName") ?? "Anita" {
@@ -235,9 +255,12 @@ final class AppModel: ObservableObject {
                 self.answer = reply.answer
                 if let m = reply.model { self.modelName = m }
                 self.turns.append(ChatTurn(text: reply.answer, isUser: false))
-                if self.speakReplies { self.phase = .speaking; self.voice.speak(reply.answer) }
+                if self.speakReplies { self.speakReply(reply.answer) }
             }
         } catch { /* greeting is best-effort */ }
+        // Is her actual (cloned) voice ready? If so, she speaks in it from now on.
+        let ready = await agent.cloneReady()
+        await MainActor.run { self.clonedVoiceReady = ready }
         await shareReflections()
         startReflecting()
     }
@@ -413,8 +436,7 @@ final class AppModel: ObservableObject {
                     self.answer = answerText
                     self.turns.append(ChatTurn(text: answerText, isUser: false))
                     if self.speakReplies {
-                        self.phase = .speaking
-                        self.voice.speak(answerText)
+                        self.speakReply(answerText)
                     } else {
                         self.phase = .idle
                     }
