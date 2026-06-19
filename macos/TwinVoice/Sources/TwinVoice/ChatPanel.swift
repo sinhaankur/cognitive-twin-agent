@@ -34,14 +34,15 @@ struct ChatPanel: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button { model.showSettings = true } label: {
-                Image(systemName: "gearshape").foregroundStyle(.secondary)
-            }.buttonStyle(.plain)
+            Button { model.openSettings?() } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Settings")
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
-        .sheet(isPresented: $model.showSettings) {
-            SettingsView().environmentObject(model)
-        }
     }
 
     private var conversation: some View {

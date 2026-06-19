@@ -100,6 +100,14 @@ class Agent:
             who = _persona.to_prompt()
             if who:
                 parts.append(who)
+            # her evolving self — who she's become through your conversations
+            try:
+                from .. import soul as _soul
+                grown = _soul.personality_prompt()
+                if grown:
+                    parts.append(grown)
+            except Exception:
+                pass
             ctx = _memory.summary_for_prompt()
             if ctx:
                 parts.append(ctx)

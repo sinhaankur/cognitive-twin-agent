@@ -18,12 +18,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = AppModel()
     private var orbWindow: NSWindow!     // the always-on-screen circle
     private var chatWindow: NSWindow!    // the chat panel (toggled)
+    private var settingsWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // background app, NO Dock icon
+        model.openSettings = { [weak self] in self?.showSettings() }
         makeOrbWindow()
         makeChatWindow()
         model.start()                            // ready + greets independently
+    }
+
+    /// Open Settings as a real window (reliable from the borderless panel).
+    private func showSettings() {
+        if let w = settingsWindow {
+            w.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let w = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 440, height: 520),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        w.title = "\(model.assistantName) — Settings"
+        w.isReleasedWhenClosed = false
+        w.contentView = NSHostingView(rootView: SettingsView().environmentObject(model))
+        w.center()
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow = w
     }
 
     // 1) The floating orb — a small, borderless, always-on-top circle you can
@@ -104,6 +125,9 @@ final class AppModel: ObservableObject {
     @Published var modelName = "…"
     @Published var serverUp = false
     @Published var showSettings = false
+    /// Wired by the AppDelegate to open settings as a real window (a .sheet won't
+    /// reliably present from the borderless floating panel).
+    var openSettings: (() -> Void)?
     @Published var availableModels: [String] = []
     @Published var speakReplies = true        // toggle voice talk-back
     @Published var turns: [ChatTurn] = []     // the chat conversation
