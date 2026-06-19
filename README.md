@@ -1,19 +1,35 @@
 # Cognitive Twin
 
-A local-first personal AI agent that runs entirely on your own machine via
-[Ollama](https://ollama.com). It loads a persona, reasons with a local model, and
-calls **skills** (tools) to actually do things — get the date, read your notes,
-build a digest of your day — with no cloud dependency.
+A **personal AI twin** that runs on your own machine — a digital version of *you*.
+It learns who you are (a persona you create), how you actually behave (private,
+on-device memory), reasons with a local model, and calls **skills** to do real
+things: greet you with the weather, research the web, see your screen, summarize
+your day. Local-first by default; nothing leaves the machine unless you allow it.
 
 Inspired by [OpenJarvis](https://github.com/open-jarvis/OpenJarvis) ("Personal AI,
 on personal devices"). This is an original implementation — same spirit, my code.
 
-> Status: working MVP — model + skills + a bounded tool-calling agent loop +
-> policy-driven local model routing + local private memory + a Siri-style voice
-> UI (web + native macOS app) + CLI.
+> Status: working MVP — persona + private memory + a bounded tool-calling agent
+> loop + policy-driven local model routing + Apple Intelligence backend + web
+> research + a Siri-style voice UI (native macOS app + web) + CLI.
 > Open source (MIT). The `src/` tree holds earlier scaffolding (OAuth connectors,
-> IPC, menubar, multimodal) kept as future layers; the runnable agent is the
-> `cognitive_twin/` package.
+> IPC, multimodal) kept as future layers; the runnable agent is the
+> `cognitive_twin/` package; the native app is in `macos/TwinVoice/`.
+
+## What it can do
+
+- **Be you** — a persona (likes, dislikes, values, style) you create, so it
+  reasons and speaks as you, not a generic assistant. → [Persona](#persona)
+- **Remember you** — private, on-device memory of how you actually behave; folds
+  into how it answers. Clearable anytime. → [Memory](#memory--local-private-secure)
+- **Pick the right brain** — routes each request to the best local model by task;
+  can use **Apple Intelligence** on-device, or Ollama models you choose.
+- **Research the web** — search + read pages, the way Claude does (opt-in).
+- **Greet you** — "good morning" with today's date and live weather.
+- **See your screen + act** — read what's on screen, open apps/URLs/Shortcuts,
+  all permissioned and confirmed (opt-in). → [Screen control](#screen-control--opt-in-permissioned-safe)
+- **Talk** — a native macOS Siri-style app: speak to it, it speaks back.
+- **Reflect** — "thoughts of the day" connecting your tasks with your interests.
 
 ## Why
 
@@ -27,14 +43,23 @@ Local models already handle a large share of everyday queries. The gap is the
 # 1. install Ollama (https://ollama.com) and pull a tool-capable model
 ollama pull qwen2.5:3b        # or llama3.2, etc.
 
-# 2. run the agent (no Python deps needed for the core)
+# 2. make it yours (recommended) — describe who your twin is
+python -m cognitive_twin persona setup
+
+# 3. run the agent (no Python deps needed for the core)
 python -m cognitive_twin "what's the date?"
-python -m cognitive_twin "summarize my day"      # uses the daily_digest skill
+python -m cognitive_twin "good morning"           # greeting + weather (needs CTWIN_WEB=1)
+python -m cognitive_twin "summarize my day"       # daily_digest skill
 python -m cognitive_twin                          # interactive REPL
 python -m cognitive_twin --skills                 # list available skills
-python -m cognitive_twin --model llama3.2 "..."   # pin one model (routing off)
 python -m cognitive_twin --route-explain "..."    # show which model the policy picked
 python -m cognitive_twin voice --web              # 🎙 Siri-style voice UI (browser)
+```
+
+Want the native Mac app instead of the browser? Build it once:
+
+```bash
+cd macos/TwinVoice && ./build-app.sh && open "Twin Voice.app"
 ```
 
 Put a `tasks.md` in your workspace (`~/.cognitive-twin/workspace/`, override with
@@ -123,6 +148,34 @@ How the voice loop stays local:
 
 No model installed for the policy? The voice path falls back to a tool-capable
 installed model (same logic as the CLI) so it still answers — locally.
+
+## Persona
+
+The thing that makes this *your* twin: a small, local, editable profile — name,
+about, traits, **likes**, **dislikes**, values, communication style, expertise.
+
+```bash
+python -m cognitive_twin persona setup    # guided: describe who your twin is
+python -m cognitive_twin persona          # show it + how the twin "sees" you
+python -m cognitive_twin persona clear
+```
+
+Stored owner-only at `~/.cognitive-twin/persona.json` and compiled into a
+"WHO YOU ARE" block in the system prompt, combined with `system_dna.md` and your
+behavioral memory. The result: the twin reasons, decides, and speaks as you — e.g.
+with a persona that likes Rust and values privacy, "what stack should I use?"
+yields a local-first Rust answer, in your voice.
+
+## Web research (opt-in)
+
+Local-first by default, but the twin can reach the internet when you allow it
+(`CTWIN_WEB=1`; the macOS app enables it for its agent automatically):
+
+- `web_search` — DuckDuckGo (no API key) → top results with title, URL, snippet.
+- `fetch_url` — fetch a page and strip it to readable text.
+- `greeting` — "good morning" + date + live local weather (open-meteo, no key).
+
+Search-then-read, the way Claude does it — every call gated behind the opt-in.
 
 ## Memory — local, private, secure
 
