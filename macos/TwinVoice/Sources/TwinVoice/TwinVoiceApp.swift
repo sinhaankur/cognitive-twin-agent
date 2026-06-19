@@ -120,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             chat.setFrameOrigin(NSPoint(x: max(16, x), y: max(16, y)))
             chat.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            model.chatOpened()   // opening the chat clears the "thought waiting" glow
         }
     }
 }
