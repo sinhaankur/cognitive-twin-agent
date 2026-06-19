@@ -33,9 +33,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key>            <string>Twin Voice</string>
-  <key>CFBundleDisplayName</key>     <string>Twin Voice</string>
-  <key>CFBundleIdentifier</key>      <string>com.sinhaankur.twinvoice</string>
+  <key>CFBundleName</key>            <string>Anita</string>
+  <key>CFBundleDisplayName</key>     <string>Anita</string>
+  <key>CFBundleIdentifier</key>      <string>com.sinhaankur.anita</string>
   <key>CFBundleVersion</key>         <string>0.1.0</string>
   <key>CFBundleShortVersionString</key> <string>0.1.0</string>
   <key>CFBundlePackageType</key>     <string>APPL</string>
@@ -43,11 +43,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSMinimumSystemVersion</key>  <string>13.0</string>
   <key>NSHighResolutionCapable</key> <true/>
   <key>LSApplicationCategoryType</key> <string>public.app-category.productivity</string>
+  <!-- Menu-bar / floating app: no Dock icon -->
+  <key>LSUIElement</key>            <true/>
   <!-- Permission prompts (required or the app crashes on first use) -->
   <key>NSMicrophoneUsageDescription</key>
-  <string>Twin Voice listens to your voice so you can talk to your local AI - audio stays on this machine.</string>
+  <string>Anita listens to your voice so you can talk with her - audio stays on this machine.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
-  <string>Twin Voice transcribes your speech on-device to send your words to the local agent.</string>
+  <string>Anita transcribes your speech on-device to understand you.</string>
 </dict>
 </plist>
 PLIST

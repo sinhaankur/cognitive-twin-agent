@@ -6,6 +6,17 @@ struct SettingsView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
+    /// Friendly label for a (possibly provider-tagged) model id. Server tags
+    /// OpenAI-backend models as "lmstudio/<name>"; show that as "<name> · LM Studio".
+    static func displayName(_ id: String) -> String {
+        guard let slash = id.firstIndex(of: "/") else { return id }
+        let label = String(id[..<slash])
+        let name = String(id[id.index(after: slash)...])
+        guard !label.isEmpty, !name.isEmpty else { return id }
+        let provider = label == "lmstudio" ? "LM Studio" : label
+        return "\(name) · \(provider)"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -28,7 +39,7 @@ struct SettingsView: View {
                             Text(model.modelName).tag(model.modelName)
                         }
                         ForEach(model.availableModels, id: \.self) { m in
-                            Text(m).tag(m)
+                            Text(Self.displayName(m)).tag(m)
                         }
                     }
                     .pickerStyle(.menu)
@@ -36,10 +47,10 @@ struct SettingsView: View {
                     Button {
                         model.refreshModels()
                     } label: {
-                        Label("Refresh installed models", systemImage: "arrow.clockwise")
+                        Label("Refresh available models", systemImage: "arrow.clockwise")
                     }
 
-                    Text("Models run locally via Ollama. Pull more with `ollama pull <name>` in Terminal.")
+                    Text("Models run locally via Ollama or an OpenAI-compatible server (LM Studio, llama.cpp, Jan). Pull Ollama models with `ollama pull <name>`; for LM Studio, load a model and start its local server.")
                         .font(.caption).foregroundStyle(.secondary)
 
                     HStack(spacing: 6) {

@@ -118,13 +118,69 @@ final class VoiceEngine: ObservableObject {
         if !clean.isEmpty { onFinal?(clean) }
     }
 
+    /// An override voice identifier (from settings); nil = auto-pick the warmest.
+    var preferredVoiceID: String? {
+        didSet { _chosenVoice = nil }   // re-resolve next time
+    }
+    private var _chosenVoice: AVSpeechSynthesisVoice?
+
+    /// Pick the most natural available English voice: premium first, then
+    /// enhanced, then a known-warm default — so Anita sounds human, not robotic.
+    private func humaneVoice() -> AVSpeechSynthesisVoice? {
+        if let id = preferredVoiceID, let v = AVSpeechSynthesisVoice(identifier: id) {
+            return v
+        }
+        if let cached = _chosenVoice { return cached }
+
+        let english = AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix("en") }
+
+        // Prefer higher audio quality, and warm female voices Apple ships as
+        // premium/enhanced (Ava, Allison, Samantha, Zoe). Quality enum: default <
+        // enhanced < premium.
+        let warmNames = ["Ava", "Allison", "Samantha", "Zoe", "Serena", "Nora"]
+        func score(_ v: AVSpeechSynthesisVoice) -> Int {
+            var s = 0
+            switch v.quality {
+            case .premium: s += 100
+            case .enhanced: s += 50
+            default: break
+            }
+            if warmNames.contains(where: { v.name.contains($0) }) { s += 10 }
+            if v.language == "en-US" { s += 2 }
+            return s
+        }
+        let best = english.max { score($0) < score($1) }
+        _chosenVoice = best ?? AVSpeechSynthesisVoice(language: "en-US")
+        return _chosenVoice
+    }
+
     func speak(_ text: String) {
         // Never stack utterances — stop anything in progress first.
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
         let utter = AVSpeechUtterance(string: text)
-        utter.rate = 0.5
-        utter.voice = AVSpeechSynthesisVoice(language: "en-US")
+        // Warmer, more human delivery: a touch slower than default, natural pitch,
+        // gentle lead-in/out so it doesn't clip robotically.
+        utter.voice = humaneVoice()
+        utter.rate = 0.46
+        utter.pitchMultiplier = 1.02
+        utter.preUtteranceDelay = 0.05
+        utter.postUtteranceDelay = 0.10
         synth.speak(utter)
+    }
+
+    /// List installed English voices (for a settings picker), warmest first.
+    func availableVoices() -> [(id: String, label: String)] {
+        AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix("en") }
+            .sorted { a, b in
+                if a.quality != b.quality { return a.quality.rawValue > b.quality.rawValue }
+                return a.name < b.name
+            }
+            .map { v in
+                let q = v.quality == .premium ? " ✦" : v.quality == .enhanced ? " ·" : ""
+                return (v.identifier, "\(v.name) (\(v.language))\(q)")
+            }
     }
 
     /// Stop talking immediately (tap-to-interrupt, like Siri).

@@ -140,7 +140,7 @@ struct ContentView: View {
                 .fill(model.serverUp ? Color.green : Color.orange)
                 .frame(width: 7, height: 7)
             Text(model.serverUp
-                 ? "twin voice · local · \(model.modelName)"
+                 ? "twin voice · local · \(SettingsView.displayName(model.modelName))"
                  : "starting local agent…")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(.secondary)

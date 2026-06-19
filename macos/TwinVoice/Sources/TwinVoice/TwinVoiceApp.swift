@@ -4,49 +4,92 @@ import Foundation
 
 @main
 struct TwinVoiceApp: App {
-    @StateObject private var model = AppModel()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    var body: some Scene { Settings { EmptyView() } }
+}
 
-    var body: some Scene {
-        WindowGroup("Twin Voice") {
-            ContentView()
-                .environmentObject(model)
-                .frame(minWidth: 420, idealWidth: 480, maxWidth: 720,
-                       minHeight: 560, idealHeight: 640, maxHeight: 900)
-                .background(VisualEffectBackground())   // native translucent "glass"
-                .onAppear { model.start() }
+/// The app is exactly two things:
+///   1. a small CIRCULAR orb that floats, always on screen, on top of everything;
+///   2. a CHAT panel that appears when you click the orb (like Siri today).
+/// No Dock icon, no normal window — it runs independently in the background.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let model = AppModel()
+    private var orbWindow: NSWindow!     // the always-on-screen circle
+    private var chatWindow: NSWindow!    // the chat panel (toggled)
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)   // background app, NO Dock icon
+        makeOrbWindow()
+        makeChatWindow()
+        model.start()                            // ready + greets independently
+    }
+
+    // 1) The floating orb — a small, borderless, always-on-top circle you can
+    //    drag anywhere. Clicking it toggles the chat panel.
+    private func makeOrbWindow() {
+        let size: CGFloat = 84
+        let w = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: size, height: size),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        w.isOpaque = false
+        w.backgroundColor = .clear
+        w.level = .floating                       // stays above other windows
+        w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        w.isMovableByWindowBackground = true
+        w.hasShadow = false
+        w.ignoresMouseEvents = false
+        w.contentView = NSHostingView(
+            rootView: FloatingOrb(model: model) { [weak self] in self?.toggleChat() })
+        // place near the top-right by default
+        if let screen = NSScreen.main {
+            let f = screen.visibleFrame
+            w.setFrameOrigin(NSPoint(x: f.maxX - size - 24, y: f.maxY - size - 24))
         }
-        // A real, titled, movable window (keeps the title bar + traffic lights, but
-        // we make the bar transparent so the glass shows through — a proper app
-        // window, not a chrome-less floating panel).
-        .windowResizability(.contentSize)
-        .windowStyle(.titleBar)
-        .windowToolbarStyle(.unifiedCompact)
-        .commands {
-            CommandGroup(replacing: .newItem) {}   // no "New Window" — single window app
+        w.makeKeyAndOrderFront(nil)
+        orbWindow = w
+    }
+
+    // 2) The chat panel — appears next to the orb on click.
+    private func makeChatWindow() {
+        let w = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 520),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        w.isOpaque = false
+        w.backgroundColor = .clear
+        w.level = .floating
+        w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        w.isMovableByWindowBackground = true
+        w.hasShadow = true
+        w.contentView = NSHostingView(
+            rootView: ChatPanel(model: model)
+                .frame(width: 380, height: 520)
+                .background(VisualEffectBackground())
+                .clipShape(RoundedRectangle(cornerRadius: 22)))
+        chatWindow = w
+    }
+
+    private func toggleChat() {
+        guard let chat = chatWindow, let orb = orbWindow else { return }
+        if chat.isVisible {
+            chat.orderOut(nil)
+        } else {
+            // position the panel just below-left of the orb
+            let o = orb.frame
+            let x = min(o.maxX - 380, (NSScreen.main?.visibleFrame.maxX ?? o.maxX) - 396)
+            let y = o.minY - 528
+            chat.setFrameOrigin(NSPoint(x: max(16, x), y: max(16, y)))
+            chat.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 }
 
-/// App-level setup so it behaves like a proper Mac app: shows in the Dock,
-/// activates on launch, centers its window, and quits when the window closes.
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)        // Dock icon + menu bar
-        NSApp.activate(ignoringOtherApps: true)
-        DispatchQueue.main.async {
-            if let w = NSApp.windows.first {
-                w.titlebarAppearsTransparent = true
-                w.titleVisibility = .hidden
-                w.isMovableByWindowBackground = true   // drag anywhere to move
-                w.center()
-                w.makeKeyAndOrderFront(nil)
-            }
-        }
-    }
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
-    }
+/// One line in the chat panel.
+struct ChatTurn: Identifiable {
+    let id = UUID()
+    let text: String
+    let isUser: Bool
 }
 
 /// Owns the agent server lifecycle, the voice engine, and the conversation state.
@@ -62,6 +105,27 @@ final class AppModel: ObservableObject {
     @Published var showSettings = false
     @Published var availableModels: [String] = []
     @Published var speakReplies = true        // toggle voice talk-back
+    @Published var turns: [ChatTurn] = []     // the chat conversation
+    // The twin's name — the user's to choose. Defaults to Anita.
+    @Published var assistantName: String =
+        UserDefaults.standard.string(forKey: "assistantName") ?? "Anita" {
+        didSet { UserDefaults.standard.set(assistantName, forKey: "assistantName") }
+    }
+    // Orb size — adapts to screen, user-adjustable (persisted).
+    @Published var orbSize: CGFloat = AppModel.defaultOrbSize() {
+        didSet { UserDefaults.standard.set(Double(orbSize), forKey: "orbSize") }
+    }
+
+    /// Default orb size scaled to the main screen resolution (smaller on small
+    /// displays, larger on big ones), unless the user has set their own.
+    static func defaultOrbSize() -> CGFloat {
+        if let saved = UserDefaults.standard.object(forKey: "orbSize") as? Double, saved > 0 {
+            return CGFloat(saved)
+        }
+        let h = NSScreen.main?.frame.height ?? 1080
+        // ~6% of screen height, clamped to a sensible range.
+        return min(120, max(56, h * 0.06))
+    }
 
     let voice = VoiceEngine()
     private let agent = AgentClient()
@@ -195,6 +259,7 @@ final class AppModel: ObservableObject {
         // A new request cancels whatever it was saying (no pile-ups).
         voice.stopSpeaking()
         transcript = text
+        turns.append(ChatTurn(text: text, isUser: true))
         phase = .thinking
         Task {
             do {
@@ -210,6 +275,7 @@ final class AppModel: ObservableObject {
                 }
                 await MainActor.run {
                     self.answer = answerText
+                    self.turns.append(ChatTurn(text: answerText, isUser: false))
                     if self.speakReplies {
                         self.phase = .speaking
                         self.voice.speak(answerText)
