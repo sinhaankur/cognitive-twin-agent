@@ -80,17 +80,37 @@ final class AppModel: ObservableObject {
         ensureServer()
     }
 
+    /// Greet the user once on launch (good morning + weather), spoken aloud.
+    private var didGreet = false
+    private func greetOnLaunch() async {
+        guard !didGreet else { return }
+        didGreet = true
+        do {
+            let reply = try await agent.ask("Greet me for the day using your greeting tool. One or two warm sentences.")
+            await MainActor.run {
+                self.answer = reply.answer
+                if let m = reply.model { self.modelName = m }
+                if self.speakReplies { self.phase = .speaking; self.voice.speak(reply.answer) }
+            }
+        } catch { /* greeting is best-effort */ }
+    }
+
     /// Auto-start the local Python agent server if it isn't already up, so the
     /// user just launches the app — no terminal step.
     private func ensureServer() {
         Task {
-            if await agent.health() { await MainActor.run { self.serverUp = true }; return }
+            if await agent.health() {
+                await MainActor.run { self.serverUp = true }
+                await greetOnLaunch()
+                return
+            }
             launchPythonServer()
             // poll until it answers
             for _ in 0..<30 {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 if await agent.health() {
                     await MainActor.run { self.serverUp = true }
+                    await greetOnLaunch()
                     return
                 }
             }
@@ -106,6 +126,11 @@ final class AppModel: ObservableObject {
         p.currentDirectoryURL = URL(fileURLWithPath: repo)
         p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         p.arguments = ["python3", "-m", "cognitive_twin.voice.server", "--no-open"]
+        // The app is an interactive assistant — give its agent internet (search,
+        // weather) by default. The CLI stays local-first unless CTWIN_WEB is set.
+        var childEnv = env
+        childEnv["CTWIN_WEB"] = "1"
+        p.environment = childEnv
         do { try p.run(); serverProcess = p } catch { /* surfaced via serverUp staying false */ }
     }
 
