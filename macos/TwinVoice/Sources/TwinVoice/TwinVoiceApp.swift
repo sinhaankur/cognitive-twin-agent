@@ -21,15 +21,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
 
     private var voiceLearnWindow: NSWindow?
+    private var statusItem: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // background app, NO Dock icon
         model.openSettings = { [weak self] in self?.showSettings() }
         model.openVoiceLearn = { [weak self] in self?.showVoiceLearn() }
+        makeStatusItem()                         // menu-bar icon (like battery) — shows she's active
         makeOrbWindow()
         makeChatWindow()
         model.start()                            // ready + greets independently
     }
+
+    /// A menu-bar status icon (top-right) so you know Anita is running, with
+    /// Settings + actions tucked inside its menu.
+    private func makeStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = item.button {
+            button.image = NSImage(systemSymbolName: "circle.hexagongrid.fill",
+                                   accessibilityDescription: model.assistantName)
+            button.image?.isTemplate = true
+        }
+        let menu = NSMenu()
+        menu.addItem(withTitle: model.assistantName, action: nil, keyEquivalent: "")
+        menu.addItem(.separator())
+        let show = NSMenuItem(title: "Open \(model.assistantName)",
+                              action: #selector(menuShowOrb), keyEquivalent: "")
+        show.target = self; menu.addItem(show)
+        let chat = NSMenuItem(title: "Chat…", action: #selector(menuChat), keyEquivalent: "")
+        chat.target = self; menu.addItem(chat)
+        menu.addItem(.separator())
+        let settings = NSMenuItem(title: "Settings…", action: #selector(menuSettings), keyEquivalent: ",")
+        settings.target = self; menu.addItem(settings)
+        let voice = NSMenuItem(title: "Teach her a voice…", action: #selector(menuVoice), keyEquivalent: "")
+        voice.target = self; menu.addItem(voice)
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "Quit \(model.assistantName)", action: #selector(menuQuit), keyEquivalent: "q")
+        quit.target = self; menu.addItem(quit)
+        item.menu = menu
+        statusItem = item
+    }
+
+    @objc private func menuShowOrb() { orbWindow?.makeKeyAndOrderFront(nil) }
+    @objc private func menuChat() { toggleChat() }
+    @objc private func menuSettings() { showSettings() }
+    @objc private func menuVoice() { showVoiceLearn() }
+    @objc private func menuQuit() { NSApp.terminate(nil) }
 
     private func showVoiceLearn() {
         if let w = voiceLearnWindow {

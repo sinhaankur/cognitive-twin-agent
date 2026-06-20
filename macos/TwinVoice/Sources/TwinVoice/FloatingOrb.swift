@@ -9,6 +9,7 @@ struct FloatingOrb: View {
 
     @State private var phase: CGFloat = 0
     @State private var pulse: CGFloat = 0      // breathing pulse for "thought waiting"
+    @State private var pressed = false         // click/tap highlight
     private let timer = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -26,10 +27,19 @@ struct FloatingOrb: View {
                     .allowsHitTesting(false)
             }
 
-            SiriOrb(amplitude: model.amplitude, phase: phase, tint: model.tint)
-                .frame(width: model.orbSize, height: model.orbSize)
-                .contentShape(Circle())
-                .onTapGesture { onTap() }
+            ZStack {
+                SiriOrb(amplitude: model.amplitude, phase: phase, tint: model.tint)
+                // press highlight: a bright ring that flashes on click
+                Circle()
+                    .strokeBorder(Color.white.opacity(pressed ? 0.9 : 0), lineWidth: 3)
+                    .blur(radius: 1)
+            }
+            .frame(width: model.orbSize, height: model.orbSize)
+            .brightness(pressed ? 0.12 : 0)            // briefly brighten on press
+            .scaleEffect(pressed ? 0.92 : 1.0)         // satisfying "push" feel
+            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: pressed)
+            .contentShape(Circle())
+            .onTapGesture { flash(); onTap() }
         }
         // Fill the (larger) window with a transparent canvas so the glow can fade
         // out before the edge — no background, no square.
@@ -43,5 +53,11 @@ struct FloatingOrb: View {
         }
         .help(model.hasThoughtWaiting ? "\(model.assistantName) has a thought for you"
                                       : "\(model.assistantName) — click to chat")
+    }
+
+    /// Brief press highlight on click — the orb brightens, rings, and springs.
+    private func flash() {
+        pressed = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { pressed = false }
     }
 }
