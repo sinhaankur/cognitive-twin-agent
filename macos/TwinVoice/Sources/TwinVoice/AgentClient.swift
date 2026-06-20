@@ -82,6 +82,37 @@ final class AgentClient {
         } catch { return 0 }
     }
 
+    struct ActivityState { var enabled = false; var isPrivate = false }
+
+    /// GET /api/activity/status — is she observing your device + privacy state.
+    func activityStatus() async -> ActivityState {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/activity/status"))
+        req.timeoutInterval = 5
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let o = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return ActivityState(enabled: (o["enabled"] as? Bool) ?? false,
+                                 isPrivate: (o["private"] as? Bool) ?? false)
+        } catch { return ActivityState() }
+    }
+
+    /// POST /api/activity — control learning + privacy (enable/disable/private/
+    /// resume/snooze/clear).
+    @discardableResult
+    func activityAction(_ action: String, minutes: Int = 30) async -> ActivityState {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/activity"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["action": action, "minutes": minutes])
+        req.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let o = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return ActivityState(enabled: (o["enabled"] as? Bool) ?? false,
+                                 isPrivate: (o["private"] as? Bool) ?? false)
+        } catch { return ActivityState() }
+    }
+
     /// POST /api/remember — teach the twin a fact to keep (e.g. its own name).
     func remember(_ fact: String) async {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/remember"))

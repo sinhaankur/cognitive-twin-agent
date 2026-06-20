@@ -87,6 +87,20 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
+                Section("Learning") {
+                    Toggle("Learn how I work (watch my active app)",
+                           isOn: Binding(get: { model.activityEnabled },
+                                         set: { model.setActivityEnabled($0) }))
+                    Toggle("Private mode — pause all observation",
+                           isOn: Binding(get: { model.activityPrivate },
+                                         set: { model.setPrivate($0) }))
+                    Button { model.snooze(30) } label: {
+                        Label("Snooze 30 minutes", systemImage: "moon.zzz")
+                    }
+                    Text("\(model.assistantName) only learns your work patterns (which apps, when) when this is on — and never while Private. All on this Mac; turn it off any time.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
                 Section("Privacy") {
                     LabeledContent("Conversation memory", value: "stored on this Mac only")
                     Button(role: .destructive) {

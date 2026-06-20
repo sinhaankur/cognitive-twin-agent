@@ -116,6 +116,14 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/voice/clone/status":
             from .. import voice_clone
             self._json(200, {"ready": voice_clone.is_ready(), "status": voice_clone.status()})
+        elif self.path == "/api/activity/status":
+            from .. import activity
+            self._json(200, {
+                "enabled": activity.is_enabled(),
+                "private": activity.is_private(),
+                "observing": activity.observing(),
+                "status": activity.status(),
+            })
         else:
             self._json(404, {"error": "not found"})
 
@@ -197,6 +205,30 @@ class _Handler(BaseHTTPRequestHandler):
             fact = (data.get("fact") or "").strip()
             n = vp.remember(fact) if fact else len(vp.custom_facts())
             self._json(200, {"ok": bool(fact), "count": n})
+        elif self.path == "/api/activity":
+            # control device-activity learning + privacy. action: enable|disable|
+            # private|resume|snooze|sample|clear
+            from .. import activity
+            data = self._read_json()
+            action = (data.get("action") or "").strip()
+            if action == "enable":
+                activity.enable(True)
+            elif action == "disable":
+                activity.enable(False)
+            elif action == "private":
+                activity.pause(True)
+            elif action == "resume":
+                activity.pause(False)
+            elif action == "snooze":
+                activity.snooze(int(data.get("minutes", 30)))
+            elif action == "sample":
+                activity.sample()
+            elif action == "clear":
+                activity.clear()
+            self._json(200, {"ok": True, "status": activity.status(),
+                             "observing": activity.observing(),
+                             "private": activity.is_private(),
+                             "enabled": activity.is_enabled()})
         elif self.path == "/api/reflect":
             # Anita thinks about your projects (while you're away) and saves a
             # thought. Best-effort; needs project seeds in memory + a reachable model.
@@ -231,7 +263,24 @@ def make_server(port: int = DEFAULT_PORT, model: str | None = None) -> Threading
     httpd.agent = build_agent(model, route=True, interactive_confirm=False)  # type: ignore[attr-defined]
     control.set_confirm(_voice_confirm)  # ensure our confirm wins after build
     _warm_voice_clone()  # preload engine detection + the XTTS model in the background
+    _start_activity_sampler()  # observe device activity (only when enabled + not private)
     return httpd
+
+
+def _start_activity_sampler() -> None:
+    """Sample the frontmost app every ~90s so the twin learns how you work — but
+    ONLY when activity learning is enabled and not in private/snooze mode. The
+    privacy gate is checked inside activity.sample(), so this loop is always safe."""
+    def loop():
+        import time
+        from .. import activity
+        while True:
+            try:
+                activity.sample()   # no-op unless observing() is true
+            except Exception:
+                pass
+            time.sleep(90)
+    threading.Thread(target=loop, daemon=True).start()
 
 
 def _warm_voice_clone() -> None:

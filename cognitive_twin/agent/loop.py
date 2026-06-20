@@ -127,6 +127,14 @@ class Agent:
                     parts.append(day)
             except Exception:
                 pass
+            # how you actually work, learned from device activity (opt-in, private)
+            try:
+                from .. import activity as _activity
+                work = _activity.summary_for_prompt()
+                if work:
+                    parts.append(work)
+            except Exception:
+                pass
             ctx = _memory.summary_for_prompt()
             if ctx:
                 parts.append(ctx)

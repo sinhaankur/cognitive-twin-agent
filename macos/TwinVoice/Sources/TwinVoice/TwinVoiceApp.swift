@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var voiceLearnWindow: NSWindow?
     private var statusItem: NSStatusItem?
+    private var privacyItem: NSMenuItem?
+    private var learnItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // background app, NO Dock icon
@@ -31,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         makeOrbWindow()
         makeChatWindow()
         model.start()                            // ready + greets independently
+        model.refreshActivity()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.syncMenuChecks() }
     }
 
     /// A menu-bar status icon (top-right) so you know Anita is running, with
@@ -51,6 +55,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let chat = NSMenuItem(title: "Chat…", action: #selector(menuChat), keyEquivalent: "")
         chat.target = self; menu.addItem(chat)
         menu.addItem(.separator())
+        // Privacy controls — front and centre.
+        privacyItem = NSMenuItem(title: "Private mode (pause learning)",
+                                 action: #selector(menuTogglePrivate), keyEquivalent: "")
+        privacyItem?.target = self; menu.addItem(privacyItem!)
+        let snooze = NSMenuItem(title: "Snooze 30 min", action: #selector(menuSnooze), keyEquivalent: "")
+        snooze.target = self; menu.addItem(snooze)
+        learnItem = NSMenuItem(title: "Learn how I work", action: #selector(menuToggleLearn), keyEquivalent: "")
+        learnItem?.target = self; menu.addItem(learnItem!)
+        menu.addItem(.separator())
         let settings = NSMenuItem(title: "Settings…", action: #selector(menuSettings), keyEquivalent: ",")
         settings.target = self; menu.addItem(settings)
         let voice = NSMenuItem(title: "Teach her a voice…", action: #selector(menuVoice), keyEquivalent: "")
@@ -67,6 +80,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func menuSettings() { showSettings() }
     @objc private func menuVoice() { showVoiceLearn() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
+
+    @objc private func menuTogglePrivate() {
+        model.setPrivate(!model.activityPrivate)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.syncMenuChecks() }
+    }
+    @objc private func menuSnooze() {
+        model.snooze(30)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.syncMenuChecks() }
+    }
+    @objc private func menuToggleLearn() {
+        model.setActivityEnabled(!model.activityEnabled)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.syncMenuChecks() }
+    }
+
+    /// Reflect privacy/learning state as menu checkmarks + update the status glyph.
+    private func syncMenuChecks() {
+        privacyItem?.state = model.activityPrivate ? .on : .off
+        learnItem?.state = model.activityEnabled ? .on : .off
+        // when private, dim/slash the menu-bar icon so you can SEE she's paused
+        if let b = statusItem?.button {
+            let sym = model.activityPrivate ? "moon.zzz.fill" : "circle.hexagongrid.fill"
+            b.image = NSImage(systemSymbolName: sym, accessibilityDescription: model.assistantName)
+            b.image?.isTemplate = true
+        }
+    }
 
     private func showVoiceLearn() {
         if let w = voiceLearnWindow {
@@ -217,6 +255,33 @@ final class AppModel: ObservableObject {
     @Published var turns: [ChatTurn] = []     // the chat conversation
     @Published var hasThoughtWaiting = false  // she has a reflection to share → orb glows
     @Published var clonedVoiceReady = false   // her actual (cloned) voice is set up
+    @Published var activityEnabled = false    // she learns from your device activity
+    @Published var activityPrivate = false    // private/snooze mode — not observing
+
+    func refreshActivity() {
+        Task {
+            let s = await agent.activityStatus()
+            await MainActor.run { self.activityEnabled = s.enabled; self.activityPrivate = s.isPrivate }
+        }
+    }
+    func setActivityEnabled(_ on: Bool) {
+        Task {
+            let s = await agent.activityAction(on ? "enable" : "disable")
+            await MainActor.run { self.activityEnabled = s.enabled; self.activityPrivate = s.isPrivate }
+        }
+    }
+    func setPrivate(_ on: Bool) {
+        Task {
+            let s = await agent.activityAction(on ? "private" : "resume")
+            await MainActor.run { self.activityPrivate = s.isPrivate }
+        }
+    }
+    func snooze(_ minutes: Int) {
+        Task {
+            let s = await agent.activityAction("snooze", minutes: minutes)
+            await MainActor.run { self.activityPrivate = s.isPrivate }
+        }
+    }
 
     /// Speak a reply in her cloned voice if available, else the built-in voice.
     /// The orb shows the speaking state for the rough duration either way.

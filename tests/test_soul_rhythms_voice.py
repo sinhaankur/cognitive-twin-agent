@@ -132,6 +132,22 @@ def test_custom_memory_remember_and_compile():
     print("✓ custom memory: remember + compile + no duplicates")
 
 
+# ---------- activity (device learning) + privacy gate ----------
+def test_activity_off_by_default_and_private_gate():
+    from cognitive_twin import activity as A
+    A.enable(False)
+    assert A.observing() is False           # off by default
+    A.enable(True)
+    assert A.observing() is True
+    A.pause(True)
+    assert A.observing() is False           # PRIVATE mode hard-stops observation
+    assert A.sample() is None               # nothing recorded while private
+    A.pause(False)
+    assert A.observing() is True
+    A.enable(False)
+    print("✓ activity: off by default + private mode stops all observation")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
