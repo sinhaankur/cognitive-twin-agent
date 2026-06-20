@@ -59,14 +59,26 @@ def set_reference(path: str, *, person: str = "") -> dict[str, Any]:
 
     dst = _voice_dir() / SAMPLE
     try:
-        if src.suffix.lower() == ".wav":
+        if shutil.which("ffmpeg"):
+            # Clean the sample for cloning: strip silence (dead air dilutes the
+            # voice), normalize loudness, mono 22.05k. A gap-free sample of pure
+            # speech clones far more faithfully than raw audio with long pauses.
+            _filter = (
+                "silenceremove=start_periods=1:start_silence=0.1:start_threshold=-40dB:"
+                "stop_periods=-1:stop_silence=0.25:stop_threshold=-40dB,"
+                "loudnorm=I=-16:TP=-1.5:LRA=11"
+            )
+            r = subprocess.run(
+                ["ffmpeg", "-y", "-i", str(src), "-af", _filter,
+                 "-ar", "22050", "-ac", "1", str(dst)],
+                capture_output=True, timeout=180)
+            if r.returncode != 0 or not dst.exists():
+                # fall back to a plain copy/convert if the filter chain failed
+                subprocess.run(["ffmpeg", "-y", "-i", str(src), "-ar", "22050",
+                                "-ac", "1", str(dst)], capture_output=True, timeout=120)
+        elif src.suffix.lower() == ".wav":
             shutil.copy2(src, dst)
-        elif shutil.which("ffmpeg"):
-            subprocess.run(
-                ["ffmpeg", "-y", "-i", str(src), "-ar", "22050", "-ac", "1", str(dst)],
-                capture_output=True, timeout=120, check=False)
         else:
-            # no ffmpeg: keep the original extension, store as-is
             dst = _voice_dir() / ("reference" + src.suffix.lower())
             shutil.copy2(src, dst)
         os.chmod(dst, stat.S_IRUSR | stat.S_IWUSR)
