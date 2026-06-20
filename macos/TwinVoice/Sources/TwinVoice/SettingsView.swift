@@ -6,15 +6,51 @@ struct SettingsView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
-    /// Friendly label for a (possibly provider-tagged) model id. Server tags
-    /// OpenAI-backend models as "lmstudio/<name>"; show that as "<name> · LM Studio".
+    /// Friendly label for a (possibly provider-tagged) model id.
     static func displayName(_ id: String) -> String {
+        if id == AppModel.appleModelID { return id }
         guard let slash = id.firstIndex(of: "/") else { return id }
         let label = String(id[..<slash])
         let name = String(id[id.index(after: slash)...])
         guard !label.isEmpty, !name.isEmpty else { return id }
-        let provider = label == "lmstudio" ? "LM Studio" : label
-        return "\(name) · \(provider)"
+        return "\(name) · \(providerName(label))"
+    }
+
+    /// Which provider a model id belongs to (for grouping).
+    static func providerName(_ label: String) -> String {
+        switch label.lowercased() {
+        case "lmstudio": return "LM Studio"
+        case "unhosted": return "Unhosted"
+        default: return label.capitalized
+        }
+    }
+
+    static func provider(of id: String) -> String {
+        if id == AppModel.appleModelID { return "Apple Intelligence" }
+        if let slash = id.firstIndex(of: "/") {
+            return providerName(String(id[..<slash]))
+        }
+        return "Ollama"
+    }
+
+    /// Bare model name for display in a row (provider shown in the group header).
+    static func bareName(_ id: String) -> String {
+        if id == AppModel.appleModelID { return "On-device (Apple Intelligence)" }
+        if let slash = id.firstIndex(of: "/") { return String(id[id.index(after: slash)...]) }
+        return id
+    }
+    func bareName(_ id: String) -> String { Self.bareName(id) }
+
+    /// Providers present in the available models, in a stable, friendly order.
+    var groupedProviders: [String] {
+        let order = ["Apple Intelligence", "Unhosted", "Ollama", "LM Studio"]
+        let present = Set(model.availableModels.map { Self.provider(of: $0) })
+        var out = order.filter { present.contains($0) }
+        for p in present where !out.contains(p) { out.append(p) }  // any others
+        return out
+    }
+    func modelsFor(_ provider: String) -> [String] {
+        model.availableModels.filter { Self.provider(of: $0) == provider }
     }
 
     var body: some View {
@@ -30,36 +66,45 @@ struct SettingsView: View {
             .padding(.bottom, 18)
 
             Form {
-                Section("Model") {
-                    Picker("Local model", selection: Binding(
-                        get: { model.modelName },
-                        set: { model.selectModel($0) }
-                    )) {
-                        if model.availableModels.isEmpty {
-                            Text(model.modelName).tag(model.modelName)
+                Section {
+                    // LM Studio-style picker: models grouped by provider, each a
+                    // tappable row with a checkmark for the active one.
+                    if model.availableModels.isEmpty {
+                        Text("No models found. Start Ollama / LM Studio / Unhosted, then Refresh.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    ForEach(groupedProviders, id: \.self) { prov in
+                        HStack {
+                            Text(prov.uppercased())
+                                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            if prov == "Unhosted" {
+                                Text("your hardware").font(.caption2).foregroundStyle(.green)
+                            }
                         }
-                        ForEach(model.availableModels, id: \.self) { m in
-                            Text(Self.displayName(m)).tag(m)
+                        .padding(.top, 4)
+                        ForEach(modelsFor(prov), id: \.self) { m in
+                            Button { model.selectModel(m) } label: {
+                                HStack {
+                                    Image(systemName: m == model.modelName ? "checkmark.circle.fill" : "circle")
+                                        .foregroundStyle(m == model.modelName ? Color.accentColor : .secondary)
+                                    Text(bareName(m))
+                                    Spacer()
+                                }
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .pickerStyle(.menu)
-
-                    Button {
-                        model.refreshModels()
-                    } label: {
-                        Label("Refresh available models", systemImage: "arrow.clockwise")
+                    Button { model.refreshModels() } label: {
+                        Label("Refresh models", systemImage: "arrow.clockwise")
                     }
-
-                    Text("Models run locally via Ollama or an OpenAI-compatible server (LM Studio, llama.cpp, Jan). Pull Ollama models with `ollama pull <name>`; for LM Studio, load a model and start its local server.")
-                        .font(.caption).foregroundStyle(.secondary)
-
-                    HStack(spacing: 6) {
-                        Image(systemName: model.appleAvailable ? "apple.logo" : "exclamationmark.triangle")
-                            .font(.caption)
-                        Text(model.appleStatus)
-                            .font(.caption)
-                    }
-                    .foregroundStyle(model.appleAvailable ? .green : .secondary)
+                    .padding(.top, 4)
+                } header: {
+                    Text("Model")
+                } footer: {
+                    Text("Local via Ollama, LM Studio, or your own Unhosted cluster — or Apple Intelligence on-device. Anita auto-detects Unhosted if it's running.")
+                        .font(.caption)
                 }
 
                 Section("Voice") {
