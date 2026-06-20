@@ -195,6 +195,23 @@ final class AppModel: ObservableObject {
     func addVoice(person: String, text: String) async -> Int {
         await agent.addVoice(person: person, text: text)
     }
+
+    /// The user renamed their twin — persist it into the persona so the agent
+    /// also refers to itself by the new name. (assistantName already persists to
+    /// UserDefaults via its didSet.)
+    func renamed() {
+        let name = assistantName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        Task { await agent.remember("Your name is \(name).") }
+    }
+
+    /// Set a recording as the cloned voice (from a file the user picks). Returns
+    /// true when the voice is set up and ready.
+    func setVoiceFile(path: String, person: String) async -> Bool {
+        let ok = await agent.setVoiceClone(path: path, person: person)
+        await MainActor.run { self.clonedVoiceReady = ok }
+        return ok
+    }
     @Published var availableModels: [String] = []
     @Published var speakReplies = true        // toggle voice talk-back
     @Published var turns: [ChatTurn] = []     // the chat conversation

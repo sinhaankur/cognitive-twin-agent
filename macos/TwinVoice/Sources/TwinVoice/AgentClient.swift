@@ -82,6 +82,30 @@ final class AgentClient {
         } catch { return 0 }
     }
 
+    /// POST /api/remember — teach the twin a fact to keep (e.g. its own name).
+    func remember(_ fact: String) async {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/remember"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["fact": fact])
+        req.timeoutInterval = 6
+        _ = try? await URLSession.shared.data(for: req)
+    }
+
+    /// POST /api/voice/clone — set a recording as the cloned voice (by file path).
+    func setVoiceClone(path: String, person: String) async -> Bool {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/voice/clone"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["path": path, "person": person])
+        req.timeoutInterval = 60
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (obj["ready"] as? Bool) ?? false
+        } catch { return false }
+    }
+
     /// GET /api/reflections — thoughts Anita had about your projects while away.
     func reflections() async -> [String] {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/reflections"))

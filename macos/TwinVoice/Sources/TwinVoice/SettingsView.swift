@@ -66,18 +66,24 @@ struct SettingsView: View {
                     Toggle("Speak replies aloud", isOn: $model.speakReplies)
                 }
 
-                Section("Who she is") {
+                Section("Customize") {
                     HStack {
-                        Text("Name")
-                        TextField("Anita", text: $model.assistantName)
+                        Text("Name your twin")
+                        Spacer()
+                        TextField("e.g. Anita, Mom, Dad…", text: $model.assistantName)
                             .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 200)
+                            .onSubmit { model.renamed() }
                     }
+                    Text("Call your twin whatever feels right — it's yours. The name shows up everywhere and shapes how it refers to itself.")
+                        .font(.caption).foregroundStyle(.secondary)
+
                     Button {
                         model.openVoiceLearn?()
                     } label: {
-                        Label("Teach her a loved one's voice", systemImage: "heart.text.square")
+                        Label("Teach \(model.assistantName) a loved one's voice", systemImage: "heart.text.square")
                     }
-                    Text("Let \(model.assistantName) learn how someone spoke — from their own messages — and carry their warmth forward. Stays on this Mac.")
+                    Text("Let \(model.assistantName) learn how someone spoke — from their messages or a voice recording — and carry their warmth forward. Stays on this Mac.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
