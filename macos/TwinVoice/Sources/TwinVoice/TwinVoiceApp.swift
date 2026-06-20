@@ -67,23 +67,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 1) The floating orb — a small, borderless, always-on-top circle you can
     //    drag anywhere. Clicking it toggles the chat panel.
     private func makeOrbWindow() {
-        let size: CGFloat = 84
+        // The WINDOW is larger than the orb so the glow/blur fades to fully
+        // transparent before the window edge — otherwise the blurred bloom gets
+        // clipped to the window bounds and shows as a faint square.
+        let orb: CGFloat = 84
+        let pad: CGFloat = orb * 1.6        // generous transparent margin for the glow
+        let win = orb + pad
         let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: size, height: size),
+            contentRect: NSRect(x: 0, y: 0, width: win, height: win),
             styleMask: [.borderless], backing: .buffered, defer: false)
         w.isOpaque = false
         w.backgroundColor = .clear
         w.level = .floating                       // stays above other windows
         w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         w.isMovableByWindowBackground = true
-        w.hasShadow = false
+        w.hasShadow = false                       // no window shadow (that's a box too)
         w.ignoresMouseEvents = false
         w.contentView = NSHostingView(
             rootView: FloatingOrb(model: model) { [weak self] in self?.toggleChat() })
         // place near the top-right by default
         if let screen = NSScreen.main {
             let f = screen.visibleFrame
-            w.setFrameOrigin(NSPoint(x: f.maxX - size - 24, y: f.maxY - size - 24))
+            w.setFrameOrigin(NSPoint(x: f.maxX - win - 16, y: f.maxY - win - 16))
         }
         w.makeKeyAndOrderFront(nil)
         orbWindow = w

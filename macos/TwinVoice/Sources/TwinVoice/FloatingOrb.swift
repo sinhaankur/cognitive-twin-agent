@@ -31,6 +31,10 @@ struct FloatingOrb: View {
                 .contentShape(Circle())
                 .onTapGesture { onTap() }
         }
+        // Fill the (larger) window with a transparent canvas so the glow can fade
+        // out before the edge — no background, no square.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.clear)
         .onReceive(timer) { _ in
             phase += 0.05 + model.amplitude * 0.30
             // slow, soft breathing pulse (0…1) for the waiting glow
