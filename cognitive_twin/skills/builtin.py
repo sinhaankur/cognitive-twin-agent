@@ -140,9 +140,15 @@ def thoughts_of_the_day(tasks_file: str = "tasks.md") -> str:
     if recent:
         out.append("Recently they asked about: " + " / ".join(recent) + ".")
 
+    style = ""
+    try:
+        from .. import mood
+        style = mood.reflection_style()
+    except Exception:
+        pass
     out.append(
         "\nGive ONE single-sentence thought of the day for this person — short, "
-        "warm, and specific to their day. One line only, no list, no preamble."
+        "warm, and specific to their day. One line only, no list, no preamble." + style
     )
     return "\n".join(out)
 

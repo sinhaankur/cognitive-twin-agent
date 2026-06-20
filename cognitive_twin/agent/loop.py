@@ -135,6 +135,14 @@ class Agent:
                     parts.append(work)
             except Exception:
                 pass
+            # a warm, reflective tone (original — no copyrighted lines)
+            try:
+                from .. import mood as _mood
+                m = _mood.mood_prompt()
+                if m:
+                    parts.append(m)
+            except Exception:
+                pass
             ctx = _memory.summary_for_prompt()
             if ctx:
                 parts.append(ctx)

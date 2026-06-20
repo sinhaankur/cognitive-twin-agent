@@ -156,12 +156,18 @@ def reflection_prompt() -> str:
     seeds = project_seeds()
     if not seeds:
         return ""
+    style = ""
+    try:
+        from . import mood
+        style = mood.reflection_style()
+    except Exception:
+        pass
     return (
         "While the user is away, think about what they've been working on: "
         + ", ".join(seeds)
         + ". Offer ONE single-sentence thought or idea about one of these — the "
         "kind of thing someone who cares about their work would bring up later. "
-        "One line only, personal and specific, no preamble."
+        "One line only, personal and specific, no preamble." + style
     )
 
 
