@@ -18,8 +18,8 @@ warnings.filterwarnings("ignore")
 
 # Quality knobs for XTTS-v2. Lower temperature = steadier/closer to the sample;
 # repetition penalty curbs the model drifting; length penalty keeps pacing natural.
+# (language is chosen per-utterance — see _detect_language.)
 GEN_KWARGS = dict(
-    language="en",
     temperature=0.55,          # steadier, more faithful to the reference
     length_penalty=1.0,
     repetition_penalty=3.0,    # reduce robotic loops/artefacts
@@ -28,6 +28,30 @@ GEN_KWARGS = dict(
     speed=1.0,
 )
 
+# A few common Hinglish (Hindi-in-Latin-letters) words. If the text is clearly
+# Hindi — Devanagari or these cues — render with the Hindi voice so an Indian
+# parent's accent and cadence come through naturally.
+_HINGLISH = {
+    "beta", "beti", "hai", "nahi", "nahin", "kya", "kaise", "kaisa", "theek",
+    "thik", "accha", "acha", "haan", "ji", "aaj", "kal", "khana", "khaya",
+    "ghar", "maa", "papa", "bahut", "bohot", "pyaar", "pyar", "chai", "namaste",
+    "shukriya", "dhanyavaad", "bhai", "behen", "didi", "mummy",
+}
+
+
+def _detect_language(text: str) -> str:
+    """Pick the XTTS language for this text: Hindi for Devanagari or clear
+    Hinglish, otherwise English. Keeps a loved one's real accent."""
+    # Devanagari block → Hindi
+    if any('ऀ' <= ch <= 'ॿ' for ch in text):
+        return "hi"
+    words = [w.strip(".,!?").lower() for w in text.split()]
+    if words:
+        hits = sum(1 for w in words if w in _HINGLISH)
+        if hits >= max(1, len(words) * 0.15):   # ~15%+ Hinglish → Hindi
+            return "hi"
+    return "en"
+
 
 def _load():
     from TTS.api import TTS  # noqa
@@ -35,8 +59,10 @@ def _load():
     return TTS("tts_models/multilingual/multi-dataset/xtts_v2")
 
 
-def _render(tts, text, speaker_wav, out_wav):
-    tts.tts_to_file(text=text, speaker_wav=speaker_wav, file_path=out_wav, **GEN_KWARGS)
+def _render(tts, text, speaker_wav, out_wav, lang=None):
+    language = lang or _detect_language(text)
+    tts.tts_to_file(text=text, speaker_wav=speaker_wav, file_path=out_wav,
+                    language=language, **GEN_KWARGS)
 
 
 def main():
