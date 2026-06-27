@@ -60,21 +60,28 @@ def set_reference(path: str, *, person: str = "") -> dict[str, Any]:
     dst = _voice_dir() / SAMPLE
     try:
         if shutil.which("ffmpeg"):
-            # Clean the sample for cloning: strip silence (dead air dilutes the
-            # voice), normalize loudness, mono 22.05k. A gap-free sample of pure
-            # speech clones far more faithfully than raw audio with long pauses.
+            # Clean GENTLY for cloning, at XTTS-v2's native 24kHz. We only trim
+            # leading/trailing dead air and tame low rumble — we deliberately keep
+            # the natural pauses and breathing *between* words, because XTTS clones
+            # a real person far more faithfully from continuous speech than from
+            # fragments glued together. A light loudnorm evens out the level.
+            # (Earlier code downsampled to 22.05k and collapsed every internal
+            # pause; both quietly degraded the timbre and rushed the delivery.)
             _filter = (
-                "silenceremove=start_periods=1:start_silence=0.1:start_threshold=-40dB:"
-                "stop_periods=-1:stop_silence=0.25:stop_threshold=-40dB,"
-                "loudnorm=I=-16:TP=-1.5:LRA=11"
+                "highpass=f=70,"
+                "silenceremove=start_periods=1:start_silence=0.15:start_threshold=-45dB,"
+                "areverse,"
+                "silenceremove=start_periods=1:start_silence=0.15:start_threshold=-45dB,"
+                "areverse,"
+                "loudnorm=I=-18:TP=-2:LRA=11"
             )
             r = subprocess.run(
                 ["ffmpeg", "-y", "-i", str(src), "-af", _filter,
-                 "-ar", "22050", "-ac", "1", str(dst)],
+                 "-ar", "24000", "-ac", "1", str(dst)],
                 capture_output=True, timeout=180)
             if r.returncode != 0 or not dst.exists():
                 # fall back to a plain copy/convert if the filter chain failed
-                subprocess.run(["ffmpeg", "-y", "-i", str(src), "-ar", "22050",
+                subprocess.run(["ffmpeg", "-y", "-i", str(src), "-ar", "24000",
                                 "-ac", "1", str(dst)], capture_output=True, timeout=120)
         elif src.suffix.lower() == ".wav":
             shutil.copy2(src, dst)

@@ -16,16 +16,20 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-# Quality knobs for XTTS-v2. Lower temperature = steadier/closer to the sample;
-# repetition penalty curbs the model drifting; length penalty keeps pacing natural.
+# Quality knobs for XTTS-v2, tuned for a short (~7s) real-person reference.
+# temperature 0.65 gives natural prosody without drifting off the timbre; a lower
+# value (e.g. 0.45) hews closer to the sample but tends to rush/flatten delivery.
+# repetition_penalty 2.0 (was 3.0) avoids the lifeless, clipped pacing the higher
+# value caused. text splitting keeps long replies from drifting partway through.
 # (language is chosen per-utterance — see _detect_language.)
 GEN_KWARGS = dict(
-    temperature=0.55,          # steadier, more faithful to the reference
+    temperature=0.65,          # natural prosody, still faithful to the reference
     length_penalty=1.0,
-    repetition_penalty=3.0,    # reduce robotic loops/artefacts
+    repetition_penalty=2.0,    # curb artefacts without flattening the voice
     top_k=50,
     top_p=0.85,
     speed=1.0,
+    enable_text_splitting=True,  # synthesize long replies in stable chunks
 )
 
 # A few common Hinglish (Hindi-in-Latin-letters) words. If the text is clearly
