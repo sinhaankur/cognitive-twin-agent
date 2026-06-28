@@ -73,6 +73,11 @@ python -m cognitive_twin --route-explain "..."    # show which model the policy 
 python -m cognitive_twin voice --web              # 🎙 Siri-style voice UI (browser)
 ```
 
+Unlike a static assistant that only answers when asked, the twin **reaches out
+first** when you open a chat: a time-aware hello in their voice, a thought it had
+"while you were away" (from its background reflections), and a light nudge about
+your day — all from local context, no prompt needed.
+
 The interactive chat names the twin you're talking to and takes in-session
 slash commands, so you never have to leave it:
 

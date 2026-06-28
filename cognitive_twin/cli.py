@@ -512,10 +512,59 @@ def _repl_prompt() -> str:
     return f"{_active_twin_name()} »"
 
 
+def _proactive_opening() -> list[str]:
+    """What the twin says *first*, unprompted — the thing a static assistant
+    never does. Composed entirely from local context: a time-aware greeting in
+    the twin's voice, any thoughts it saved while you were away, and a gentle
+    nudge about today if there's anything pending. Each piece is best-effort and
+    silently skipped when unavailable, so this never errors or stalls startup."""
+    who = _active_twin_name()
+    lines: list[str] = []
+
+    # 1) a warm, time-aware hello by name
+    try:
+        from . import rhythms
+        part = rhythms.part_of_day()  # "morning"/"afternoon"/"evening"/"night"
+    except Exception:
+        part = "day"
+    hello = {
+        "morning": f"Good morning. {who} here.",
+        "afternoon": f"Good afternoon — {who} here.",
+        "evening": f"Good evening. It's {who}.",
+        "night": f"Up late? {who}'s here.",
+        "late night": f"It's late — {who}'s still here if you need me.",
+    }.get(part, f"Hi, {who} here.")
+    lines.append(hello)
+
+    # 2) thoughts she had "while you were away" (proactive memory)
+    try:
+        from . import soul
+        pending = soul.pending_reflections(clear=True)
+        if pending:
+            lines.append(f"I was thinking — {pending[0]['thought']}")
+    except Exception:
+        pass
+
+    # 3) a light nudge about today, if a tasks file exists (no model call)
+    try:
+        from . import skills  # noqa: F401  (ensures builtins registered)
+        from .skills.base import default_registry as _R
+        import os as _os
+        ws = Path(_os.environ.get("CTWIN_WORKSPACE", Path.home() / ".cognitive-twin" / "workspace"))
+        if (ws / "tasks.md").is_file():
+            lines.append("You've got a tasks list — want me to look at your day? (try: \"summarize my day\")")
+    except Exception:
+        pass
+
+    return lines
+
+
 def _repl_banner() -> None:
     who = _active_twin_name()
-    print(f"\n  You're talking to {who}. Type a message, or /help for commands.")
-    print("  (Ctrl-D or /exit to leave)\n")
+    # The twin reaches out first — proactive, not a static prompt.
+    for ln in _proactive_opening():
+        print(f"  {ln}")
+    print(f"\n  (talking to {who} · type a message, /help for commands, /exit to leave)\n")
 
 
 _REPL_HELP = """  commands:

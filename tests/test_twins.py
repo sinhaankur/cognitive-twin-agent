@@ -166,6 +166,30 @@ def test_onboarding_creates_twin_and_marks_done():
     print("✓ onboarding: guided run creates the twin + persona, marks done")
 
 
+def test_proactive_opening_reaches_out():
+    tmp, twins = _fresh_home()
+    import cognitive_twin.persona as persona
+    import cognitive_twin.soul as soul
+    import cognitive_twin.cli as cli
+    import importlib
+    for m in (persona, soul, cli):
+        importlib.reload(m)
+
+    twins.activate("Anita")
+    persona.save(persona.Persona(name="Anita"))
+    soul.add_reflection("a thought I had while you were away")
+
+    lines = cli._proactive_opening()
+    joined = " ".join(lines)
+    # the twin greets BY NAME (proactive, not a static prompt)
+    assert "Anita" in joined
+    # and surfaces the saved reflection unprompted
+    assert "a thought I had while you were away" in joined
+    # reading a pending reflection clears it (won't repeat next session)
+    assert soul.pending_reflections() == []
+    print("✓ proactive: twin greets by name + surfaces an away-thought, then clears it")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
