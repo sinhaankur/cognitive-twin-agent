@@ -211,6 +211,25 @@ behavioral memory. The result: the twin reasons, decides, and speaks as you — 
 with a persona that likes Rust and values privacy, "what stack should I use?"
 yields a local-first Rust answer, in your voice.
 
+### Multiple twins on one machine
+
+Keep more than one twin — your mom, your dad, a mentor — each with its **own**
+persona, voice, and memory, and switch between them. The *active* twin is what
+every command operates on.
+
+```bash
+python -m cognitive_twin twin                 # list twins (* = active)
+python -m cognitive_twin twin new "Anita"     # create + make active
+python -m cognitive_twin twin use dad         # switch active twin
+python -m cognitive_twin twin rm dad          # delete a twin and its data
+```
+
+Each twin lives in its own folder (`~/.cognitive-twin/twins/<name>/`), so personas
+and voices never bleed into each other. If you already had a single twin (the
+old flat layout), it's adopted automatically as a twin named `default` the first
+time you run — nothing is lost. After switching, `persona setup`,
+`voice_clone set …`, and memory all apply to the now-active twin.
+
 ## Her voice — local voice cloning
 
 Anita can speak in a loved one's **actual voice**, cloned **entirely on your

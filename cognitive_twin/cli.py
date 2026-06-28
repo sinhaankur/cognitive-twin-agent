@@ -296,6 +296,34 @@ def _control_command(rest: list[str]) -> int:
     return 0
 
 
+def _twin_command(rest: list[str]) -> int:
+    """`ctwin twin [list|new <name>|use <name>|rm <name>]` — manage multiple twins.
+
+    Each twin has its own persona, voice, and memory. The active twin is what
+    every other command operates on.
+    """
+    from . import twins
+    if rest and rest[0] == "new" and len(rest) > 1:
+        name = " ".join(rest[1:])
+        s = twins.create(name)
+        print(f"created twin '{s}' and made it active.")
+        print("  next: `ctwin persona setup`  then give it a voice with voice_clone.")
+    elif rest and rest[0] == "use" and len(rest) > 1:
+        name = " ".join(rest[1:])
+        if twins.exists(name):
+            twins.set_active(name)
+            print(f"active twin → {twins.slug(name)}")
+        else:
+            print(f"no twin named '{name}'. Have: {', '.join(twins.list_twins()) or 'none'}")
+            return 1
+    elif rest and rest[0] == "rm" and len(rest) > 1:
+        name = " ".join(rest[1:])
+        print("removed." if twins.remove(name) else "no such twin.")
+    else:
+        print(twins.status())
+    return 0
+
+
 def _media_command(rest: list[str]) -> int:
     """`ctwin media [status|on camera|on mic|off]` — camera/mic consent.
 
@@ -339,6 +367,18 @@ def _install_confirm() -> None:
 def main(argv: list[str] | None = None) -> int:
     # subcommands handled before the main parser
     raw = list(sys.argv[1:] if argv is None else argv)
+
+    # Point persona/memory/voice/media at the ACTIVE twin's folder before any
+    # of them load. No-op (legacy flat layout) until the user makes a twin.
+    # `twin` subcommands run against the registry itself, so don't activate for
+    # them. Respect an explicit CTWIN_MEMORY_DIR (tests/power users) — only
+    # activate when the caller hasn't pinned a dir.
+    if not (raw and raw[0] == "twin") and "CTWIN_MEMORY_DIR" not in os.environ:
+        from . import twins
+        twins.activate()
+
+    if raw and raw[0] == "twin":
+        return _twin_command(raw[1:])
     if raw and raw[0] == "voice":
         return _voice_command(raw[1:])
     if raw and raw[0] == "memory":

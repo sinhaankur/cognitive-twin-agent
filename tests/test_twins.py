@@ -1,0 +1,93 @@
+"""
+Multiple-twins tests — isolation, switching, and legacy migration.
+
+Each test uses a throwaway CTWIN_HOME and clears any pinned CTWIN_MEMORY_DIR so
+twins.activate() drives the storage root (as it does in the real CLI). Offline,
+no Ollama.
+
+Run: python -m pytest tests/ -q   (or: python tests/test_twins.py)
+"""
+
+from __future__ import annotations
+
+import importlib
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+
+def _fresh_home():
+    """A clean CTWIN_HOME with no pinned dirs. Returns the temp path."""
+    tmp = tempfile.mkdtemp()
+    os.environ["CTWIN_HOME"] = tmp
+    os.environ.pop("CTWIN_MEMORY_DIR", None)
+    os.environ.pop("CTWIN_PERSONA_DIR", None)
+    # reload modules so their module-level state + the migration flag reset
+    import cognitive_twin.twins as twins
+    importlib.reload(twins)
+    return tmp, twins
+
+
+def test_create_switch_isolation():
+    _tmp, twins = _fresh_home()
+    import cognitive_twin.persona as persona
+    importlib.reload(persona)
+
+    assert twins.list_twins() == []
+    twins.create("Anita")
+    twins.create("Dad")
+    assert set(twins.list_twins()) == {"anita", "dad"}
+    assert twins.active() == "dad"  # last created is active
+
+    # save a distinct persona under each twin, prove they don't bleed
+    twins.activate("dad")
+    persona.save(persona.Persona(name="Dad"))
+    twins.activate("anita")
+    persona.save(persona.Persona(name="Anita"))
+
+    twins.activate("dad")
+    assert persona.load().name == "Dad"
+    twins.activate("anita")
+    assert persona.load().name == "Anita"
+    print("✓ twins: create, switch, and per-twin isolation")
+
+
+def test_remove_active_reassigns():
+    _tmp, twins = _fresh_home()
+    twins.create("a")
+    twins.create("b")  # active
+    assert twins.active() == "b"
+    assert twins.remove("b") is True
+    # removing the active twin reassigns to a remaining one
+    assert twins.active() == "a"
+    assert twins.remove("a") is True
+    assert twins.active() is None
+    print("✓ twins: removing the active twin reassigns / clears")
+
+
+def test_legacy_flat_migrates_to_default():
+    tmp, twins = _fresh_home()
+    home = Path(tmp)
+    # simulate a pre-multi-twin flat install
+    (home / "persona.json").write_text('{"name":"Legacy"}', encoding="utf-8")
+    (home / "voice").mkdir()
+    (home / "voice" / "reference.wav").write_text("x", encoding="utf-8")
+
+    # any registry call triggers the one-time migration
+    assert twins.list_twins() == ["default"]
+    assert twins.active() == "default"
+    moved = home / "twins" / "default"
+    assert (moved / "persona.json").is_file()
+    assert (moved / "voice" / "reference.wav").is_file()
+    assert not (home / "persona.json").exists()  # flat copy removed
+    print("✓ twins: legacy flat layout migrates to 'default' without data loss")
+
+
+if __name__ == "__main__":
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            fn()
+    print("\nall twins tests passed.")
