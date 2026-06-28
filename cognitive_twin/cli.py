@@ -406,6 +406,9 @@ def main(argv: list[str] | None = None) -> int:
         from . import twins
         twins.activate()
 
+    if raw and raw[0] == "setup":
+        from . import onboarding
+        return onboarding.run()
     if raw and raw[0] == "twin":
         return _twin_command(raw[1:])
     if raw and raw[0] == "voice":
@@ -442,6 +445,14 @@ def main(argv: list[str] | None = None) -> int:
             sk = default_registry.get(n)
             print(f"  {n:<14} {sk.description if sk else ''}")
         return 0
+
+    # Fresh install + interactive (no prompt, real terminal): offer the guided
+    # setup before we need Ollama, so a newcomer makes their twin first. Skipped
+    # for one-shot prompts, pipes, and once onboarding has run.
+    if not args.prompt and sys.stdin.isatty() and sys.stdout.isatty():
+        from . import onboarding
+        if onboarding.is_fresh_install():
+            onboarding.offer()
 
     # An explicit --model pins one model (routing off); otherwise route by policy.
     use_routing = not args.no_route and not args.model

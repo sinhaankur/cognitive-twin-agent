@@ -136,6 +136,36 @@ def test_export_import_excludes_private_memory():
     print("✓ package: export/import carries identity, never private memory")
 
 
+def test_onboarding_creates_twin_and_marks_done():
+    tmp, twins = _fresh_home()
+    import cognitive_twin.persona as persona
+    import cognitive_twin.onboarding as onb
+    import importlib
+    importlib.reload(persona)
+    importlib.reload(onb)
+
+    assert onb.is_fresh_install() is True  # nothing yet → wizard would be offered
+
+    # Drive the wizard non-interactively by feeding stdin (name, persona, no
+    # voice, not private). Mirrors what a user types.
+    import io
+    answers = "Grandpa\nkind man\ngentle\nfishing\n\nfamily\nwarm\nn\nn\n"
+    old_stdin = sys.stdin
+    sys.stdin = io.StringIO(answers)
+    try:
+        rc = onb.run()
+    finally:
+        sys.stdin = old_stdin
+    assert rc == 0
+
+    assert twins.list_twins() == ["grandpa"]
+    twins.activate("grandpa")
+    assert persona.load().name == "Grandpa"
+    assert onb.has_onboarded() is True
+    assert onb.is_fresh_install() is False  # won't nag again
+    print("✓ onboarding: guided run creates the twin + persona, marks done")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

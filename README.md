@@ -58,8 +58,10 @@ Local models already handle a large share of everyday queries. The gap is the
 # 1. install Ollama (https://ollama.com) and pull a tool-capable model
 ollama pull qwen2.5:3b        # or llama3.2, etc.
 
-# 2. make it yours (recommended) — describe who your twin is
-python -m cognitive_twin persona setup
+# 2. make it yours — guided first-run setup (name, persona, voice, all on-device)
+python -m cognitive_twin setup
+#    (running `python -m cognitive_twin` on a fresh install offers this for you)
+#    prefer the bare-bones persona editor instead? `python -m cognitive_twin persona setup`
 
 # 3. run the agent (no Python deps needed for the core)
 python -m cognitive_twin "what's the date?"
