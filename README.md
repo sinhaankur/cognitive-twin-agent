@@ -78,6 +78,16 @@ first** when you open a chat: a time-aware hello in their voice, a thought it ha
 "while you were away" (from its background reflections), and a light nudge about
 your day — all from local context, no prompt needed.
 
+Those away-thoughts are real — the twin can keep thinking in the background:
+
+```bash
+python -m cognitive_twin reflect            # think about your projects once, now
+python -m cognitive_twin reflect --watch 30 # keep thinking every 30 min (Ctrl-C to stop)
+```
+
+Each reflection mulls the topics you actually keep raising (from local memory) and
+saves a single fresh thought; the next chat opens with it. Local model, on-device.
+
 The interactive chat names the twin you're talking to and takes in-session
 slash commands, so you never have to leave it:
 

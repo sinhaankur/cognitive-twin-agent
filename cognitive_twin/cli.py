@@ -194,6 +194,68 @@ def _run_once_capture(agent: Agent, prompt: str) -> tuple[str, dict | None]:
     return result.answer, route_dict
 
 
+def _reflect_once(*, quiet: bool = False) -> str | None:
+    """Have the twin think about your projects once — while you're away — and
+    save the thought for your next session. Returns the thought, or None.
+
+    This is what makes the proactive opening *alive*: the "while you were away"
+    line becomes a real, fresh thought the twin had, not a canned one. Runs the
+    local model; silent + best-effort so it can be scheduled in the background.
+    """
+    from . import soul
+    instruction = soul.reflection_prompt()
+    if not instruction:
+        if not quiet:
+            print("  nothing to reflect on yet — talk with your twin a bit first.")
+        return None
+    try:
+        agent = build_agent(None, route=True, interactive_confirm=False)
+        client = agent.client
+        if hasattr(client, "is_up") and not client.is_up():  # type: ignore[attr-defined]
+            if not quiet:
+                print("  (model offline — skipping this reflection)")
+            return None
+        thought, _ = _run_once_capture(agent, instruction)
+    except LLM_ERRORS:
+        return None
+    except Exception:
+        return None
+    thought = (thought or "").strip()
+    if not thought:
+        return None
+    soul.add_reflection(thought)
+    if not quiet:
+        print(f"  💭 {thought}")
+    return thought
+
+
+def _reflect_command(rest: list[str]) -> int:
+    """`ctwin reflect [--watch [MINUTES]]` — think now, or keep thinking in the
+    background (the 'JARVIS keeps working while you're away' loop)."""
+    ra = argparse.ArgumentParser(prog="ctwin reflect")
+    ra.add_argument("--watch", nargs="?", const=30, type=int, default=None,
+                    metavar="MINUTES",
+                    help="keep reflecting every N minutes (default 30) until stopped")
+    args = ra.parse_args(rest)
+
+    if args.watch is None:
+        return 0 if _reflect_once() is not None else 0
+
+    interval = max(1, args.watch) * 60
+    print(f"  {_active_twin_name()} is thinking in the background "
+          f"(every {args.watch} min). Ctrl-C to stop.\n")
+    import time
+    try:
+        while True:
+            t = _reflect_once(quiet=False)
+            if t is None:
+                print("  (waiting for something to think about…)")
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        print("\n  stopped. The thoughts I had are saved for next time. 🌅")
+        return 0
+
+
 def _voice_command(rest: list[str]) -> int:
     """`ctwin voice` — launch the Siri-style voice UI. Default: native menubar
     (needs rumps); --web runs the browser version (no extra deps)."""
@@ -427,6 +489,8 @@ def main(argv: list[str] | None = None) -> int:
         return _remember_command(raw[1:])
     if raw and raw[0] == "rhythms":
         return _rhythms_command(raw[1:])
+    if raw and raw[0] == "reflect":
+        return _reflect_command(raw[1:])
 
     ap = argparse.ArgumentParser(prog="ctwin", description="Local-first personal AI agent.")
     ap.add_argument("prompt", nargs="*", help="one-shot prompt; omit for an interactive REPL")

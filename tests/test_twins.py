@@ -190,6 +190,39 @@ def test_proactive_opening_reaches_out():
     print("✓ proactive: twin greets by name + surfaces an away-thought, then clears it")
 
 
+def test_reflect_once_saves_thought():
+    tmp, twins = _fresh_home()
+    import cognitive_twin.persona as persona
+    import cognitive_twin.memory as memory
+    import cognitive_twin.soul as soul
+    import cognitive_twin.cli as cli
+    import importlib
+    for m in (persona, memory, soul, cli):
+        importlib.reload(m)
+
+    twins.activate("Anita")
+    persona.save(persona.Persona(name="Anita"))
+    # seed memory so project_seeds() (→ reflection_prompt) is non-empty
+    for q in ["rust project help", "rust async", "rust ownership"]:
+        memory.record(q, "ok")
+    assert soul.project_seeds()  # there is something to reflect on
+
+    # avoid needing a live model: stub the captured run to return a thought
+    cli._run_once_capture = lambda agent, prompt: ("a fresh idea about rust", None)
+    # and stub build_agent so no Ollama is contacted
+    class _FakeClient:
+        def is_up(self): return True
+    class _FakeAgent:
+        client = _FakeClient()
+    cli.build_agent = lambda *a, **k: _FakeAgent()
+
+    thought = cli._reflect_once(quiet=True)
+    assert thought == "a fresh idea about rust"
+    pend = soul.pending_reflections()
+    assert pend and pend[0]["thought"] == "a fresh idea about rust"
+    print("✓ reflect: runs a reflection and saves it for the next session")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
