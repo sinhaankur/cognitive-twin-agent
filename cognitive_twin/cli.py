@@ -296,20 +296,44 @@ def _control_command(rest: list[str]) -> int:
     return 0
 
 
+def _media_command(rest: list[str]) -> int:
+    """`ctwin media [status|on camera|on mic|off]` — camera/mic consent.
+
+    Off by default. `on` persists consent for a device; `off` revokes both.
+    Per-session use without persisting: CTWIN_CAMERA=1 / CTWIN_MIC=1.
+    """
+    from . import media
+    if rest and rest[0] == "on" and len(rest) > 1 and rest[1] in {"camera", "mic"}:
+        c = media.grant(camera=True) if rest[1] == "camera" else media.grant(mic=True)
+        print(f"allowed {rest[1]}. {media.status()}")
+        print(f"(consent: camera={c['camera']}, mic={c['mic']})")
+    elif rest and rest[0] == "off":
+        media.revoke()
+        print("revoked camera + mic. " + media.status())
+    elif rest and rest[0] == "on":
+        print("usage: ctwin media on camera   |   ctwin media on mic")
+    else:
+        print(media.status())
+    return 0
+
+
+def _ask_yn(action: str) -> bool:
+    """Interactive y/N confirmation prompt (shared by control + media)."""
+    try:
+        ans = input(f"⚠ {action} [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return ans in {"y", "yes"}
+
+
 def _install_confirm() -> None:
-    """Wire the control layer's confirmation hook to an interactive y/N prompt
-    so every mutating screen action asks the user first."""
-    from . import control
+    """Wire the confirmation hooks (screen control + camera/mic) to an
+    interactive y/N prompt so every sensitive action asks the user first."""
+    from . import control, media
 
-    def ask(action: str) -> bool:
-        try:
-            ans = input(f"⚠ {action} [y/N] ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            return False
-        return ans in {"y", "yes"}
-
-    control.set_confirm(ask)
+    control.set_confirm(_ask_yn)
+    media.set_confirm(_ask_yn)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -321,6 +345,8 @@ def main(argv: list[str] | None = None) -> int:
         return _memory_command(raw[1:])
     if raw and raw[0] == "control":
         return _control_command(raw[1:])
+    if raw and raw[0] == "media":
+        return _media_command(raw[1:])
     if raw and raw[0] == "persona":
         return _persona_command(raw[1:])
     if raw and raw[0] == "voiceprofile":

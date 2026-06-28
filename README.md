@@ -300,6 +300,41 @@ Safety model:
 
 This is the "assistant that can act," kept honest: local, scoped, and reversible.
 
+## Camera & microphone — opt-in, permissioned, off by default
+
+The twin can *see* you (a webcam still) and *hear* you (a short mic clip) — but
+only when you explicitly allow it. Same discipline as screen control: off by
+default, every capture confirmed, files kept local, revocable anytime.
+
+```bash
+python -m cognitive_twin media                 # show state (camera/mic OFF by default)
+python -m cognitive_twin media on camera       # persist consent for the camera
+python -m cognitive_twin media on mic          # persist consent for the mic
+python -m cognitive_twin media off             # revoke both (kill switch)
+
+# or just for one session, without persisting:
+CTWIN_CAMERA=1 python -m cognitive_twin "take a photo and describe it"
+CTWIN_MIC=1    python -m cognitive_twin "record a few seconds of audio"
+```
+
+Safety model:
+
+- **Off by default.** Each device has its own gate (env `CTWIN_CAMERA=1` /
+  `CTWIN_MIC=1`, or persisted consent via `ctwin media on …`). A device is usable
+  only if its gate is on.
+- **Every capture is confirmed** (y/N in the terminal); deny and nothing captures
+  — even with the device enabled. Both the gate *and* the confirmation are
+  required.
+- **Local only.** Photos/recordings are written owner-only under
+  `~/.cognitive-twin/media/` and never uploaded. There is no network code in the
+  media module.
+- **Lazy deps.** Capture needs `requirements-multimodal.txt` (opencv /
+  sounddevice / soundfile); they're imported only at capture time, so the rest of
+  the agent never pays for them.
+
+Skills: `take_photo`, `record_audio` — both no-op with a clear message until you
+turn the device on.
+
 ## Adding a skill
 
 ```python

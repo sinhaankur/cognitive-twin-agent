@@ -346,6 +346,26 @@ def run_shortcut(name: str) -> str:
     return control.run_shortcut(name)
 
 
+# ---- camera + microphone (opt-in, permissioned, off by default) ---------------
+# Delegate to media.py, which enforces the per-device gate + per-capture
+# confirmation. They no-op with a clear message when the device is off, and the
+# captured file stays local — nothing is uploaded.
+
+@R.add("take_photo", "Take a single photo with the webcam (off by default; asks "
+       "the user to confirm, and only works if the camera is enabled).")
+def take_photo() -> str:
+    from .. import media
+    return media.capture_photo()
+
+
+@R.add("record_audio", "Record a short clip from the microphone (off by default; "
+       "asks the user to confirm, and only works if the mic is enabled).",
+       {"type": "object", "properties": {"seconds": {"type": "number"}}})
+def record_audio(seconds: float = 4.0) -> str:
+    from .. import media
+    return media.record_audio(seconds)
+
+
 def _today_events(ics: str, today: _dt.date) -> list[str]:
     """Minimal .ics: collect SUMMARY of VEVENTs whose DTSTART is today."""
     events: list[str] = []

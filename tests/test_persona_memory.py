@@ -115,6 +115,34 @@ def test_control_skills_off_by_default():
     print("✓ skills: screen control refuses when CTWIN_CONTROL is unset")
 
 
+def test_media_off_by_default():
+    # camera + mic must be off with no env + no persisted consent, and capture
+    # skills must refuse without ever importing the heavy ML deps.
+    os.environ.pop("CTWIN_CAMERA", None)
+    os.environ.pop("CTWIN_MIC", None)
+    from cognitive_twin import media
+    media.revoke()  # ensure no persisted consent in the temp dir
+    assert media.camera_enabled() is False
+    assert media.mic_enabled() is False
+    assert "[camera off]" in default_registry.dispatch("take_photo", {})
+    assert "[mic off]" in default_registry.dispatch("record_audio", {})
+    print("✓ media: camera/mic off by default; capture skills refuse")
+
+
+def test_media_consent_and_confirm_gate():
+    from cognitive_twin import media
+    # persisted consent flips the gate on…
+    media.grant(camera=True)
+    assert media.camera_enabled() is True
+    # …but a denied confirmation still blocks the capture (defense in depth).
+    media.set_confirm(lambda _action: False)
+    assert "[cancelled]" in media.capture_photo()
+    media.revoke()
+    assert media.camera_enabled() is False
+    media.set_confirm(lambda _action: False)  # restore safe default
+    print("✓ media: consent + per-capture confirm both required")
+
+
 def test_greeting_is_time_aware():
     out = default_registry.dispatch("greeting", {})
     assert any(p in out for p in ("Good morning", "Good afternoon", "Good evening"))
