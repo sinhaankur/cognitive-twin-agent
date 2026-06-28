@@ -139,6 +139,36 @@ def active_dir() -> Path | None:
     return (_twins_dir() / a) if a else None
 
 
+# ---- private flag (a twin that must never be exported/shared) ------------------
+# A private twin is personal — e.g. a twin of a specific loved one. The presence
+# of a `private.flag` file in the twin folder marks it; sharable-package export
+# refuses it. Default is NOT private, so newly created twins can be shared.
+_PRIVATE_FLAG = "private.flag"
+
+
+def is_private(name: str) -> bool:
+    d = _twins_dir() / slug(name)
+    return (d / _PRIVATE_FLAG).is_file()
+
+
+def set_private(name: str, private: bool = True) -> bool:
+    """Mark/unmark a twin as private. Returns True if the twin exists."""
+    d = _twins_dir() / slug(name)
+    if not d.is_dir():
+        return False
+    flag = d / _PRIVATE_FLAG
+    try:
+        if private:
+            flag.write_text("This twin is private and must not be exported.\n",
+                            encoding="utf-8")
+            os.chmod(flag, stat.S_IRUSR | stat.S_IWUSR)
+        elif flag.is_file():
+            flag.unlink()
+    except OSError:
+        pass
+    return True
+
+
 # ---- making the active twin the root other modules read -----------------------
 def activate(name: str | None = None) -> Path | None:
     """Point every storage module at the active twin by setting CTWIN_MEMORY_DIR.

@@ -86,6 +86,56 @@ def test_legacy_flat_migrates_to_default():
     print("✓ twins: legacy flat layout migrates to 'default' without data loss")
 
 
+def test_private_twin_refuses_export():
+    tmp, twins = _fresh_home()
+    import cognitive_twin.persona as persona
+    import cognitive_twin.twin_package as pkg
+    import importlib
+    importlib.reload(persona)
+    importlib.reload(pkg)
+
+    twins.activate("Anita")
+    persona.save(persona.Persona(name="Anita"))
+    twins.set_private("Anita", True)
+    assert twins.is_private("Anita") is True
+
+    res = pkg.export_twin("Anita", str(Path(tmp) / "anita.twin"))
+    assert res["ok"] is False
+    assert "private" in res["error"]
+    assert not (Path(tmp) / "anita.twin").exists()  # nothing written
+    print("✓ package: a private twin is hard-refused for export")
+
+
+def test_export_import_excludes_private_memory():
+    tmp, twins = _fresh_home()
+    import cognitive_twin.persona as persona
+    import cognitive_twin.memory as memory
+    import cognitive_twin.twin_package as pkg
+    import importlib
+    for m in (persona, memory, pkg):
+        importlib.reload(m)
+
+    twins.activate("Mentor")
+    persona.save(persona.Persona(name="Mentor", traits=["wise"]))
+    memory.record("q", "SECRET private note")  # must not travel
+
+    out = Path(tmp) / "mentor.twin"
+    res = pkg.export_twin("Mentor", str(out))
+    assert res["ok"] and out.is_file()
+
+    import zipfile
+    names = zipfile.ZipFile(out).namelist()
+    assert "persona.json" in names
+    assert not any("memory" in n for n in names)  # privacy: no memory in package
+
+    imp = pkg.import_twin(str(out), name="Mentor Copy")
+    assert imp["ok"] and imp["twin"] == "mentor-copy"
+    twins.activate("mentor-copy")
+    assert persona.load().name == "Mentor"        # identity carried
+    assert memory.summary_for_prompt().strip() == ""  # memory did NOT carry
+    print("✓ package: export/import carries identity, never private memory")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

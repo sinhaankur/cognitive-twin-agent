@@ -319,6 +319,35 @@ def _twin_command(rest: list[str]) -> int:
     elif rest and rest[0] == "rm" and len(rest) > 1:
         name = " ".join(rest[1:])
         print("removed." if twins.remove(name) else "no such twin.")
+    elif rest and rest[0] in {"private", "unprivate"} and len(rest) > 1:
+        name = " ".join(rest[1:])
+        priv = rest[0] == "private"
+        if twins.set_private(name, priv):
+            print(f"{twins.slug(name)} is now {'private (cannot be exported)' if priv else 'shareable'}.")
+        else:
+            print(f"no twin named '{name}'.")
+            return 1
+    elif rest and rest[0] == "export" and len(rest) > 2:
+        from . import twin_package
+        name, out = rest[1], rest[2]
+        res = twin_package.export_twin(name, out)
+        if res.get("ok"):
+            v = "with voice" if res["has_voice"] else "persona only"
+            print(f"exported '{res['display_name']}' ({v}) → {res['path']}")
+        else:
+            print(f"export failed: {res.get('error')}")
+            return 1
+    elif rest and rest[0] == "import" and len(rest) > 1:
+        from . import twin_package
+        pkg = rest[1]
+        name = " ".join(rest[2:]) if len(rest) > 2 else None
+        res = twin_package.import_twin(pkg, name=name)
+        if res.get("ok"):
+            v = "with voice" if res["has_voice"] else "persona only"
+            print(f"imported as twin '{res['twin']}' ({v}); it's now active.")
+        else:
+            print(f"import failed: {res.get('error')}")
+            return 1
     else:
         print(twins.status())
     return 0

@@ -230,6 +230,29 @@ old flat layout), it's adopted automatically as a twin named `default` the first
 time you run — nothing is lost. After switching, `persona setup`,
 `voice_clone set …`, and memory all apply to the now-active twin.
 
+### Sharing a twin (and keeping one private)
+
+Export a twin as a portable `.twin` file a family member can import — it carries
+the **persona + cloned-voice reference only**, never your private memory.
+
+```bash
+python -m cognitive_twin twin export grandpa ~/grandpa.twin   # make a package
+python -m cognitive_twin twin import ~/grandpa.twin           # import as a new twin
+```
+
+Some twins are personal and should never leave your machine. Mark a twin
+**private** and export will refuse it:
+
+```bash
+python -m cognitive_twin twin private anita      # anita can no longer be exported
+python -m cognitive_twin twin unprivate anita    # (reverse it, only if you mean to)
+```
+
+What a package includes: `persona.json` + `voice/reference.wav` (+ engine meta).
+What it never includes: behavioral memory, remembered facts, writing-style
+samples, captured media. Import always creates a *new* twin, so it can't
+overwrite one you already have.
+
 ## Her voice — local voice cloning
 
 Anita can speak in a loved one's **actual voice**, cloned **entirely on your
