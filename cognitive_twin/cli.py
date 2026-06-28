@@ -476,19 +476,93 @@ def main(argv: list[str] | None = None) -> int:
     if args.prompt:
         return 0 if _run_once(agent, " ".join(args.prompt), explain) else 1
 
-    # REPL
-    print("Cognitive Twin · local agent. Ctrl-D or 'exit' to quit.\n")
+    # Interactive REPL — a friendly, guided chat session.
+    _repl_banner()
     while True:
         try:
-            line = input("» ").strip()
+            line = input(f"{_repl_prompt()} ").strip()
         except (EOFError, KeyboardInterrupt):
-            print()
-            return 0
-        if line in {"exit", "quit"}:
+            print("\n  take care 🌅")
             return 0
         if not line:
             continue
+        if line in {"exit", "quit", "/exit", "/quit"}:
+            print("  take care 🌅")
+            return 0
+        if line.startswith("/"):
+            _repl_command(line)
+            continue
         _run_once(agent, line, explain, repl=True)
+
+
+def _active_twin_name() -> str:
+    """The active twin's display name (persona name if set, else the slug)."""
+    try:
+        from . import persona, twins
+        p = persona.load()
+        if p.name:
+            return p.name
+        a = twins.active()
+        return a or "your twin"
+    except Exception:
+        return "your twin"
+
+
+def _repl_prompt() -> str:
+    return f"{_active_twin_name()} »"
+
+
+def _repl_banner() -> None:
+    who = _active_twin_name()
+    print(f"\n  You're talking to {who}. Type a message, or /help for commands.")
+    print("  (Ctrl-D or /exit to leave)\n")
+
+
+_REPL_HELP = """  commands:
+    /help            show this
+    /who             who you're talking to (the active twin)
+    /twins           list your twins (* = active)
+    /use <name>      switch to another twin
+    /persona         show the active twin's persona
+    /voice           voice-clone status for this twin
+    /setup           guided setup for a new twin
+    /exit            leave
+  anything else is sent to your twin as a message."""
+
+
+def _repl_command(line: str) -> None:
+    """Handle an in-session /command so the user never has to leave the chat."""
+    parts = line[1:].split(maxsplit=1)
+    cmd = parts[0].lower() if parts else ""
+    arg = parts[1].strip() if len(parts) > 1 else ""
+    from . import persona, twins, voice_clone
+
+    if cmd in {"help", "?", "h"}:
+        print(_REPL_HELP)
+    elif cmd == "who":
+        print(f"  {persona.status()}")
+    elif cmd in {"twins", "list"}:
+        print("  " + twins.status())
+    elif cmd == "use":
+        if not arg:
+            print("  usage: /use <twin name>")
+        elif twins.exists(arg):
+            twins.activate(arg)
+            print(f"  now talking to {_active_twin_name()}.")
+        else:
+            print(f"  no twin named '{arg}'. /twins to see them.")
+    elif cmd == "persona":
+        print("  " + persona.status())
+        block = persona.to_prompt()
+        if block:
+            print("\n" + "\n".join("  " + ln for ln in block.splitlines()[:6]))
+    elif cmd == "voice":
+        print("  " + voice_clone.status())
+    elif cmd == "setup":
+        from . import onboarding
+        onboarding.run()
+    else:
+        print(f"  unknown command '/{cmd}'. /help for the list.")
 
 
 if __name__ == "__main__":

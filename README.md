@@ -67,10 +67,20 @@ python -m cognitive_twin setup
 python -m cognitive_twin "what's the date?"
 python -m cognitive_twin "good morning"           # greeting + weather (needs CTWIN_WEB=1)
 python -m cognitive_twin "summarize my day"       # daily_digest skill
-python -m cognitive_twin                          # interactive REPL
+python -m cognitive_twin                          # interactive chat (see below)
 python -m cognitive_twin --skills                 # list available skills
 python -m cognitive_twin --route-explain "..."    # show which model the policy picked
 python -m cognitive_twin voice --web              # 🎙 Siri-style voice UI (browser)
+```
+
+The interactive chat names the twin you're talking to and takes in-session
+slash commands, so you never have to leave it:
+
+```
+Anita » /help            # all commands
+Anita » /twins           # list your twins (* = active)
+Anita » /use dad         # switch twin live — the prompt becomes  Dad »
+Anita » /who · /persona · /voice · /setup · /exit
 ```
 
 Want the native Mac app instead of the browser? Build it once:
