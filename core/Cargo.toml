@@ -3,7 +3,7 @@ name = "cognitive-twin-core"
 version = "0.1.0"
 edition = "2021"
 description = "Portable core for the Cognitive Twin — persona, memory, routing, and the agent loop. Compiles to macOS, iOS, Windows, Linux, Android, and WASM."
-license = "MIT"
+license = "AGPL-3.0-or-later"
 
 [lib]
 # rlib for Rust consumers; staticlib/cdylib so Swift (iOS/macOS) and C can link it.

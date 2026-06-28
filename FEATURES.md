@@ -58,7 +58,7 @@ default**. Nothing leaves your device unless you explicitly turn it on.
 ## 🌍 Runs everywhere (open source)
 
 A shared **Rust core** compiles to **macOS, iOS, iPadOS, Windows, Linux, Android,
-and the web** — one brain, every device. MIT-licensed.
+and the web** — one brain, every device. AGPL-3.0-licensed.
 
 ---
 

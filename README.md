@@ -23,7 +23,7 @@ extracts a clean voice sample from any video/audio for the cloning.
 > private memory + an evolving personality + life-rhythm awareness (timezone,
 > sleep/work) + policy-driven model routing + Apple Intelligence backend + web
 > research + a floating Siri-style app (**native macOS + iOS**, built on a shared
-> Rust core) + CLI. Open source (MIT).
+> Rust core) + CLI. Open source (AGPL-3.0).
 >
 > Layout: the runnable agent is `cognitive_twin/`; the macOS app is
 > `macos/TwinVoice/`; the iOS app is `ios/` (Swift over a Rust core); the portable
@@ -327,4 +327,9 @@ to prove the tool-calling plumbing; live runs use the commands above.
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+AGPL-3.0-or-later — see [LICENSE](./LICENSE). Copyright © 2026 Ankur Sinha.
+
+The copyright is held by the author; the project is licensed to the public under
+the AGPL-3.0. This matches [Unhosted](https://github.com/unhosted-ai/unhosted-core)
+(also AGPL-3.0), so the Cognitive Twin capability merges into it without a license
+conflict.
