@@ -256,6 +256,23 @@ def _reflect_command(rest: list[str]) -> int:
         return 0
 
 
+def _viz_command(rest: list[str]) -> int:
+    """`ctwin viz` — open the Visualize Engine: a local page that shows how the
+    twin thinks (reasoning trace, knowledge graph, inner state) from real data.
+    Reachable from the app's Settings ("How this works")."""
+    za = argparse.ArgumentParser(prog="ctwin viz")
+    za.add_argument("--port", type=int, default=7879)
+    za.add_argument("--no-open", action="store_true", help="don't auto-open the browser")
+    args = za.parse_args(rest)
+    from . import viz
+    try:
+        viz.serve(args.port, open_browser=not args.no_open)
+    except OSError as e:
+        print(f"⚠ couldn't start the Visualize Engine: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _voice_command(rest: list[str]) -> int:
     """`ctwin voice` — launch the Siri-style voice UI. Default: native menubar
     (needs rumps); --web runs the browser version (no extra deps)."""
@@ -491,6 +508,8 @@ def main(argv: list[str] | None = None) -> int:
         return _rhythms_command(raw[1:])
     if raw and raw[0] == "reflect":
         return _reflect_command(raw[1:])
+    if raw and raw[0] == "viz":
+        return _viz_command(raw[1:])
 
     ap = argparse.ArgumentParser(prog="ctwin", description="Local-first personal AI agent.")
     ap.add_argument("prompt", nargs="*", help="one-shot prompt; omit for an interactive REPL")

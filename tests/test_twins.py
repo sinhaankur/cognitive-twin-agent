@@ -223,6 +223,35 @@ def test_reflect_once_saves_thought():
     print("✓ reflect: runs a reflection and saves it for the next session")
 
 
+def test_viz_state_reflects_real_data():
+    tmp, twins = _fresh_home()
+    import cognitive_twin.persona as persona
+    import cognitive_twin.memory as memory
+    import cognitive_twin.soul as soul
+    import cognitive_twin.viz as viz
+    import importlib
+    for m in (persona, memory, soul, viz):
+        importlib.reload(m)
+
+    twins.activate("Anita")
+    persona.save(persona.Persona(name="Anita"))
+    for q in ["rust async", "rust ownership", "garden"]:
+        memory.record(q, "ok")
+    soul.add_reflection("a saved thought")
+
+    st = viz._state()
+    assert st["twin"] == "anita"
+    assert st["persona"]["name"] == "Anita"
+    assert st["memory_count"] == 3
+    assert "rust" in st["topics"]
+    assert st["reflections"] == ["a saved thought"]
+
+    # the reasoning trace routes via the real policy: risky → not the fast path
+    risky = viz._route("delete all my files immediately")
+    assert risky.get("risk") == "high"
+    print("✓ viz: state + reasoning trace render from real on-device data")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

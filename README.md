@@ -88,6 +88,20 @@ python -m cognitive_twin reflect --watch 30 # keep thinking every 30 min (Ctrl-C
 Each reflection mulls the topics you actually keep raising (from local memory) and
 saves a single fresh thought; the next chat opens with it. Local model, on-device.
 
+### Visualize Engine — see how it thinks
+
+Most assistants are a black box. Open a local page that shows the twin's actual
+reasoning — from real on-device data:
+
+```bash
+python -m cognitive_twin viz        # opens 127.0.0.1:7879
+```
+
+Three live views: a **reasoning trace** (which local model the policy routes a
+query to, and why), a **knowledge graph** (the topics you keep raising + thoughts
+saved while away, as a connected web), and **inner state** (familiarity, mood,
+rhythm, pending reflections). Nothing leaves the machine.
+
 The interactive chat names the twin you're talking to and takes in-session
 slash commands, so you never have to leave it:
 
