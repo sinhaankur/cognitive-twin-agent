@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
 
     private var voiceLearnWindow: NSWindow?
+    private var brainWindow: NSWindow?
     private var statusItem: NSStatusItem?
     private var privacyItem: NSMenuItem?
     private var learnItem: NSMenuItem?
@@ -68,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.target = self; menu.addItem(settings)
         let voice = NSMenuItem(title: "Teach her a voice…", action: #selector(menuVoice), keyEquivalent: "")
         voice.target = self; menu.addItem(voice)
+        let brain = NSMenuItem(title: "See how she thinks…", action: #selector(menuBrain), keyEquivalent: "b")
+        brain.target = self; menu.addItem(brain)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit \(model.assistantName)", action: #selector(menuQuit), keyEquivalent: "q")
         quit.target = self; menu.addItem(quit)
@@ -79,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func menuChat() { toggleChat() }
     @objc private func menuSettings() { showSettings() }
     @objc private func menuVoice() { showVoiceLearn() }
+    @objc private func menuBrain() { showBrain() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
 
     @objc private func menuTogglePrivate() {
@@ -118,6 +122,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         w.contentView = NSHostingView(rootView: VoiceLearnView().environmentObject(model))
         w.center(); w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
         voiceLearnWindow = w
+    }
+
+    /// Open the Brain — a graph of how the twin thinks and learns.
+    private func showBrain() {
+        if let w = brainWindow {
+            w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return
+        }
+        let w = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 780, height: 600),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        w.title = "\(model.assistantName) — The Brain"
+        w.isReleasedWhenClosed = false
+        w.contentView = NSHostingView(rootView: BrainView().environmentObject(model))
+        w.center(); w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        brainWindow = w
     }
 
     /// Open Settings as a real window (reliable from the borderless panel).

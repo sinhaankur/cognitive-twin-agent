@@ -94,15 +94,46 @@ def recent_prompts(n: int = 8) -> list[str]:
 
 
 # ---- derive lightweight patterns (all local) ---------------------------------
+# A broad stopword set so "learned topics" surface real subjects, not filler.
+# Covers articles/pronouns/aux verbs, common conversational verbs, and generic
+# words that dominate small logs ("thing", "kind", "someone", "want"…).
 _STOP = {
-    "the", "a", "an", "to", "of", "and", "or", "is", "are", "was", "in", "on",
-    "for", "my", "me", "i", "you", "it", "this", "that", "what", "how", "do",
-    "can", "with", "your", "please", "give", "tell", "show", "use", "tools",
+    # articles / conjunctions / prepositions
+    "the", "a", "an", "and", "or", "but", "if", "so", "as", "of", "to", "in",
+    "on", "at", "by", "for", "with", "from", "into", "about", "over", "under",
+    "up", "down", "out", "off", "than", "then", "too", "very", "just",
+    # pronouns / determiners
+    "i", "me", "my", "mine", "we", "us", "our", "you", "your", "yours", "he",
+    "him", "his", "she", "her", "it", "its", "they", "them", "their", "this",
+    "that", "these", "those", "who", "whom", "which", "what", "some", "any",
+    "each", "every", "all", "both", "few", "more", "most", "other", "such",
+    "no", "nor", "not", "only", "own", "same", "one", "ones", "someone",
+    "something", "anything", "everything", "thing", "things", "stuff",
+    # aux / common verbs
+    "is", "are", "was", "were", "be", "been", "being", "am", "do", "does",
+    "did", "have", "has", "had", "can", "could", "will", "would", "shall",
+    "should", "may", "might", "must", "get", "got", "make", "made", "go",
+    "goes", "went", "want", "need", "like", "know", "think", "see", "say",
+    "said", "give", "tell", "show", "use", "used", "help", "let", "put",
+    "take", "find", "come", "look", "feel", "keep", "kind", "sort", "way",
+    # question / instruction words
+    "how", "why", "when", "where", "whats", "please", "tools", "tool",
+    "okay", "ok", "yes", "yeah", "hey", "hi", "hello", "thanks", "thank",
+    "now", "today", "here", "there", "again", "also", "really", "maybe",
+    "warm", "line", "good", "nice", "much", "many", "lot", "bit", "little",
 }
 
 
 def patterns() -> dict[str, Any]:
-    """Summarize recurring topics + active hours from the local log."""
+    """
+    Summarize recurring topics + active hours from the local log.
+
+    Topics favour *recurrence* and *distinctiveness*: words are scored by
+    frequency × length (longer words carry more signal), and when there's
+    enough history we require a word to appear more than once so a single
+    off-hand prompt doesn't become a "learned topic". Small logs fall back to
+    single occurrences so the graph still shows something honest early on.
+    """
     es = entries()
     if not es:
         return {"count": 0, "topics": [], "active_hours": []}
@@ -110,9 +141,10 @@ def patterns() -> dict[str, Any]:
     words: Counter[str] = Counter()
     hours: Counter[int] = Counter()
     for e in es:
-        for w in (e.get("prompt", "").lower().replace("?", " ").split()):
-            w = "".join(c for c in w if c.isalnum())
-            if len(w) > 2 and w not in _STOP:
+        text = e.get("prompt", "").lower()
+        for raw in text.replace("?", " ").replace("/", " ").split():
+            w = "".join(c for c in raw if c.isalnum())
+            if len(w) > 3 and not w.isdigit() and w not in _STOP:
                 words[w] += 1
         ts = e.get("ts", "")
         try:
@@ -120,9 +152,16 @@ def patterns() -> dict[str, Any]:
         except ValueError:
             pass
 
+    # With a reasonable log, keep only words seen at least twice (real recurrence).
+    recurring = {w: c for w, c in words.items() if c >= 2}
+    pool = recurring if len(recurring) >= 3 else dict(words)
+    # score = frequency × sqrt(length) so distinctive multi-syllable words win
+    scored = sorted(pool.items(), key=lambda kv: kv[1] * (len(kv[0]) ** 0.5), reverse=True)
+    topics = [w for w, _ in scored[:6]]
+
     return {
         "count": len(es),
-        "topics": [w for w, _ in words.most_common(6)],
+        "topics": topics,
         "active_hours": [h for h, _ in hours.most_common(3)],
     }
 

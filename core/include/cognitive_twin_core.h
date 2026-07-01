@@ -31,6 +31,11 @@ char *ctwin_system_prompt(const char *base, const char *persona_json,
 char *ctwin_ask(const char *model, const char *persona_json,
                 const char *recent_prompts_json, const char *user_input);
 
+/* Build a graph of how the twin thinks + learns, as JSON (nodes/edges/state).
+ * recent_prompts_json is a JSON array of strings; prompt may be "" (empty adds
+ * no thought-path). Same shape as the desktop /api/brain endpoint. */
+char *ctwin_brain(const char *recent_prompts_json, const char *prompt);
+
 /* Free a string returned by any of the above. */
 void ctwin_string_free(char *s);
 

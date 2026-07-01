@@ -48,4 +48,51 @@ enum TwinCore {
             }
         }
     }
+
+    /// Build the brain graph (how the twin thinks + learns) from recent prompts.
+    /// Pass a `prompt` to also get the likely thought-path. Pure/local — runs the
+    /// Rust core; no network.
+    static func brain(recentPrompts: [String], prompt: String = "") -> BrainGraph {
+        let recents = (try? JSONEncoder().encode(recentPrompts)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        let json = takeString(ctwin_brain(recents, prompt))
+        guard let data = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return BrainGraph(nodes: [], edges: [], thoughtPath: []) }
+
+        let nodes = (obj["nodes"] as? [[String: Any]] ?? []).map { n in
+            BrainNode(id: n["id"] as? String ?? UUID().uuidString,
+                      label: n["label"] as? String ?? "",
+                      kind: n["kind"] as? String ?? "core",
+                      role: n["role"] as? String,
+                      weight: (n["weight"] as? Double) ?? 1.0)
+        }
+        let edges = (obj["edges"] as? [[String: Any]] ?? []).compactMap { e -> BrainEdge? in
+            guard let s = e["source"] as? String, let t = e["target"] as? String else { return nil }
+            return BrainEdge(source: s, target: t, kind: e["kind"] as? String ?? "wired")
+        }
+        let path = (obj["thought_path"] as? [String: Any])?["path"] as? [String] ?? []
+        return BrainGraph(nodes: nodes, edges: edges, thoughtPath: path)
+    }
+}
+
+// MARK: - Brain graph models (mirror the desktop app)
+
+struct BrainNode: Identifiable {
+    let id: String
+    let label: String
+    let kind: String     // "core" | "learned" | "rhythm"
+    let role: String?
+    let weight: Double
+}
+
+struct BrainEdge {
+    let source: String
+    let target: String
+    let kind: String     // "wired" | "observed" | "inferred"
+}
+
+struct BrainGraph {
+    let nodes: [BrainNode]
+    let edges: [BrainEdge]
+    let thoughtPath: [String]
 }

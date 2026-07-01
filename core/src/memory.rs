@@ -15,25 +15,61 @@ pub struct Entry {
     pub model: Option<String>,
 }
 
+// A broad stopword set so "learned topics" surface real subjects, not filler.
+// Kept in sync with the Python side (cognitive_twin/memory.py) so the twin's
+// derived interests are identical across the desktop and native paths.
 const STOP: &[&str] = &[
-    "the", "a", "an", "to", "of", "and", "or", "is", "are", "was", "in", "on",
-    "for", "my", "me", "i", "you", "it", "this", "that", "what", "how", "do",
-    "can", "with", "your", "please", "give", "tell", "show", "use", "tools",
+    "the", "a", "an", "and", "or", "but", "if", "so", "as", "of", "to", "in",
+    "on", "at", "by", "for", "with", "from", "into", "about", "over", "under",
+    "up", "down", "out", "off", "than", "then", "too", "very", "just",
+    "i", "me", "my", "mine", "we", "us", "our", "you", "your", "yours", "he",
+    "him", "his", "she", "her", "it", "its", "they", "them", "their", "this",
+    "that", "these", "those", "who", "whom", "which", "what", "some", "any",
+    "each", "every", "all", "both", "few", "more", "most", "other", "such",
+    "no", "nor", "not", "only", "own", "same", "one", "ones", "someone",
+    "something", "anything", "everything", "thing", "things", "stuff",
+    "is", "are", "was", "were", "be", "been", "being", "am", "do", "does",
+    "did", "have", "has", "had", "can", "could", "will", "would", "shall",
+    "should", "may", "might", "must", "get", "got", "make", "made", "go",
+    "goes", "went", "want", "need", "like", "know", "think", "see", "say",
+    "said", "give", "tell", "show", "use", "used", "help", "let", "put",
+    "take", "find", "come", "look", "feel", "keep", "kind", "sort", "way",
+    "how", "why", "when", "where", "whats", "please", "tools", "tool",
+    "okay", "yes", "yeah", "hey", "hello", "thanks", "thank",
+    "now", "today", "here", "there", "again", "also", "really", "maybe",
+    "warm", "line", "good", "nice", "much", "many", "lot", "bit", "little",
 ];
 
-/// Derive the top recurring topics from a set of prompts (most frequent first).
+/// Derive the top recurring topics from a set of prompts.
+///
+/// Topics favour recurrence and distinctiveness: words are scored by
+/// frequency × sqrt(length) so longer, multi-syllable subjects outrank short
+/// filler, and when there's enough history we require a word to appear at least
+/// twice. Small logs fall back to single occurrences so something honest shows
+/// early. Mirrors the Python `patterns()` derivation.
 pub fn top_topics(prompts: &[String], limit: usize) -> Vec<String> {
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     for p in prompts {
-        for raw in p.to_lowercase().replace('?', " ").split_whitespace() {
+        let lowered = p.to_lowercase().replace('?', " ").replace('/', " ");
+        for raw in lowered.split_whitespace() {
             let w: String = raw.chars().filter(|c| c.is_alphanumeric()).collect();
-            if w.len() > 2 && !STOP.contains(&w.as_str()) {
+            if w.len() > 3 && !w.chars().all(|c| c.is_ascii_digit()) && !STOP.contains(&w.as_str()) {
                 *counts.entry(w).or_insert(0) += 1;
             }
         }
     }
-    let mut v: Vec<(String, usize)> = counts.into_iter().collect();
-    v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    // Prefer words seen at least twice when there are enough of them.
+    let recurring: BTreeMap<String, usize> =
+        counts.iter().filter(|(_, &c)| c >= 2).map(|(w, &c)| (w.clone(), c)).collect();
+    let pool = if recurring.len() >= 3 { recurring } else { counts };
+
+    let mut v: Vec<(String, usize)> = pool.into_iter().collect();
+    // score = frequency × sqrt(length); ties broken alphabetically for stability
+    v.sort_by(|a, b| {
+        let sa = a.1 as f64 * (a.0.len() as f64).sqrt();
+        let sb = b.1 as f64 * (b.0.len() as f64).sqrt();
+        sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal).then(a.0.cmp(&b.0))
+    });
     v.into_iter().take(limit).map(|(w, _)| w).collect()
 }
 

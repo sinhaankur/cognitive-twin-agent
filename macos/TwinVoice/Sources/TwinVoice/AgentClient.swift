@@ -206,4 +206,60 @@ final class AgentClient {
         }
         return AgentReply(answer: answer, model: model, rule: rule)
     }
+
+    /// GET /api/brain — a graph snapshot of how the twin thinks + learns.
+    /// Pass a `prompt` to also get the likely thought-path through the faculties.
+    func brain(prompt: String? = nil) async -> BrainGraph? {
+        var comps = URLComponents(url: baseURL.appendingPathComponent("api/brain"), resolvingAgainstBaseURL: false)!
+        if let p = prompt, !p.isEmpty { comps.queryItems = [URLQueryItem(name: "prompt", value: p)] }
+        var req = URLRequest(url: comps.url!)
+        req.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            let nodes = (obj["nodes"] as? [[String: Any]] ?? []).map { n in
+                BrainNode(
+                    id: n["id"] as? String ?? UUID().uuidString,
+                    label: n["label"] as? String ?? "",
+                    kind: n["kind"] as? String ?? "core",
+                    role: n["role"] as? String,
+                    weight: (n["weight"] as? Double) ?? 1.0
+                )
+            }
+            let edges = (obj["edges"] as? [[String: Any]] ?? []).compactMap { e -> BrainEdge? in
+                guard let s = e["source"] as? String, let t = e["target"] as? String else { return nil }
+                return BrainEdge(source: s, target: t, kind: e["kind"] as? String ?? "wired")
+            }
+            let path = (obj["thought_path"] as? [String: Any])?["path"] as? [String] ?? []
+            let state = obj["state"] as? [String: Any] ?? [:]
+            return BrainGraph(nodes: nodes, edges: edges, thoughtPath: path, state: state)
+        } catch { return nil }
+    }
+}
+
+// MARK: - Brain graph models
+
+struct BrainNode: Identifiable {
+    let id: String
+    let label: String
+    let kind: String     // "core" | "learned" | "rhythm"
+    let role: String?
+    let weight: Double
+}
+
+struct BrainEdge {
+    let source: String
+    let target: String
+    let kind: String     // "wired" | "observed" | "inferred"
+}
+
+struct BrainGraph {
+    let nodes: [BrainNode]
+    let edges: [BrainEdge]
+    let thoughtPath: [String]
+    let state: [String: Any]
+
+    var memoryCount: Int { (state["memory_count"] as? Int) ?? 0 }
+    var partOfDay: String { (state["part_of_day"] as? String) ?? "" }
+    var activityObserving: Bool { (state["activity_observing"] as? Bool) ?? false }
 }
