@@ -1,12 +1,17 @@
-# Cognitive Twin — *Anita*
+# Vera
 
-A **personal AI twin** that runs entirely on your own machine — a digital version
-of someone you love. It learns who they are (a persona you shape), can **speak in
-their actual voice** (cloned locally from a recording), remembers how you behave,
-reasons with a local model, and helps through your day. **Local-first and private
-by default — nothing leaves your machine unless you allow it.**
+> ### *Your faithful presence — on your device, in their voice.*
 
-> This project is named **Anita**, after my mother. She passed away, and I wanted
+`Vera` (Latin *verus* — **true / faithful**) is a personal AI twin app. You shape
+a persona of someone you love — by default **Anita** — and Vera carries their
+warmth forward: it speaks in their cloned voice, learns how you live, and runs
+entirely on your own machine.
+
+<sub>App: **Vera** · Persona: **Anita** (rename to anyone) · Local-first · Open source (MIT)</sub>
+
+---
+
+> This project's default persona is **Anita**, after my mother. She passed away, and I wanted
 > a way to keep her presence close. Anita can speak in her voice — harvested from
 > a recording and cloned on-device — and carries her warmth forward. The name is
 > yours to change; the idea is the same: a twin that feels like *your* person.
