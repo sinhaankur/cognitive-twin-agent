@@ -26,7 +26,7 @@ extracts a clean voice sample from any video/audio for the cloning.
 > Rust core) + CLI. Open source (AGPL-3.0).
 >
 > Layout: the runnable agent is `cognitive_twin/`; the macOS app is
-> `macos/TwinVoice/`; the iOS app is `ios/` (Swift over a Rust core); the portable
+> `macos/Kindred/`; the iOS app is `ios/` (Swift over a Rust core); the portable
 > Rust core is `core/` (compiles to macOS, iOS, Windows, Linux, Android, WASM).
 > The `src/` tree holds earlier scaffolding kept as future layers.
 
@@ -115,7 +115,7 @@ Anita » /who · /persona · /voice · /setup · /exit
 Want the native Mac app instead of the browser? Build it once:
 
 ```bash
-cd macos/TwinVoice && ./build-app.sh && open "Twin Voice.app"
+cd macos/Kindred && ./build-app.sh && open "Kindred.app"
 ```
 
 Put a `tasks.md` in your workspace (`~/.cognitive-twin/workspace/`, override with
@@ -168,7 +168,7 @@ isn't pulled, the agent stays local and falls back to an installed one.
 ## Choose your model backend (Ollama or LM Studio)
 
 The twin drives more than one local backend, and you can switch models live from
-the **Settings ▸ Model** picker in Twin Voice. Two backends are supported:
+the **Settings ▸ Model** picker in Kindred. Two backends are supported:
 
 - **Ollama** (default) — models show by their bare name (`llama3.2`, `qwen2.5:3b`).
 - **OpenAI-compatible servers** — **LM Studio**, `llama.cpp --api`, **Jan**, vLLM,
@@ -197,7 +197,7 @@ The heuristic is deliberately simple and honest — a starting signal, not a lea
 policy. Swapping in a learned classifier later is a drop-in. `guardrails.allowCloudFallback`
 is `false`: routing never leaves the machine.
 
-## Twin Voice — a local-first, Siri-style front end
+## Kindred — a local-first, Siri-style front end
 
 Talk to the twin. Speak a question, it answers out loud — built in the spirit of
 [Unhosted](https://github.com/unhosted-ai): the work stays on your machine.

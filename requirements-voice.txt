@@ -1,4 +1,4 @@
-# Optional dependencies for Twin Voice (the Siri-style voice UI).
+# Optional dependencies for Kindred (the Siri-style voice UI).
 #
 # The voice app works WITHOUT these:
 #   - text-to-speech uses macOS `say` (built in, no install)

@@ -2,14 +2,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "TwinVoice",
+    name: "Kindred",
     platforms: [
         .macOS(.v13)   // Speech on-device dictation + modern SwiftUI
     ],
     targets: [
         .executableTarget(
-            name: "TwinVoice",
-            path: "Sources/TwinVoice"
+            name: "Kindred",
+            path: "Sources/Kindred"
         )
     ]
 )

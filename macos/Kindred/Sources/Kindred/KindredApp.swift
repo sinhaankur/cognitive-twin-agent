@@ -4,7 +4,7 @@ import Foundation
 import ServiceManagement
 
 @main
-struct TwinVoiceApp: App {
+struct KindredApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     var body: some Scene { Settings { EmptyView() } }
 }

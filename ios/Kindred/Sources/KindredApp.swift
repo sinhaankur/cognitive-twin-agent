@@ -4,7 +4,7 @@ import SwiftUI
 /// core (CognitiveTwinCore.xcframework) via TwinCore. The Siri orb is the same
 /// pure-SwiftUI view used on macOS.
 @main
-struct TwinVoiceApp: App {
+struct KindredApp: App {
     @StateObject private var model = TwinModel()
     var body: some Scene {
         WindowGroup {

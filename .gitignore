@@ -6,12 +6,12 @@ memory/runtime/
 memory/security/
 memory/connectors/cache/
 *.log
-macos/TwinVoice/Twin Voice.app/
-macos/TwinVoice/.build/
+macos/Kindred/Kindred.app/
+macos/Kindred/.build/
 core/target/
 Cargo.lock
 core/CognitiveTwinCore.xcframework/
-macos/TwinVoice/AppIcon.icns
+macos/Kindred/AppIcon.icns
 ios/Anita.xcodeproj/
 ios/DerivedData/
 *.xcuserstate
