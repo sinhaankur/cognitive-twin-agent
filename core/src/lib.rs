@@ -39,6 +39,79 @@ pub fn build_system_prompt(base: &str, persona_json: &str, recent_prompts: &[Str
     parts.join("\n\n")
 }
 
+/// Build a graph snapshot of how the twin thinks + learns, as JSON.
+///
+/// Mirrors the Python `cognitive_twin/brain.py`: cognitive faculties are CORE
+/// nodes, topics derived from the user's recent prompts are LEARNED nodes, and
+/// edges are tagged by provenance (wired / observed). Given a `prompt`, also
+/// returns the likely thought-path through the faculties. All local; the host
+/// supplies the prompts, this is pure logic.
+pub fn brain_graph(recent_prompts: &[String], prompt: &str) -> String {
+    // faculties + the role each plays (kept in sync with brain.py)
+    let faculties: &[(&str, &str, &str)] = &[
+        ("memory", "Memory", "Recalls your recurring interests + recent asks (local log)."),
+        ("persona", "Persona", "Who the twin is — the character you shaped."),
+        ("soul", "Soul", "An evolving personality + reflections while you're away."),
+        ("mood", "Mood", "Colors tone and how warm/measured the answer feels."),
+        ("rhythms", "Rhythms", "Time-of-day + life-rhythm awareness."),
+        ("activity", "Activity", "Learns how you work by watching your active app (opt-in)."),
+        ("voice", "Voice", "Speaks the answer in a loved one's cloned voice, on-device."),
+        ("router", "Model router", "Picks the local model that reasons the reply."),
+    ];
+    let wiring: &[(&str, &str)] = &[
+        ("memory", "router"), ("persona", "router"), ("soul", "router"),
+        ("mood", "router"), ("rhythms", "router"), ("activity", "memory"),
+        ("router", "voice"), ("soul", "mood"), ("rhythms", "mood"),
+    ];
+
+    let mut nodes: Vec<serde_json::Value> = Vec::new();
+    let mut edges: Vec<serde_json::Value> = Vec::new();
+    for (id, label, role) in faculties {
+        nodes.push(serde_json::json!({"id": id, "label": label, "kind": "core", "role": role}));
+    }
+    for (a, b) in wiring {
+        edges.push(serde_json::json!({"source": a, "target": b, "kind": "wired"}));
+    }
+
+    let topics = top_topics(recent_prompts, 6);
+    let n = topics.len().max(1);
+    for (i, t) in topics.iter().enumerate() {
+        let id = format!("topic:{t}");
+        let weight = (1.0 - (i as f64 / n as f64) * 0.5 * 100.0).round() / 100.0;
+        nodes.push(serde_json::json!({"id": id, "label": t, "kind": "learned", "weight": weight}));
+        edges.push(serde_json::json!({"source": id, "target": "memory", "kind": "observed"}));
+    }
+
+    let mut obj = serde_json::json!({
+        "nodes": nodes,
+        "edges": edges,
+        "state": {"memory_count": recent_prompts.len()},
+    });
+    if !prompt.trim().is_empty() {
+        obj["thought_path"] = serde_json::json!({"prompt": prompt, "path": thought_path(prompt)});
+    }
+    obj.to_string()
+}
+
+/// Heuristic ordered faculty path a prompt is likely to route through.
+fn thought_path(prompt: &str) -> Vec<&'static str> {
+    let p = prompt.to_lowercase();
+    let mut path: Vec<&'static str> = vec!["memory", "persona"];
+    if ["feel", "sad", "miss", "love", "tired", "happy"].iter().any(|w| p.contains(w)) {
+        path.push("mood");
+    }
+    if ["today", "now", "tonight", "morning", "sleep", "work"].iter().any(|w| p.contains(w)) {
+        path.push("rhythms");
+    }
+    if ["working on", "my app", "my project", "screen", "what am i"].iter().any(|w| p.contains(w)) {
+        path.push("activity");
+    }
+    path.push("router");
+    path.push("voice");
+    let mut seen = std::collections::BTreeSet::new();
+    path.into_iter().filter(|x| seen.insert(*x)).collect()
+}
+
 // ---------------------------------------------------------------------------
 // C FFI — so Swift (iOS/macOS) and other C callers can use the core. Strings
 // cross the boundary as UTF-8 C strings; the caller must free returned strings
@@ -133,6 +206,19 @@ pub mod ffi {
         }
     }
 
+    /// Build a graph snapshot of how the twin thinks + learns (JSON).
+    /// `recent_prompts_json` is a JSON array of strings; `prompt` (may be "")
+    /// adds the thought-path. Returns the same shape as the desktop /api/brain.
+    #[no_mangle]
+    pub extern "C" fn ctwin_brain(
+        recent_prompts_json: *const c_char,
+        prompt: *const c_char,
+    ) -> *mut c_char {
+        let recents: Vec<String> =
+            serde_json::from_str(unsafe { cstr(recent_prompts_json) }).unwrap_or_default();
+        out(brain_graph(&recents, unsafe { cstr(prompt) }))
+    }
+
     /// Free a string returned by this library.
     #[no_mangle]
     pub extern "C" fn ctwin_string_free(p: *mut c_char) {
@@ -158,5 +244,23 @@ mod tests {
         assert!(sys.contains("BASE"));
         assert!(sys.contains("Ankur") && sys.contains("local-first"));
         assert!(sys.to_lowercase().contains("ollama"));
+    }
+
+    #[test]
+    fn brain_graph_has_core_and_learned() {
+        let prompts = vec![
+            "how is my portfolio going".to_string(),
+            "help with the portfolio redesign".to_string(),
+            "prep me for the interview".to_string(),
+        ];
+        let json = brain_graph(&prompts, "how am I feeling today");
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let nodes = v["nodes"].as_array().unwrap();
+        assert!(nodes.iter().any(|n| n["id"] == "router" && n["kind"] == "core"));
+        assert!(nodes.iter().any(|n| n["kind"] == "learned" && n["label"] == "portfolio"));
+        // thought-path present + includes mood (prompt says "feeling") and rhythms ("today")
+        let path = v["thought_path"]["path"].as_array().unwrap();
+        let names: Vec<&str> = path.iter().map(|x| x.as_str().unwrap()).collect();
+        assert!(names.contains(&"mood") && names.contains(&"rhythms") && names.contains(&"voice"));
     }
 }

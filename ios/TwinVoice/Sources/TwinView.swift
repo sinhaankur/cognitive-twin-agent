@@ -8,6 +8,7 @@ struct TwinView: View {
     @State private var phase: CGFloat = 0
     @State private var typed = ""
     @State private var showPersona = false
+    @State private var showBrain = false
     private let timer = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -18,8 +19,13 @@ struct TwinView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 18) {
-                HStack {
+                HStack(spacing: 18) {
                     Spacer()
+                    Button { showBrain = true } label: {
+                        Image(systemName: "brain")
+                            .font(.title2).foregroundStyle(.white.opacity(0.7))
+                    }
+                    .accessibilityLabel("See how she thinks")
                     Button { showPersona = true } label: {
                         Image(systemName: "person.crop.circle")
                             .font(.title2).foregroundStyle(.white.opacity(0.7))
@@ -70,6 +76,7 @@ struct TwinView: View {
         }
         .onReceive(timer) { _ in phase += 0.06 + (model.thinking ? 0.2 : 0) }
         .sheet(isPresented: $showPersona) { PersonaEditor().environmentObject(model) }
+        .sheet(isPresented: $showBrain) { BrainView().environmentObject(model) }
     }
 
     private func send() {

@@ -29,7 +29,12 @@ final class TwinModel: ObservableObject {
         UserDefaults.standard.string(forKey: "persona") ??
         #"{"name":"","likes":[],"dislikes":[],"values":[]}"#
 
-    private var history: [String] = []
+    // Local prompt history — persisted so the twin's "learned" topics survive
+    // restarts (kept small + on-device only, never sent anywhere).
+    private var history: [String] = UserDefaults.standard.stringArray(forKey: "history") ?? []
+
+    /// Read-only view of recent prompts, for the Brain graph.
+    var recentPrompts: [String] { history }
 
     func savePersona(_ json: String) {
         personaJSON = json
@@ -51,6 +56,8 @@ final class TwinModel: ObservableObject {
                 self.answer = reply
                 self.thinking = false
                 self.history.append(text)
+                if self.history.count > 200 { self.history.removeFirst(self.history.count - 200) }
+                UserDefaults.standard.set(self.history, forKey: "history")
             }
         }
     }
