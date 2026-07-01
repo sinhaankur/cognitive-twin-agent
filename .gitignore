@@ -6,12 +6,12 @@ memory/runtime/
 memory/security/
 memory/connectors/cache/
 *.log
-macos/Kindred/Kindred.app/
-macos/Kindred/.build/
+macos/Vera/Vera.app/
+macos/Vera/.build/
 core/target/
 Cargo.lock
 core/CognitiveTwinCore.xcframework/
-macos/Kindred/AppIcon.icns
+macos/Vera/AppIcon.icns
 ios/Anita.xcodeproj/
 ios/DerivedData/
 *.xcuserstate

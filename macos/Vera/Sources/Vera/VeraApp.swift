@@ -4,7 +4,7 @@ import Foundation
 import ServiceManagement
 
 @main
-struct KindredApp: App {
+struct VeraApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     var body: some Scene { Settings { EmptyView() } }
 }

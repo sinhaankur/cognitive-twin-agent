@@ -1,5 +1,5 @@
 """
-Menubar launcher — a thin macOS menubar mic for Kindred.
+Menubar launcher — a thin macOS menubar mic for Vera.
 
 Lives in the menu bar; clicking "Speak" opens the Siri panel and starts listening.
 The actual work (STT in the browser, agent, TTS via `say`) runs through the local
@@ -42,7 +42,7 @@ def run(port: int = DEFAULT_PORT) -> None:
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     base = f"http://{HOST}:{port}"
 
-    class KindredApp(rumps.App):
+    class VeraApp(rumps.App):
         def __init__(self) -> None:
             super().__init__("🎙", quit_button=None)
             self.menu = [
@@ -65,7 +65,7 @@ def run(port: int = DEFAULT_PORT) -> None:
             httpd.shutdown()
             rumps.quit_application()
 
-    KindredApp().run()
+    VeraApp().run()
 
 
 if __name__ == "__main__":

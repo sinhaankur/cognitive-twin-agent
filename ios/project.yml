@@ -13,7 +13,7 @@ targets:
     type: application
     platform: iOS
     sources:
-      - path: Kindred/Sources
+      - path: Vera/Sources
     # Link the portable Rust core (built into an xcframework).
     dependencies:
       - framework: ../core/CognitiveTwinCore.xcframework
@@ -29,7 +29,7 @@ targets:
         ONLY_ACTIVE_ARCH: YES
         EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
         # The bridging header lets Swift call the Rust C ABI (ctwin_*).
-        SWIFT_OBJC_BRIDGING_HEADER: Kindred/Sources/Anita-Bridging-Header.h
+        SWIFT_OBJC_BRIDGING_HEADER: Vera/Sources/Anita-Bridging-Header.h
         # Permission strings (required for mic + speech on device).
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "Anita listens to your voice so you can talk with her — audio stays on your device."
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Anita transcribes your speech on-device to understand you."

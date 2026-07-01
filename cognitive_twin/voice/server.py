@@ -310,7 +310,7 @@ def _warm_voice_clone() -> None:
 def serve(port: int = DEFAULT_PORT, *, open_browser: bool = True, model: str | None = None) -> None:
     httpd = make_server(port, model)
     url = f"http://{HOST}:{port}"
-    print(f"Kindred · Siri UI at {url}")
+    print(f"Vera · Siri UI at {url}")
     print(f"  TTS: {'macOS say' if tts.is_available() else 'unavailable'} · {stt.status()}")
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()

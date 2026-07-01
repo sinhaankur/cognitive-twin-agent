@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Build "Kindred.app" -- a real, double-clickable macOS app bundle.
+# Build "Vera.app" -- a real, double-clickable macOS app bundle.
 #
-#   ./build-app.sh            # builds and places Kindred.app in this folder
-#   open "Kindred.app"     # launch it
+#   ./build-app.sh            # builds and places Vera.app in this folder
+#   open "Vera.app"     # launch it
 #
 # The bundle includes the Info.plist permission strings macOS requires for the
 # microphone + speech recognition (without them the app crashes on first listen).
@@ -10,8 +10,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP="Kindred.app"
-BIN_NAME="Kindred"
+APP="Vera.app"
+BIN_NAME="Vera"
 
 echo "[1/4] Compiling (release)..."
 swift build -c release
@@ -45,7 +45,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleVersion</key>         <string>0.1.0</string>
   <key>CFBundleShortVersionString</key> <string>0.1.0</string>
   <key>CFBundlePackageType</key>     <string>APPL</string>
-  <key>CFBundleExecutable</key>      <string>Kindred</string>
+  <key>CFBundleExecutable</key>      <string>Vera</string>
   <key>CFBundleIconFile</key>        <string>AppIcon</string>
   <key>CFBundleIconName</key>        <string>AppIcon</string>
   <key>LSMinimumSystemVersion</key>  <string>13.0</string>

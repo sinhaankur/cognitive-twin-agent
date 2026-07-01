@@ -2,14 +2,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "Kindred",
+    name: "Vera",
     platforms: [
         .macOS(.v13)   // Speech on-device dictation + modern SwiftUI
     ],
     targets: [
         .executableTarget(
-            name: "Kindred",
-            path: "Sources/Kindred"
+            name: "Vera",
+            path: "Sources/Vera"
         )
     ]
 )

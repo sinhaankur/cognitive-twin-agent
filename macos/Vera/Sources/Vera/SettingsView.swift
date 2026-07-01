@@ -164,7 +164,7 @@ struct SettingsView: View {
                 Text(model.serverUp ? "local agent connected" : "agent starting…")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Text("Kindred").font(.caption).foregroundStyle(.tertiary)
+                Text("Vera").font(.caption).foregroundStyle(.tertiary)
             }
             .padding(.top, 14)
         }

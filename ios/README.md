@@ -1,4 +1,4 @@
-# Kindred — iOS
+# Vera — iOS
 
 The Cognitive Twin on iPhone/iPad, powered by the **shared Rust core**
 (`core/`). The agent brain — persona, memory, routing, prompt assembly, and the
@@ -8,7 +8,7 @@ a SwiftUI shell over it.
 ## What's here
 
 - `Sources/TwinCore.swift` — Swift bridge over the Rust C ABI (`ctwin_*`).
-- `Sources/KindredApp.swift` — app entry + state (`TwinModel`).
+- `Sources/VeraApp.swift` — app entry + state (`TwinModel`).
 - `Sources/TwinView.swift` — the Siri screen + persona editor.
 - `Sources/SiriOrb.swift` — the multicolor Siri orb (shared with macOS, pure SwiftUI).
 

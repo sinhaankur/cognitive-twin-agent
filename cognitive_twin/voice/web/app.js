@@ -1,4 +1,4 @@
-/* Kindred — Siri-style front end.
+/* Vera — Siri-style front end.
  *
  * SiriWave (kopiro/siriwave) is the reactive voice wave. Listening uses the
  * browser's SpeechRecognition; the transcript is sent to the local agent at
