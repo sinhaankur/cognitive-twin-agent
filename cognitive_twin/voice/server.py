@@ -113,6 +113,16 @@ class _Handler(BaseHTTPRequestHandler):
             from .. import soul
             items = soul.pending_reflections(clear=False)
             self._json(200, {"items": items, "soul": soul.status()})
+        elif self.path == "/api/brain" or self.path.startswith("/api/brain?"):
+            # A graph snapshot of how the twin thinks + learns (local state only).
+            from .. import brain
+            from urllib.parse import urlparse, parse_qs
+            data = brain.snapshot()
+            q = parse_qs(urlparse(self.path).query)
+            prompt = (q.get("prompt", [""])[0] or "").strip()
+            if prompt:
+                data["thought_path"] = brain.thought_path(prompt)
+            self._json(200, data)
         elif self.path == "/api/voice/clone/status":
             from .. import voice_clone
             self._json(200, {"ready": voice_clone.is_ready(), "status": voice_clone.status()})
