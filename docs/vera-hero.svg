@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" font-family="-apple-system, 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0c0e14"/><stop offset="1" stop-color="#05060a"/>
+    </linearGradient>
+    <radialGradient id="orb" cx="0.5" cy="0.42" r="0.6">
+      <stop offset="0" stop-color="#8fb4ff"/><stop offset="0.5" stop-color="#4d6ef0"/><stop offset="1" stop-color="#2a2f6b"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="rgba(120,150,255,0.35)"/><stop offset="1" stop-color="rgba(120,150,255,0)"/>
+    </radialGradient>
+    <filter id="soft"><feGaussianBlur stdDeviation="8"/></filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <!-- subtle grid -->
+  <g opacity="0.06" stroke="#8fb4ff" stroke-width="1">
+    <line x1="0" y1="210" x2="1200" y2="210"/><line x1="0" y1="420" x2="1200" y2="420"/>
+    <line x1="400" y1="0" x2="400" y2="630"/><line x1="800" y1="0" x2="800" y2="630"/>
+  </g>
+
+  <!-- LEFT: brand + pitch -->
+  <text x="80" y="150" fill="#f4f5f8" font-size="88" font-weight="800" letter-spacing="-2">Vera</text>
+  <text x="82" y="196" fill="#8fb4ff" font-size="22" font-weight="600" letter-spacing="0.5">Your faithful presence — private, on-device.</text>
+
+  <text x="80" y="262" fill="#c7cbd6" font-size="21" font-weight="400">A personal AI twin that runs entirely on</text>
+  <text x="80" y="292" fill="#c7cbd6" font-size="21" font-weight="400">your own machine. Local LLM, private</text>
+  <text x="80" y="322" fill="#c7cbd6" font-size="21" font-weight="400">memory, a loved one's voice — no cloud.</text>
+
+  <!-- privacy badges -->
+  <g font-size="15" font-weight="600">
+    <g transform="translate(80,375)">
+      <rect width="176" height="42" rx="21" fill="rgba(143,180,255,0.10)" stroke="rgba(143,180,255,0.35)"/>
+      <circle cx="26" cy="21" r="5" fill="#5ee08b"/><text x="42" y="27" fill="#e6e9f2">Local LLM</text>
+    </g>
+    <g transform="translate(268,375)">
+      <rect width="188" height="42" rx="21" fill="rgba(143,180,255,0.10)" stroke="rgba(143,180,255,0.35)"/>
+      <circle cx="26" cy="21" r="5" fill="#5ee08b"/><text x="42" y="27" fill="#e6e9f2">Private memory</text>
+    </g>
+    <g transform="translate(80,429)">
+      <rect width="204" height="42" rx="21" fill="rgba(143,180,255,0.10)" stroke="rgba(143,180,255,0.35)"/>
+      <circle cx="26" cy="21" r="5" fill="#5ee08b"/><text x="42" y="27" fill="#e6e9f2">Zero cloud sync</text>
+    </g>
+    <g transform="translate(296,429)">
+      <rect width="160" height="42" rx="21" fill="rgba(143,180,255,0.10)" stroke="rgba(143,180,255,0.35)"/>
+      <circle cx="26" cy="21" r="5" fill="#5ee08b"/><text x="42" y="27" fill="#e6e9f2">Open source</text>
+    </g>
+  </g>
+
+  <text x="80" y="540" fill="#6b7080" font-size="15" font-weight="500" letter-spacing="1">macOS · iOS · CLI  ·  built on a portable Rust core  ·  MIT</text>
+
+  <!-- RIGHT: the Siri-style orb app -->
+  <g transform="translate(830,315)">
+    <circle cx="0" cy="0" r="230" fill="url(#glow)" filter="url(#soft)"/>
+    <circle cx="0" cy="0" r="132" fill="url(#orb)"/>
+    <circle cx="0" cy="0" r="132" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.5"/>
+    <!-- waveform hint -->
+    <g stroke="rgba(255,255,255,0.55)" stroke-width="3" stroke-linecap="round" fill="none">
+      <path d="M -70 0 Q -35 -34 0 0 T 70 0"/>
+      <path d="M -70 14 Q -35 42 0 14 T 70 14" opacity="0.5"/>
+    </g>
+    <text x="0" y="192" fill="#aab0c2" font-size="15" font-weight="600" letter-spacing="3" text-anchor="middle">LISTENING · LOCAL</text>
+  </g>
+
+  <!-- floating menubar chip -->
+  <g transform="translate(946,70)">
+    <rect width="184" height="40" rx="10" fill="rgba(20,22,30,0.9)" stroke="rgba(143,180,255,0.25)"/>
+    <circle cx="24" cy="20" r="7" fill="#8fb4ff"/>
+    <text x="42" y="26" fill="#dfe3ee" font-size="14" font-weight="600">Vera · menubar</text>
+  </g>
+</svg>

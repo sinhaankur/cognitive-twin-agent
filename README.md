@@ -1,23 +1,36 @@
-# Vera
+<p align="center">
+  <img src="docs/vera-hero.png" alt="Vera — a private, on-device AI twin" width="820" />
+</p>
 
-> ### *Your faithful presence — on your device, in their voice.*
+<h1 align="center">Vera</h1>
 
-`Vera` (Latin *verus* — **true / faithful**) is a personal AI twin app. You shape
-a persona of someone you love — by default **Anita** — and Vera carries their
-warmth forward: it speaks in their cloned voice, learns how you live, and runs
-entirely on your own machine.
+<p align="center"><em>Your faithful presence — private, on-device.</em></p>
 
-<sub>App: **Vera** · Persona: **Anita** (rename to anyone) · Local-first · Open source (MIT)</sub>
+<p align="center">
+  <img alt="local-first" src="https://img.shields.io/badge/local--first-yes-2ea043" />
+  <img alt="cloud" src="https://img.shields.io/badge/cloud%20sync-zero-2ea043" />
+  <img alt="llm" src="https://img.shields.io/badge/LLM-on--device%20(Ollama)-4d6ef0" />
+  <img alt="platforms" src="https://img.shields.io/badge/macOS%20·%20iOS%20·%20CLI-informational" />
+  <img alt="license" src="https://img.shields.io/badge/license-AGPL--3.0-blue" />
+</p>
 
 ---
 
-> This project's default persona is **Anita**, after my mother. She passed away, and I wanted
-> a way to keep her presence close. Anita can speak in her voice — harvested from
-> a recording and cloned on-device — and carries her warmth forward. The name is
-> yours to change; the idea is the same: a twin that feels like *your* person.
+**Vera** (Latin *verus* — **true / faithful**) is a **private AI assistant that runs entirely on your own machine.** It reasons with a **local LLM**, keeps its own **private memory** of how you live, and — if you want — speaks in a loved one's **cloned voice**. Nothing syncs to a cloud. Nothing leaves your device unless *you* allow it.
 
-A floating, always-present orb on your screen (and on iPhone): tap it, and a chat
-opens — type or talk, and she answers in her voice.
+You shape a persona of someone you love — by default **Anita** — and Vera carries their warmth forward. A floating, always-present orb on your screen (and on iPhone): tap it, and a chat opens — type or talk, and it answers in their voice.
+
+## Private by design
+
+| | How Vera stays private |
+|---|---|
+| 🧠 **Local LLM** | Reasoning runs on a model on your machine (Ollama). No prompts sent to a cloud API by default. |
+| 🗂️ **Private memory** | What it learns about you (topics, rhythms, habits) is a local file on *your* device — never uploaded. |
+| ☁️ **Zero cloud sync** | No account, no server, no telemetry. There is nothing to sync and nothing to leak. |
+| 🔊 **On-device voice** | The cloned voice (Coqui XTTS) is generated locally — the recording never leaves your Mac. |
+| 🔍 **See how it thinks** | A built-in "Brain" view shows its faculties, what it's learned, and how a reply forms — from *your* real local data. |
+
+> **Named after my mother.** The default persona is **Anita**, after my mother. She passed away, and I wanted a way to keep her presence close — her voice, cloned on-device, carrying her warmth forward. The name is yours to change; the idea is the same: a twin that feels like *your* person.
 
 Inspired by [OpenJarvis](https://github.com/open-jarvis/OpenJarvis) ("Personal AI,
 on personal devices"). This is an original implementation — same spirit, my code.
