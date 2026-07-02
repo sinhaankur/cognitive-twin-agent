@@ -49,26 +49,44 @@ final class AppleIntelligence {
     private var sessionBox: Any?
 
     /// Answer a prompt fully on-device. Throws if AI isn't available.
+    ///
+    /// Self-healing: the on-device model keeps the whole transcript in its
+    /// session, and a long chat eventually overflows the context window (or
+    /// trips a guardrail) — after which EVERY later turn throws and the chat
+    /// looks dead. On any error we start a fresh session and retry once, so a
+    /// poisoned session costs one reply's context, not the conversation.
     func ask(_ prompt: String, persona: String?) async throws -> String {
         #if canImport(FoundationModels)
         if #available(macOS 26.0, *) {
-            let s: LanguageModelSession
-            if let existing = sessionBox as? LanguageModelSession {
-                s = existing
-            } else {
-                // Seed the session with the twin persona so it answers in voice.
-                let instructions = persona ?? "You are a concise, local-first personal assistant."
-                s = LanguageModelSession(instructions: instructions)
-                sessionBox = s
+            do {
+                return try await respondOnce(prompt, persona: persona)
+            } catch {
+                reset()
+                return try await respondOnce(prompt, persona: persona)
             }
-            let response = try await s.respond(to: prompt)
-            return response.content
         }
         throw AIError.unavailable
         #else
         throw AIError.unavailable
         #endif
     }
+
+    #if canImport(FoundationModels)
+    @available(macOS 26.0, *)
+    private func respondOnce(_ prompt: String, persona: String?) async throws -> String {
+        let s: LanguageModelSession
+        if let existing = sessionBox as? LanguageModelSession {
+            s = existing
+        } else {
+            // Seed the session with the twin persona so it answers in voice.
+            let instructions = persona ?? "You are a concise, local-first personal assistant."
+            s = LanguageModelSession(instructions: instructions)
+            sessionBox = s
+        }
+        let response = try await s.respond(to: prompt)
+        return response.content
+    }
+    #endif
 
     func reset() {
         sessionBox = nil

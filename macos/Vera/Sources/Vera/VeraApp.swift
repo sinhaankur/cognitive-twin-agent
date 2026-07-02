@@ -571,7 +571,16 @@ final class AppModel: ObservableObject {
                 if usingAppleAI {
                     // Fully on-device via Apple's foundation model — no server.
                     let persona = "You are a concise, helpful local-first personal assistant. Keep answers short and spoken-friendly."
-                    answerText = try await appleAI.ask(text, persona: persona)
+                    do {
+                        answerText = try await appleAI.ask(text, persona: persona)
+                    } catch {
+                        // Apple Intelligence failed even after its session
+                        // reset — answer THIS turn via the local agent rather
+                        // than dead-ending the chat. Selection stays on Apple;
+                        // this is a per-turn safety net.
+                        let reply = try await agent.ask(text)
+                        answerText = reply.answer
+                    }
                 } else {
                     let reply = try await agent.ask(text)
                     if let m = reply.model { await MainActor.run { self.modelName = m } }
@@ -588,10 +597,14 @@ final class AppModel: ObservableObject {
                 }
             } catch {
                 await MainActor.run {
-                    self.answer = self.usingAppleAI
-                        ? "Apple Intelligence isn't available right now."
-                        : "Couldn't reach the agent. Is it running?"
+                    // The failure must LAND IN THE CHAT — without a bubble the
+                    // typed message just vanishes and the whole panel reads as
+                    // broken (the original bug: errors only set `answer`).
+                    let msg = "I couldn't answer that — my local brain isn't reachable. Give me a few seconds and try again."
+                    self.answer = msg
+                    self.turns.append(ChatTurn(text: msg, isUser: false))
                     self.phase = .idle
+                    self.ensureServer() // kick the watchdog now, not in 5s
                 }
             }
         }
