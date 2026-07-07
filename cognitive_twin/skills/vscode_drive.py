@@ -230,3 +230,75 @@ def drive_write(project: str, path: str, content: str) -> str:
         with log.open("a", encoding="utf-8") as f:
             f.write(f"- {'edited' if existed else 'created'} `{path}` ({len(content)} chars)\n")
     return f"{'Overwrote' if existed else 'Created'} {path} ({len(content)} chars)."
+
+
+# --- The one command: plan + loop toward a goal ------------------------------
+#
+# Anita drives autonomously here (no per-step confirmation, per the user's
+# explicit authorization). Autonomy is deliberately bounded to remain
+# recoverable:
+#   * every action goes through the drive_* tools, which are hard-sandboxed to
+#     the project (no filesystem escape) and refuse destructive/publish commands
+#     (rm, git push, arbitrary shell) — so "autonomous" can build/break code
+#     WITHIN the project but cannot harm the machine or ship anything;
+#   * every step is written to the checkpoint log, so the whole run is
+#     reviewable after the fact and trivially `git revert`-able;
+#   * the step budget is capped (default 24) so a loop can't run away.
+
+_DRIVE_SYSTEM = """You are Anita, driving a real project toward a goal. Work
+autonomously, one step at a time, using ONLY these tools:
+  drive_list(project, path)          — see what's there
+  drive_read(project, path)          — read a file before changing it
+  drive_write(project, path, content)— make an edit (write the FULL file)
+  drive_run(project, command)        — verify (e.g. 'swift test', 'pnpm build')
+  drive_checkpoint(project, note)    — log one line before each real step
+
+Rules: always pass the given project path. Read before you write. After a
+change, VERIFY with drive_run and fix what fails. Checkpoint each step so the
+run stays reviewable. Stay inside the project. When the goal is met and
+verification passes, stop and summarize. If a step needs a human decision, stop
+and say what's blocking rather than guessing."""
+
+
+@R.add(
+    "drive",
+    "Drive a project toward a goal in one command: Anita plans, edits, verifies, "
+    "and checkpoints autonomously until the goal is met or she's blocked. Runs "
+    "only through the sandboxed drive tools (can't escape the project, delete, "
+    "or push) and logs every step. Opens the project in VS Code first.",
+    {"type": "object", "properties": {
+        "project": {"type": "string", "description": "absolute path to the project"},
+        "goal": {"type": "string", "description": "what to accomplish"},
+        "max_steps": {"type": "integer", "description": "step budget (default 24, capped 60)"}},
+     "required": ["project", "goal"]},
+)
+def drive(project: str, goal: str, max_steps: int = 24) -> str:
+    proj = _resolve_project(project)
+    drive_start(project=str(proj), goal=goal)
+    vscode_open(project=str(proj))
+
+    try:
+        from ..cli import build_agent  # lazy: avoids import cycles at module load
+    except Exception as e:  # noqa: BLE001
+        return f"[error] couldn't build the drive agent: {e}"
+
+    try:
+        # Autonomous run (no per-step confirmation), per the user's explicit
+        # authorization. Safety comes from the sandboxed tools + the step cap +
+        # the reviewable log, not from a confirm prompt.
+        agent = build_agent(None, route=True, interactive_confirm=False)
+        agent.max_steps = max(4, min(60, int(max_steps)))
+    except Exception as e:  # noqa: BLE001
+        return f"[error] couldn't start the drive agent: {e}"
+
+    prompt = (f"{_DRIVE_SYSTEM}\n\nProject: {proj}\nGoal: {goal}\n\n"
+              f"Begin. Pass project='{proj}' to every tool.")
+    try:
+        result = agent.run(prompt)
+    except Exception as e:  # noqa: BLE001
+        return f"[error] the drive stopped on an exception: {e}\nLog: {_log_path(proj)}"
+
+    steps = getattr(result, "steps", "?")
+    answer = getattr(result, "answer", str(result))
+    return (f"Drive finished after {steps} steps.\n{answer}\n\n"
+            f"Every step is in the log (review + revert from here): {_log_path(proj)}")
