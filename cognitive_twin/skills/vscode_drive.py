@@ -158,3 +158,75 @@ def drive_run(project: str, command: str) -> str:
     tail = tail[-1500:]
     status = "ok" if out.returncode == 0 else f"exit {out.returncode}"
     return f"[{status}] {command}\n{tail}"
+
+
+# --- Reading + writing the driven project ------------------------------------
+# The built-in read_file/list_dir skills are sandboxed to a PRIVATE workspace,
+# so they can't see the project Anita is driving. These do — guarded by the same
+# _inside() check so she still can't wander outside it — which is what makes her
+# able to actually build, not just run commands.
+
+@R.add(
+    "drive_list",
+    "List files/folders inside the driven project (relative path; '' for root). "
+    "Guarded to the project — can't see outside it.",
+    {"type": "object", "properties": {
+        "project": {"type": "string"},
+        "path": {"type": "string", "description": "folder relative to the project root"}},
+     "required": ["project"]},
+)
+def drive_list(project: str, path: str = "") -> str:
+    proj = _resolve_project(project)
+    target = (proj / path).resolve()
+    if not _inside(proj, target):
+        return f"[refused] '{path}' is outside the project."
+    if not target.exists():
+        return f"[not found] '{path or '.'}'"
+    return "\n".join(sorted(os.listdir(target))) or "[empty]"
+
+
+@R.add(
+    "drive_read",
+    "Read a text file inside the driven project (first ~12 KB). Guarded to the "
+    "project.",
+    {"type": "object", "properties": {
+        "project": {"type": "string"},
+        "path": {"type": "string", "description": "file relative to the project root"}},
+     "required": ["project", "path"]},
+)
+def drive_read(project: str, path: str) -> str:
+    proj = _resolve_project(project)
+    target = (proj / path).resolve()
+    if not _inside(proj, target):
+        return f"[refused] '{path}' is outside the project."
+    if not target.is_file():
+        return f"[not found] '{path}'"
+    text = target.read_text(encoding="utf-8", errors="replace")
+    return text[:12000] + ("\n…[truncated]" if len(text) > 12000 else "")
+
+
+@R.add(
+    "drive_write",
+    "Write a text file inside the driven project (creates or overwrites). "
+    "Guarded to the project; logs a checkpoint so the edit is reviewable. This "
+    "is how Anita actually builds — use drive_checkpoint-style care.",
+    {"type": "object", "properties": {
+        "project": {"type": "string"},
+        "path": {"type": "string", "description": "file relative to the project root"},
+        "content": {"type": "string", "description": "full new file contents"}},
+     "required": ["project", "path", "content"]},
+)
+def drive_write(project: str, path: str, content: str) -> str:
+    proj = _resolve_project(project)
+    target = (proj / path).resolve()
+    if not _inside(proj, target):
+        return f"[refused] '{path}' is outside the project."
+    existed = target.is_file()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    # Record the edit in the checkpoint log if a drive is active.
+    log = _log_path(proj)
+    if log.exists():
+        with log.open("a", encoding="utf-8") as f:
+            f.write(f"- {'edited' if existed else 'created'} `{path}` ({len(content)} chars)\n")
+    return f"{'Overwrote' if existed else 'Created'} {path} ({len(content)} chars)."
