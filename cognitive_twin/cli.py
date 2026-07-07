@@ -28,6 +28,7 @@ from .llm import providers
 LLM_ERRORS = (OllamaError, OpenAIError)
 from . import skills  # noqa: F401  (registry exists)
 from .skills import builtin  # noqa: F401  (registers built-in skills)
+from .skills import vscode_drive  # noqa: F401  (registers VS Code drive skills)
 from .skills.base import default_registry
 
 
