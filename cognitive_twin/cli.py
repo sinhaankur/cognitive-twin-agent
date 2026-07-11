@@ -433,6 +433,62 @@ def _twin_command(rest: list[str]) -> int:
     return 0
 
 
+def _council_command(rest: list[str]) -> int:
+    """`ctwin council "<question>"` — ask every twin the same question and see
+    each one's take side by side. Like voices in your head: your mom, your dad, a
+    mentor, each answering as themselves from their own persona + memory.
+
+    Options:
+      --twins a,b,c   ask only these twins (default: all)
+    """
+    ca = argparse.ArgumentParser(prog="ctwin council",
+                                 description="Ask every twin the same question.")
+    ca.add_argument("question", nargs="*", help="the question to put to the council")
+    ca.add_argument("--twins", help="comma-separated twin names to ask (default: all)")
+    args = ca.parse_args(rest)
+
+    from . import council, twins
+
+    all_twins = twins.list_twins()
+    if not all_twins:
+        print('  no twins yet — create some with `ctwin twin new "Name"`.')
+        return 1
+
+    if args.twins:
+        wanted = [twins.slug(s) for s in args.twins.split(",") if s.strip()]
+        missing = [s for s in wanted if s not in all_twins]
+        if missing:
+            print(f"  no twin named: {', '.join(missing)}. Have: {', '.join(all_twins)}")
+            return 1
+        chosen = wanted
+    else:
+        chosen = all_twins
+
+    if len(chosen) < 2:
+        print("  a council needs at least two twins — you have one. "
+              'Add another with `ctwin twin new "Name"`.')
+        # still answer with the one twin rather than error out
+    question = " ".join(args.question).strip()
+    if not question:
+        try:
+            question = input("  council question » ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return 0
+    if not question:
+        print("  nothing to ask.")
+        return 0
+
+    def _progress(name: str, phase: str) -> None:
+        if phase == "start":
+            print(f"  ⏳ {name} is thinking…", file=sys.stderr)
+
+    result = council.convene(question, twin_slugs=chosen, on_progress=_progress)
+    print()
+    print(council.render(result))
+    return 0
+
+
 def _media_command(rest: list[str]) -> int:
     """`ctwin media [status|on camera|on mic|off]` — camera/mic consent.
 
@@ -482,7 +538,7 @@ def main(argv: list[str] | None = None) -> int:
     # `twin` subcommands run against the registry itself, so don't activate for
     # them. Respect an explicit CTWIN_MEMORY_DIR (tests/power users) — only
     # activate when the caller hasn't pinned a dir.
-    if not (raw and raw[0] == "twin") and "CTWIN_MEMORY_DIR" not in os.environ:
+    if not (raw and raw[0] in {"twin", "council"}) and "CTWIN_MEMORY_DIR" not in os.environ:
         from . import twins
         twins.activate()
 
@@ -491,6 +547,8 @@ def main(argv: list[str] | None = None) -> int:
         return onboarding.run()
     if raw and raw[0] == "twin":
         return _twin_command(raw[1:])
+    if raw and raw[0] == "council":
+        return _council_command(raw[1:])
     if raw and raw[0] == "voice":
         return _voice_command(raw[1:])
     if raw and raw[0] == "memory":
@@ -656,6 +714,7 @@ _REPL_HELP = """  commands:
     /who             who you're talking to (the active twin)
     /twins           list your twins (* = active)
     /use <name>      switch to another twin
+    /council <q>     ask every twin the same question, hear each take
     /persona         show the active twin's persona
     /voice           voice-clone status for this twin
     /setup           guided setup for a new twin
@@ -684,6 +743,22 @@ def _repl_command(line: str) -> None:
             print(f"  now talking to {_active_twin_name()}.")
         else:
             print(f"  no twin named '{arg}'. /twins to see them.")
+    elif cmd == "council":
+        if not arg:
+            print("  usage: /council <question>   (asks every twin)")
+        elif len(twins.list_twins()) < 2:
+            print("  a council needs at least two twins. "
+                  'Add one with `ctwin twin new "Name"`.')
+        else:
+            from . import council
+            result = council.convene(
+                arg,
+                on_progress=lambda name, phase: (
+                    print(f"  ⏳ {name} is thinking…") if phase == "start" else None
+                ),
+            )
+            print()
+            print(council.render(result))
     elif cmd == "persona":
         print("  " + persona.status())
         block = persona.to_prompt()

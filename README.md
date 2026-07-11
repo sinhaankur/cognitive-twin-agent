@@ -289,6 +289,38 @@ old flat layout), it's adopted automatically as a twin named `default` the first
 time you run — nothing is lost. After switching, `persona setup`,
 `voice_clone set …`, and memory all apply to the now-active twin.
 
+### Twin Council — one question, every voice
+
+Some decisions want more than one perspective. **Ask all your twins the same
+question at once** and see each take side by side — like the voices in your head,
+made explicit. Your mom, your dad, a mentor: each answers *as themselves*, from
+their own persona and their own private memory.
+
+```bash
+python -m cognitive_twin council "should I take the job offer?"
+python -m cognitive_twin council --twins anita,dad "how do I tell them?"   # a subset
+```
+
+In the interactive chat, `/council <question>` does the same without leaving the
+session. Each twin is asked in turn (one at a time, so every twin reasons from a
+clean context), then the takes are laid out for you to weigh:
+
+```
+council › "should I take the job offer?"
+
+  Anita »   (qwen2.5:7b)
+    Take it — but negotiate the remote days first. You'll regret not asking.
+
+  Dad »   (llama3.2)
+    Money isn't everything. What's the commute do to your evenings?
+
+  — 2 voices weighed in. The choice is yours.
+```
+
+It never changes which twin is active, adds no dependencies, and — like
+everything else here — runs entirely on your machine. One twin failing (offline
+model, etc.) doesn't sink the rest; the others still answer.
+
 ### Sharing a twin (and keeping one private)
 
 Export a twin as a portable `.twin` file a family member can import — it carries

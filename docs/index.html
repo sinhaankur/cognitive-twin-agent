@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vera — a private, on-device AI twin</title>
+<meta name="description" content="Vera is a private AI assistant that runs entirely on your own machine — local LLM, private memory, and a loved one's cloned voice. Nothing syncs to a cloud." />
+<meta property="og:title" content="Vera — a private, on-device AI twin" />
+<meta property="og:description" content="A private AI twin that runs entirely on your machine. Local LLM, private memory, on-device voice. Zero cloud sync." />
+<meta property="og:image" content="vera-hero.png" />
+<meta property="og:type" content="website" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='42' fill='%234d6ef0'/></svg>" />
+<style>
+  :root {
+    --bg: #0b0e17;
+    --panel: #131826;
+    --panel-2: #1a2133;
+    --ink: #e8ecf5;
+    --muted: #9aa6c2;
+    --accent: #4d6ef0;
+    --green: #2ea043;
+    --line: #26304a;
+    --code: #0e1220;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+  header.hero {
+    text-align: center;
+    padding: 72px 0 40px;
+    background:
+      radial-gradient(700px 320px at 50% -40px, rgba(77,110,240,0.18), transparent),
+      var(--bg);
+  }
+  header.hero img { width: min(760px, 100%); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+  h1 { font-size: 3rem; margin: 28px 0 6px; letter-spacing: -0.02em; }
+  .tagline { color: var(--muted); font-size: 1.2rem; font-style: italic; margin: 0 0 24px; }
+
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin: 18px 0 6px; }
+  .badge {
+    font-size: .78rem; padding: 5px 11px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
+  }
+  .badge.green { color: #b8f0c4; border-color: rgba(46,160,67,.4); }
+  .badge.accent { color: #c3cfff; border-color: rgba(77,110,240,.5); }
+
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 32px 0 8px; }
+  .btn {
+    display: inline-block; padding: 12px 22px; border-radius: 10px; font-weight: 600;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn:hover { text-decoration: none; transform: translateY(-1px); }
+
+  section { padding: 40px 0; border-top: 1px solid var(--line); }
+  section h2 { font-size: 1.9rem; margin: 0 0 6px; letter-spacing: -0.01em; }
+  section .sub { color: var(--muted); margin: 0 0 28px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px;
+  }
+  .card h3 { margin: 0 0 6px; font-size: 1.12rem; }
+  .card p { margin: 0; color: var(--muted); font-size: .96rem; }
+  .card .ico { font-size: 1.4rem; }
+
+  .council {
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid rgba(77,110,240,.35);
+    border-radius: 16px; padding: 26px 26px 10px;
+  }
+  pre {
+    background: var(--code); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px; overflow-x: auto; font-size: .9rem; line-height: 1.55;
+    color: #cdd6f4;
+  }
+  pre .p { color: #8aa0ff; }   /* prompt / name */
+  pre .c { color: #6b7699; }   /* comment / dim */
+  pre .g { color: #7ee2a0; }   /* green accent */
+  code.inline { background: var(--code); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; font-size: .88em; }
+
+  ul.plain { list-style: none; padding: 0; margin: 0; }
+  ul.plain li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  ul.plain li:last-child { border-bottom: 0; }
+  ul.plain .k { color: #b8f0c4; }
+
+  footer { text-align: center; color: var(--muted); padding: 40px 0 64px; font-size: .9rem; }
+  .note { color: var(--muted); font-size: .92rem; }
+  .pill { display:inline-block; background: rgba(46,160,67,.14); color:#b8f0c4; border:1px solid rgba(46,160,67,.35); border-radius:999px; padding:2px 10px; font-size:.75rem; margin-left:8px; vertical-align:middle;}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <img src="vera-hero.png" alt="Vera — a private, on-device AI twin" />
+    <h1>Vera</h1>
+    <p class="tagline">Your faithful presence — private, on-device.</p>
+    <div class="badges">
+      <span class="badge green">local-first</span>
+      <span class="badge green">zero cloud sync</span>
+      <span class="badge accent">on-device LLM (Ollama)</span>
+      <span class="badge">macOS · iOS · CLI</span>
+      <span class="badge">AGPL-3.0</span>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/sinhaankur/cognitive-twin-agent">View on GitHub →</a>
+      <a class="btn" href="#quickstart">Quick start</a>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2>A private AI twin that runs entirely on your machine.</h2>
+    <p class="sub">
+      Vera reasons with a <strong>local LLM</strong>, keeps its own <strong>private memory</strong> of how
+      you live, and — if you want — speaks in a loved one's <strong>cloned voice</strong>.
+      Nothing syncs to a cloud. Nothing leaves your device unless <em>you</em> allow it.
+    </p>
+    <div class="grid">
+      <div class="card"><div class="ico">🧠</div><h3>Local LLM</h3><p>Reasoning runs on a model on your machine (Ollama, LM Studio, Apple Intelligence). No prompts sent to a cloud by default.</p></div>
+      <div class="card"><div class="ico">🗂️</div><h3>Private memory</h3><p>What it learns about you is a local file, owner-only, on <em>your</em> device — never uploaded.</p></div>
+      <div class="card"><div class="ico">☁️</div><h3>Zero cloud sync</h3><p>No account, no server, no telemetry. There is nothing to sync and nothing to leak.</p></div>
+      <div class="card"><div class="ico">🔊</div><h3>On-device voice</h3><p>A loved one's voice, cloned locally (Coqui XTTS). The recording never leaves your Mac.</p></div>
+      <div class="card"><div class="ico">🔍</div><h3>See how it thinks</h3><p>A built-in "Brain" view shows its faculties and how a reply forms — from your real local data.</p></div>
+      <div class="card"><div class="ico">🧩</div><h3>Picks the right brain</h3><p>Policy-driven routing sends each request to the best local model for the job — inspectable, never cloud.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Twin Council <span class="pill">new</span></h2>
+    <p class="sub">One question, every voice. Ask all your twins at once — your mom, your dad, a mentor —
+      and see each take side by side. Like the voices in your head, made explicit.</p>
+    <div class="council">
+<pre><span class="c"># ask everyone the same question</span>
+<span class="p">$</span> python -m cognitive_twin council <span class="g">"should I take the job offer?"</span>
+
+council › "should I take the job offer?"
+
+  <span class="p">Anita »</span>   <span class="c">(qwen2.5:7b)</span>
+    Take it — but negotiate the remote days first.
+    You'll regret not asking.
+
+  <span class="p">Dad »</span>   <span class="c">(llama3.2)</span>
+    Money isn't everything. What's the commute
+    do to your evenings?
+
+  <span class="g">— 2 voices weighed in. The choice is yours.</span></pre>
+    </div>
+    <p class="note" style="margin-top:18px">
+      Each twin answers <em>as themselves</em>, from its own persona and its own private memory.
+      It never changes which twin is active, adds no dependencies, and runs entirely on your machine.
+      In the interactive chat, <code class="inline">/council &lt;question&gt;</code> does the same without leaving the session.
+    </p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>What it can do</h2>
+    <p class="sub">Not just answer when asked — it reaches out first, remembers you, and can act (permissioned).</p>
+    <ul class="plain">
+      <li><span class="k">Be you</span> — a persona (likes, dislikes, values, style) you create, so it reasons and speaks as you.</li>
+      <li><span class="k">Remember you</span> — private, on-device memory of how you actually behave, folded into every answer. Clearable anytime.</li>
+      <li><span class="k">Many twins</span> — keep your mom, your dad, a mentor; each with its own persona, voice, and memory. Convene them as a <strong>council</strong>.</li>
+      <li><span class="k">Talk</span> — a native macOS Siri-style app: speak to it, it speaks back — optionally in a loved one's cloned voice.</li>
+      <li><span class="k">Reflect</span> — keeps thinking in the background about your projects; the next chat opens with a fresh thought it had while you were away.</li>
+      <li><span class="k">See your screen &amp; act</span> — read what's on screen, open apps/URLs/Shortcuts — all opt-in, confirmed per action, reversible.</li>
+      <li><span class="k">Research the web</span> — search + read pages when you allow it (opt-in).</li>
+    </ul>
+  </div>
+</section>
+
+<section id="quickstart">
+  <div class="wrap">
+    <h2>Quick start</h2>
+    <p class="sub">A local model and a couple of commands. No account, no keys.</p>
+<pre><span class="c"># 1. install Ollama (https://ollama.com) and pull a tool-capable model</span>
+<span class="p">$</span> ollama pull qwen2.5:7b        <span class="c"># or llama3.2, etc.</span>
+
+<span class="c"># 2. make it yours — guided first-run setup (name, persona, voice)</span>
+<span class="p">$</span> python -m cognitive_twin setup
+
+<span class="c"># 3. talk to it</span>
+<span class="p">$</span> python -m cognitive_twin <span class="g">"good morning"</span>
+<span class="p">$</span> python -m cognitive_twin council <span class="g">"what should I do this weekend?"</span>
+<span class="p">$</span> python -m cognitive_twin voice --web    <span class="c"># 🎙 Siri-style voice UI</span></pre>
+    <p class="note" style="margin-top:18px">
+      Want the native Mac app? <code class="inline">cd macos/Vera &amp;&amp; ./build-app.sh &amp;&amp; open "Vera.app"</code>.
+      Full docs, architecture, and the honest "what works today" table live in the
+      <a href="https://github.com/sinhaankur/cognitive-twin-agent#readme">README</a>.
+    </p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>
+      <strong>Vera</strong> · open source under <a href="https://github.com/sinhaankur/cognitive-twin-agent/blob/main/LICENSE">AGPL-3.0</a> ·
+      <a href="https://github.com/sinhaankur/cognitive-twin-agent">GitHub</a>
+    </p>
+    <p class="note">Named after my mother. A twin that feels like <em>your</em> person — private, on hardware you own.</p>
+  </div>
+</footer>
+
+</body>
+</html>
