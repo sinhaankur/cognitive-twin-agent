@@ -427,8 +427,9 @@ final class AppModel: ObservableObject {
         reflectTimer?.invalidate()
         reflectTimer = Timer.scheduledTimer(withTimeInterval: 1200, repeats: true) { [weak self] _ in
             Task {
-                if let thought = await self?.agent.reflect(), !thought.isEmpty {
-                    await MainActor.run { self?.hasThoughtWaiting = true }
+                guard let self else { return }
+                if let thought = await self.agent.reflect(), !thought.isEmpty {
+                    await MainActor.run { self.hasThoughtWaiting = true }
                 }
             }
         }
@@ -564,6 +565,14 @@ final class AppModel: ObservableObject {
         voice.stopSpeaking()
         transcript = text
         turns.append(ChatTurn(text: text, isUser: true))
+
+        // Twin Council: "/council <question>" asks every twin the same thing and
+        // shows each take. Same feature as the CLI's /council, in the app.
+        if let q = Self.councilQuestion(text) {
+            runCouncil(q)
+            return
+        }
+
         phase = .thinking
         Task {
             do {
@@ -605,6 +614,49 @@ final class AppModel: ObservableObject {
                     self.turns.append(ChatTurn(text: msg, isUser: false))
                     self.phase = .idle
                     self.ensureServer() // kick the watchdog now, not in 5s
+                }
+            }
+        }
+    }
+
+    /// Parse a "/council <question>" command. Returns the question, or nil if the
+    /// text isn't a council command. Accepts "/council", "council:" as a prefix.
+    static func councilQuestion(_ text: String) -> String? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        for prefix in ["/council", "council:"] {
+            if t.lowercased().hasPrefix(prefix) {
+                let q = t.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+                return q.isEmpty ? nil : q
+            }
+        }
+        return nil
+    }
+
+    /// Ask every twin the same question and drop each take into the chat as its
+    /// own bubble ("Anita » …"). Reuses the existing turn UI — no new view. One
+    /// twin failing shows inline; the rest still answer. Nothing is spoken (a
+    /// chorus of voices would be chaos) — this is a read-and-decide moment.
+    private func runCouncil(_ question: String) {
+        phase = .thinking
+        Task {
+            let takes = await agent.council(question)
+            await MainActor.run {
+                self.phase = .idle
+                if takes.isEmpty {
+                    self.turns.append(ChatTurn(
+                        text: "I couldn't convene the council — you may have only one twin, or the brain isn't reachable.",
+                        isUser: false))
+                    return
+                }
+                for take in takes {
+                    let body = take.error.map { "[couldn't answer: \($0)]" } ?? take.answer
+                    self.turns.append(ChatTurn(text: "\(take.name) » \(body)", isUser: false))
+                }
+                let answered = takes.filter { $0.error == nil }.count
+                if answered > 1 {
+                    self.turns.append(ChatTurn(
+                        text: "— \(answered) voices weighed in. The choice is yours.",
+                        isUser: false))
                 }
             }
         }
