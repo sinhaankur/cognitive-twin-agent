@@ -59,26 +59,56 @@ for v in "${VIDEOS[@]}"; do
   fi
 done
 
-# ---- 1. isolate the voice ----------------------------------------------------
-echo "[1/3] Isolating $PERSON's voice from ${#VIDEOS[@]} file(s)…"
+# ---- 1. build the ideal XTTS reference --------------------------------------
+echo "[1/3] Perfecting $PERSON's voice from ${#VIDEOS[@]} file(s)…"
 mkdir -p "$OUT_DIR"
-# --merge stitches multiple clips into one richer sample. Harvester uses Demucs
-# if it's installed, else an ffmpeg clean-up chain that always works.
-python3 "$HARVESTER/cli.py" "${VIDEOS[@]}" -o "$OUT_DIR" --merge
+SAMPLE="$OUT_DIR/${PERSON// /_}_reference.wav"
 
-# Prefer the merged sample; else the single per-file output.
-SAMPLE=""
-if [ -f "$OUT_DIR/combined_voice_sample.wav" ]; then
-  SAMPLE="$OUT_DIR/combined_voice_sample.wav"
-else
-  # newest *_voice.wav in the output dir
-  SAMPLE="$(ls -t "$OUT_DIR"/*_voice.wav 2>/dev/null | head -1 || true)"
+# refine.py isolates the voice (Demucs), transcribes, groups speakers, scores
+# every segment, and keeps only the single cleanest window — then renders the
+# 24kHz mono reference XTTS clones best from. With several videos, it refines
+# each and picks the best overall. Prints a quality report + warnings.
+if [ -f "$HARVESTER/refine.py" ]; then
+  BEST=""; BEST_SNR="-999"; REPORT=""
+  for v in "${VIDEOS[@]}"; do
+    base="$(basename "${v%.*}")"
+    ref="$OUT_DIR/${base}_ref.wav"
+    echo "    · $base"
+    OUT_JSON="$(python3 "$HARVESTER/refine.py" "$v" --out "$ref" 2>/dev/null || true)"
+    # pull duration + snr from the JSON result (grep keeps this dependency-free)
+    snr="$(printf '%s' "$OUT_JSON" | grep -o '"snr_db":[^,]*' | head -1 | grep -o '[-0-9.]*' || echo 0)"
+    if [ -f "$ref" ] && awk "BEGIN{exit !($snr > $BEST_SNR)}"; then
+      BEST="$ref"; BEST_SNR="$snr"; REPORT="$OUT_JSON"
+    fi
+  done
+  if [ -n "$BEST" ] && [ -f "$BEST" ]; then
+    cp "$BEST" "$SAMPLE"
+    echo
+    echo "  ── quality report ──"
+    printf '%s\n' "$REPORT" | grep -oE '"(report|warnings)":\[[^]]*\]' \
+      | sed 's/"report":\[//; s/"warnings":\[/  warnings: /; s/\]//; s/","/\n    • /g; s/"/    • /g' \
+      || printf '%s\n' "$REPORT"
+    echo "  ────────────────────"
+  fi
 fi
+
+# Fallback: if refine.py isn't present or produced nothing, use the classic
+# extractor (isolate + merge). Always leaves a usable sample.
+if [ -z "${SAMPLE:-}" ] || [ ! -f "$SAMPLE" ]; then
+  echo "    (using classic extractor)"
+  python3 "$HARVESTER/cli.py" "${VIDEOS[@]}" -o "$OUT_DIR" --merge
+  if [ -f "$OUT_DIR/combined_voice_sample.wav" ]; then
+    SAMPLE="$OUT_DIR/combined_voice_sample.wav"
+  else
+    SAMPLE="$(ls -t "$OUT_DIR"/*_voice.wav 2>/dev/null | head -1 || true)"
+  fi
+fi
+
 if [ -z "$SAMPLE" ] || [ ! -f "$SAMPLE" ]; then
-  echo "✗ voice isolation produced no WAV in $OUT_DIR — check the messages above." >&2
+  echo "✗ voice extraction produced no WAV in $OUT_DIR — check the messages above." >&2
   exit 1
 fi
-echo "    → clean sample: $SAMPLE"
+echo "    → reference: $SAMPLE"
 echo "    (tip: give it a listen — 'open \"$SAMPLE\"' — before cloning)"
 
 # ---- 2. set it as the cloned voice ------------------------------------------
