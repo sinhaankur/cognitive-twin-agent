@@ -398,6 +398,21 @@ From then on the app speaks every reply in that voice (a warm-loaded worker keep
 it fast). Stored owner-only in `~/.cognitive-twin/voice/`; clear it any time with
 `python -m cognitive_twin.voice_clone clear`. Nothing is ever uploaded.
 
+### From a video, in one command
+
+Only have a **video** and don't know how to pull the voice out? One script does
+the whole thing — isolate → clone → speak a test line — from a video (or several):
+
+```bash
+./scripts/clone-voice-from-video.sh "Mom" ~/Videos/birthday.mov [more clips…]
+```
+
+It runs Voice Harvester to isolate just their voice (Demucs strips music/other
+speakers), merges multiple clips into one richer sample, sets it as the twin's
+voice, and speaks *"Hello. I'm still here with you."* so you hear it immediately.
+For the cleanest result, first: `~/.cognitive-twin/tts-venv/bin/pip install demucs`.
+Aim for ~1–2 min of clear speech total — quality beats length.
+
 > Handle this with care — it's meant for keeping a loved one's warmth close, not
 > for impersonation. The clone never claims to literally *be* them.
 
