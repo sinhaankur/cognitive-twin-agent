@@ -427,8 +427,9 @@ final class AppModel: ObservableObject {
         reflectTimer?.invalidate()
         reflectTimer = Timer.scheduledTimer(withTimeInterval: 1200, repeats: true) { [weak self] _ in
             Task {
-                if let thought = await self?.agent.reflect(), !thought.isEmpty {
-                    await MainActor.run { self?.hasThoughtWaiting = true }
+                guard let self else { return }
+                if let thought = await self.agent.reflect(), !thought.isEmpty {
+                    await MainActor.run { self.hasThoughtWaiting = true }
                 }
             }
         }
@@ -564,6 +565,14 @@ final class AppModel: ObservableObject {
         voice.stopSpeaking()
         transcript = text
         turns.append(ChatTurn(text: text, isUser: true))
+
+        // Twin Council: "/council <question>" asks every twin the same thing and
+        // shows each take. Same feature as the CLI's /council, in the app.
+        if let q = Self.councilQuestion(text) {
+            runCouncil(q)
+            return
+        }
+
         phase = .thinking
         Task {
             do {
@@ -571,7 +580,16 @@ final class AppModel: ObservableObject {
                 if usingAppleAI {
                     // Fully on-device via Apple's foundation model — no server.
                     let persona = "You are a concise, helpful local-first personal assistant. Keep answers short and spoken-friendly."
-                    answerText = try await appleAI.ask(text, persona: persona)
+                    do {
+                        answerText = try await appleAI.ask(text, persona: persona)
+                    } catch {
+                        // Apple Intelligence failed even after its session
+                        // reset — answer THIS turn via the local agent rather
+                        // than dead-ending the chat. Selection stays on Apple;
+                        // this is a per-turn safety net.
+                        let reply = try await agent.ask(text)
+                        answerText = reply.answer
+                    }
                 } else {
                     let reply = try await agent.ask(text)
                     if let m = reply.model { await MainActor.run { self.modelName = m } }
@@ -588,10 +606,57 @@ final class AppModel: ObservableObject {
                 }
             } catch {
                 await MainActor.run {
-                    self.answer = self.usingAppleAI
-                        ? "Apple Intelligence isn't available right now."
-                        : "Couldn't reach the agent. Is it running?"
+                    // The failure must LAND IN THE CHAT — without a bubble the
+                    // typed message just vanishes and the whole panel reads as
+                    // broken (the original bug: errors only set `answer`).
+                    let msg = "I couldn't answer that — my local brain isn't reachable. Give me a few seconds and try again."
+                    self.answer = msg
+                    self.turns.append(ChatTurn(text: msg, isUser: false))
                     self.phase = .idle
+                    self.ensureServer() // kick the watchdog now, not in 5s
+                }
+            }
+        }
+    }
+
+    /// Parse a "/council <question>" command. Returns the question, or nil if the
+    /// text isn't a council command. Accepts "/council", "council:" as a prefix.
+    static func councilQuestion(_ text: String) -> String? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        for prefix in ["/council", "council:"] {
+            if t.lowercased().hasPrefix(prefix) {
+                let q = t.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+                return q.isEmpty ? nil : q
+            }
+        }
+        return nil
+    }
+
+    /// Ask every twin the same question and drop each take into the chat as its
+    /// own bubble ("Anita » …"). Reuses the existing turn UI — no new view. One
+    /// twin failing shows inline; the rest still answer. Nothing is spoken (a
+    /// chorus of voices would be chaos) — this is a read-and-decide moment.
+    private func runCouncil(_ question: String) {
+        phase = .thinking
+        Task {
+            let takes = await agent.council(question)
+            await MainActor.run {
+                self.phase = .idle
+                if takes.isEmpty {
+                    self.turns.append(ChatTurn(
+                        text: "I couldn't convene the council — you may have only one twin, or the brain isn't reachable.",
+                        isUser: false))
+                    return
+                }
+                for take in takes {
+                    let body = take.error.map { "[couldn't answer: \($0)]" } ?? take.answer
+                    self.turns.append(ChatTurn(text: "\(take.name) » \(body)", isUser: false))
+                }
+                let answered = takes.filter { $0.error == nil }.count
+                if answered > 1 {
+                    self.turns.append(ChatTurn(
+                        text: "— \(answered) voices weighed in. The choice is yours.",
+                        isUser: false))
                 }
             }
         }

@@ -7,6 +7,7 @@ It serves the Siri waveform UI and a small JSON API:
   GET  /                  the Siri web UI
   GET  /api/health        { ok, stt, tts, model }
   POST /api/ask           { "text": "..." } -> { "answer": "...", "route": {...} }
+  POST /api/council       { "text": "...", "twins"?: [..] } -> { "takes": [{name, answer, model, error}] }
   POST /api/speak         { "text": "..." } -> speaks via macOS `say`, { "ok": true }
 
 The agent + model router are the ones already built and tested. Speech-to-text in
@@ -239,6 +240,34 @@ class _Handler(BaseHTTPRequestHandler):
                              "observing": activity.observing(),
                              "private": activity.is_private(),
                              "enabled": activity.is_enabled()})
+        elif self.path == "/api/council":
+            # Ask every twin the same question and return each one's take. The
+            # council builds a fresh agent per twin (pointing storage at that
+            # twin's folder), then restores the env — so the shared server agent
+            # and the active twin are left untouched. See cognitive_twin/council.py.
+            from .. import council, twins
+            data = self._read_json()
+            question = (data.get("text") or data.get("question") or "").strip()
+            if not question:
+                self._json(400, {"error": "no question"})
+                return
+            # Optional subset: {"twins": ["anita", "dad"]}. Default: all twins.
+            wanted = data.get("twins")
+            slugs = None
+            if isinstance(wanted, list) and wanted:
+                slugs = [twins.slug(str(s)) for s in wanted]
+            try:
+                result = council.convene(question, twin_slugs=slugs)
+            except Exception as e:  # never 500 the UI
+                self._json(200, {"question": question, "takes": [],
+                                 "error": str(e)})
+                return
+            takes = [
+                {"slug": t.slug, "name": t.name, "answer": t.answer,
+                 "model": t.model, "error": t.error}
+                for t in result.takes
+            ]
+            self._json(200, {"question": result.question, "takes": takes})
         elif self.path == "/api/reflect":
             # Anita thinks about your projects (while you're away) and saves a
             # thought. Best-effort; needs project seeds in memory + a reachable model.

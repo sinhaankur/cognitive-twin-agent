@@ -207,6 +207,30 @@ final class AgentClient {
         return AgentReply(answer: answer, model: model, rule: rule)
     }
 
+    /// POST /api/council — ask every twin the same question; get each one's take.
+    /// Each twin answers as itself, from its own persona + memory. One twin
+    /// failing doesn't sink the rest (its take carries an `error` instead).
+    func council(_ question: String) async -> [CouncilTake] {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/council"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": question])
+        req.timeoutInterval = 300   // several twins, each a full model turn
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            let items = obj["takes"] as? [[String: Any]] ?? []
+            return items.map { t in
+                CouncilTake(
+                    name: t["name"] as? String ?? "?",
+                    answer: t["answer"] as? String ?? "",
+                    model: t["model"] as? String,
+                    error: t["error"] as? String
+                )
+            }
+        } catch { return [] }
+    }
+
     /// GET /api/brain — a graph snapshot of how the twin thinks + learns.
     /// Pass a `prompt` to also get the likely thought-path through the faculties.
     func brain(prompt: String? = nil) async -> BrainGraph? {
@@ -235,6 +259,15 @@ final class AgentClient {
             return BrainGraph(nodes: nodes, edges: edges, thoughtPath: path, state: state)
         } catch { return nil }
     }
+}
+
+/// One twin's take in a Twin Council round.
+struct CouncilTake: Identifiable {
+    let id = UUID()
+    let name: String
+    let answer: String
+    let model: String?
+    let error: String?
 }
 
 // MARK: - Brain graph models
