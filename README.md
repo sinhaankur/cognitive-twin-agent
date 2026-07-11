@@ -321,6 +321,35 @@ It never changes which twin is active, adds no dependencies, and — like
 everything else here — runs entirely on your machine. One twin failing (offline
 model, etc.) doesn't sink the rest; the others still answer.
 
+**How it works.** A twin *is* its folder (`twins/<name>/` — persona + memory +
+voice). Every storage module (persona, memory, soul, voice) resolves its
+directory from the `CTWIN_MEMORY_DIR` / `CTWIN_PERSONA_DIR` env vars *at call
+time*. So to "become" a twin, the council points those env vars at that twin's
+folder, builds a fresh agent — which reads *that* twin's persona and private
+memory into its system prompt — asks the question, records the take, and moves
+to the next twin. The env and the active-twin pointer are snapshotted up front
+and restored in a `finally`, so a council leaves your setup exactly as it found
+it.
+
+```
+convene(question):
+  save env
+  for each twin:
+      point CTWIN_*_DIR → twins/<twin>/     # this twin's persona + memory
+      agent = build_agent()                 # reads that twin's system prompt
+      take  = agent.run(question)           # answer as that person
+  restore env                               # active twin unchanged
+  render takes side by side
+```
+
+It runs the twins **one at a time**, on purpose: those env vars are
+process-global, so asking twins concurrently in threads would race on them.
+Sequential keeps each twin's context clean and reuses the exact single-agent
+path the rest of the app uses (`agent/loop.py`). The design lives in
+[`cognitive_twin/council.py`](cognitive_twin/council.py); the mechanics are
+proven offline (model injected, no Ollama needed) in
+[`tests/test_council.py`](tests/test_council.py).
+
 ### Sharing a twin (and keeping one private)
 
 Export a twin as a portable `.twin` file a family member can import — it carries

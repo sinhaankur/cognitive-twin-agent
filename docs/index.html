@@ -166,6 +166,30 @@ council › "should I take the job offer?"
       It never changes which twin is active, adds no dependencies, and runs entirely on your machine.
       In the interactive chat, <code class="inline">/council &lt;question&gt;</code> does the same without leaving the session.
     </p>
+
+    <h3 style="margin:28px 0 4px; font-size:1.15rem">How it works</h3>
+    <p class="note" style="margin:0 0 16px">
+      A twin <em>is</em> its folder — <code class="inline">twins/&lt;name&gt;/</code>, holding its persona,
+      private memory, and voice. Every part of the app resolves which folder to read from an
+      environment pointer, <em>at the moment it reads</em>. So to "become" a twin, the council
+      points that pointer at the twin's folder, builds a fresh agent that reads
+      <em>that</em> twin's persona + memory into its prompt, asks, and moves on — then restores
+      everything so your active twin is untouched.
+    </p>
+<pre>convene(question):
+  <span class="c">save the twin pointer</span>
+  for each twin:
+      point storage → <span class="g">twins/&lt;twin&gt;/</span>     <span class="c"># this twin's persona + memory</span>
+      agent = build_agent()             <span class="c"># reads that twin's system prompt</span>
+      take  = agent.run(question)       <span class="c"># answers as that person</span>
+  <span class="c">restore the pointer</span>                 <span class="c"># active twin unchanged</span>
+  render the takes side by side</pre>
+    <p class="note" style="margin-top:16px">
+      The twins run <strong>one at a time</strong>, on purpose: that pointer is process-wide, so
+      asking twins at once would make them read each other's data. Sequential keeps every twin's
+      context clean and reuses the exact single-agent path the rest of Vera uses. If a twin can't
+      answer (its model is offline, say), the others still do — the council never falls over.
+    </p>
   </div>
 </section>
 
