@@ -153,6 +153,52 @@ def thoughts_of_the_day(tasks_file: str = "tasks.md") -> str:
     return "\n".join(out)
 
 
+# ---- the day shadow (local task ledger) ---------------------------------------
+# Vera tracks tasks she hears in conversation (shadow.observe runs on every
+# memory write); these skills let the model consult and work the same ledger.
+
+@R.add(
+    "my_day",
+    "Show what's on the user's plate today: the tasks Vera has picked up from "
+    "conversation (their day, shadowed) — open tasks with how long each has been "
+    "carried, and what got crossed off today. Use when the user asks about their "
+    "day, their tasks, what's pending, or what to focus on.",
+)
+def my_day() -> str:
+    from .. import shadow
+    return shadow.day_view()
+
+
+@R.add(
+    "note_task",
+    "Note a task on the user's day ledger so Vera holds it for them. Use when "
+    "the user commits to something worth remembering ('I'll…', 'remind me…').",
+    {"type": "object", "properties": {
+        "task": {"type": "string", "description": "the task, as a short imperative phrase"},
+    }, "required": ["task"]},
+)
+def note_task(task: str) -> str:
+    from .. import shadow
+    t, created = shadow.add(task, source="agent")
+    return f"noted: {t.text}" if created else f"already on the plate: {t.text}"
+
+
+@R.add(
+    "complete_task",
+    "Cross a task off the user's day ledger. Use when the user says something "
+    "is finished, shipped, or handled.",
+    {"type": "object", "properties": {
+        "task": {"type": "string", "description": "words identifying the finished task"},
+    }, "required": ["task"]},
+)
+def complete_task(task: str) -> str:
+    from .. import shadow
+    hit = shadow.complete_matching(task)
+    if hit is None:
+        return "no open task matches that."
+    return f"crossed off: {hit.text}"
+
+
 # ---- web (opt-in internet access) --------------------------------------------
 # Local-first by default, but the twin can reach the internet when you allow it.
 # Off unless CTWIN_WEB=1 (so the default install never makes network calls).

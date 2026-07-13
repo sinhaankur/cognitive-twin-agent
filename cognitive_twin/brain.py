@@ -35,6 +35,7 @@ _FACULTIES = [
     ("mood", "Mood", "Colors tone and how warm/measured the answer feels."),
     ("rhythms", "Rhythms", "Time-of-day + life-rhythm awareness (sleep/work)."),
     ("activity", "Activity", "Learns how you work by watching your active app (opt-in)."),
+    ("shadow", "Shadow", "Follows your day — tasks you mention, tracked to done (local ledger)."),
     ("voice", "Voice", "Speaks the answer in a loved one's cloned voice, on-device."),
     ("router", "Model router", "Picks the local model that reasons the reply."),
 ]
@@ -43,6 +44,7 @@ _FACULTIES = [
 _WIRING = [
     ("memory", "router"), ("persona", "router"), ("soul", "router"),
     ("mood", "router"), ("rhythms", "router"), ("activity", "memory"),
+    ("memory", "shadow"), ("shadow", "router"),
     ("router", "voice"), ("soul", "mood"), ("rhythms", "mood"),
 ]
 
@@ -114,6 +116,11 @@ def snapshot() -> dict[str, Any]:
         from . import soul
         refl = _safe(lambda: soul.pending_reflections(clear=False), [])
         state["reflections"] = len(refl)
+    except Exception:
+        pass
+    try:
+        from . import shadow
+        state["open_tasks"] = len(_safe(shadow.open_tasks, []))
     except Exception:
         pass
 

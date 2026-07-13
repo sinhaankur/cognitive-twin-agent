@@ -42,6 +42,9 @@ default**. Nothing leaves your device unless you explicitly turn it on.
 
 - **Greets you** — "good morning" with the date and live local weather.
 - **Thought of the day** — connects today's tasks with your interests.
+- **Shadows your day** — catches tasks you mention in conversation ("remind me
+  to…"), crosses them off when you say they're done, and carries the rest
+  across days — no forms, no separate tracker.
 - **Thinks while you're away** — keeps mulling your ideas and projects, and brings
   thoughts back when you return.
 - **Researches the web** — searches and reads pages (opt-in), the way a capable

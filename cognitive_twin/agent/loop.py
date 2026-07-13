@@ -152,6 +152,14 @@ class Agent:
                 ctx = _memory.summary_for_prompt()
             if ctx:
                 parts.append(ctx)
+            # what's on their plate today (the day shadow — local task ledger)
+            try:
+                from .. import shadow as _shadow
+                today = _shadow.context_for_prompt()
+                if today:
+                    parts.append(today)
+            except Exception:
+                pass
         system_content = "\n\n".join(parts)
 
         messages: list[ChatMessage] = [

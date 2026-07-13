@@ -142,6 +142,16 @@ def _run_once(agent: Agent, prompt: str, explain: bool, *, repl: bool = False) -
     if pinned is not None:
         client.model = pinned  # type: ignore[attr-defined]
         saved_router, agent.router = agent.router, None
+    # let the day shadow react first, visibly — "noted: …" / "crossed off: …".
+    # The memory hook observes the same text later; dedup makes that a no-op.
+    try:
+        from . import shadow
+        note = shadow.observe(prompt)
+        if note:
+            print(f"  · {note}")
+    except Exception:
+        pass
+
     try:
         result = agent.run(prompt)
     except LLM_ERRORS as e:
@@ -365,6 +375,52 @@ def _remember_command(rest: list[str]) -> int:
     return 0
 
 
+def _day_command(rest: list[str]) -> int:
+    """`ctwin day` — your day, shadowed. Numbers refer to the printed list."""
+    from . import shadow
+    sub = rest[0] if rest else ""
+    if sub == "add":
+        text = " ".join(rest[1:]).strip()
+        if not text:
+            print('usage: ctwin day add "the task"')
+            return 1
+        t, created = shadow.add(text)
+        print(f"  · noted: {t.text}" if created else f"  · already on the plate: {t.text}")
+        return 0
+    if sub in {"done", "drop"}:
+        arg = " ".join(rest[1:]).strip()
+        if not arg:
+            print(f"usage: ctwin day {sub} <number|words>")
+            return 1
+        if arg.isdigit():
+            op = shadow.open_tasks()
+            i = int(arg)
+            if not 1 <= i <= len(op):
+                print(f"  no task #{i} — `ctwin day` to see the list.")
+                return 1
+            task = op[i - 1]
+            (shadow.complete if sub == "done" else shadow.drop)(task)
+            print(f"  · {'crossed off' if sub == 'done' else 'let go'}: {task.text}")
+            return 0
+        if sub == "done":
+            hit = shadow.complete_matching(arg)
+            if hit is None:
+                print("  no open task matches that — `ctwin day` to see the list.")
+                return 1
+            print(f"  · crossed off: {hit.text}")
+            return 0
+        print("usage: ctwin day drop <number>")
+        return 1
+    if sub == "clear":
+        print("cleared" if shadow.clear() else "nothing to clear")
+        return 0
+    if sub in {"status", "st"}:
+        print(shadow.status())
+        return 0
+    print(shadow.day_view())
+    return 0
+
+
 def _control_command(rest: list[str]) -> int:
     """`ctwin control [on|status]` — show or hint at screen-control state."""
     from . import control
@@ -553,6 +609,8 @@ def main(argv: list[str] | None = None) -> int:
         return _voice_command(raw[1:])
     if raw and raw[0] == "memory":
         return _memory_command(raw[1:])
+    if raw and raw[0] == "day":
+        return _day_command(raw[1:])
     if raw and raw[0] == "control":
         return _control_command(raw[1:])
     if raw and raw[0] == "media":
@@ -687,7 +745,17 @@ def _proactive_opening() -> list[str]:
     except Exception:
         pass
 
-    # 3) a light nudge about today, if a tasks file exists (no model call)
+    # 3) what's still on your plate, from the day shadow (no model call)
+    try:
+        from . import shadow
+        open_t = shadow.open_tasks()
+        if open_t:
+            more = f" (+{len(open_t) - 1} more)" if len(open_t) > 1 else ""
+            lines.append(f"Still on your plate: {open_t[0].text}{more} — /day for the list.")
+    except Exception:
+        pass
+
+    # 4) a light nudge about today, if a tasks file exists (no model call)
     try:
         from . import skills  # noqa: F401  (ensures builtins registered)
         from .skills.base import default_registry as _R
@@ -715,6 +783,7 @@ _REPL_HELP = """  commands:
     /twins           list your twins (* = active)
     /use <name>      switch to another twin
     /council <q>     ask every twin the same question, hear each take
+    /day             your day, shadowed — tasks caught from conversation
     /persona         show the active twin's persona
     /voice           voice-clone status for this twin
     /setup           guided setup for a new twin
@@ -759,6 +828,9 @@ def _repl_command(line: str) -> None:
             )
             print()
             print(council.render(result))
+    elif cmd == "day":
+        from . import shadow
+        print("\n".join("  " + ln for ln in shadow.day_view().splitlines()))
     elif cmd == "persona":
         print("  " + persona.status())
         block = persona.to_prompt()
