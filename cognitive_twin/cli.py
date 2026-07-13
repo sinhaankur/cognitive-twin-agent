@@ -165,7 +165,8 @@ def _run_once(agent: Agent, prompt: str, explain: bool, *, repl: bool = False) -
     return True
 
 
-def _run_once_capture(agent: Agent, prompt: str) -> tuple[str, dict | None]:
+def _run_once_capture(agent: Agent, prompt: str, *,
+                      record: bool = True) -> tuple[str, dict | None]:
     """Run one prompt and RETURN (answer, route_dict) instead of printing — used
     by the voice server. Shares the routed-model fallback behaviour of _run_once
     (if the policy's model isn't pulled, pin a tool-capable installed one)."""
@@ -197,7 +198,7 @@ def _run_once_capture(agent: Agent, prompt: str) -> tuple[str, dict | None]:
         client.model = pinned  # type: ignore[attr-defined]
         saved_router, agent.router = agent.router, None
     try:
-        result = agent.run(prompt)
+        result = agent.run(prompt, record=record)
     finally:
         if saved_router is not None:
             agent.router = saved_router
@@ -226,7 +227,9 @@ def _reflect_once(*, quiet: bool = False) -> str | None:
             if not quiet:
                 print("  (model offline — skipping this reflection)")
             return None
-        thought, _ = _run_once_capture(agent, instruction)
+        # record=False: the reflection INSTRUCTION is our boilerplate, not the
+        # user talking — it must never become a "memory" or a learned topic
+        thought, _ = _run_once_capture(agent, instruction, record=False)
     except LLM_ERRORS:
         return None
     except Exception:

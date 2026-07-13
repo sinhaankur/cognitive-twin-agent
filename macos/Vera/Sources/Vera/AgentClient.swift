@@ -188,11 +188,13 @@ final class AgentClient {
     }
 
     /// POST /api/ask — send a transcript, get the agent's answer + route info.
-    func ask(_ text: String) async throws -> AgentReply {
+    /// `internal: true` marks a scripted prompt (our greeting boilerplate, not
+    /// the user talking) — the server answers it but won't learn from it.
+    func ask(_ text: String, internal isInternal: Bool = false) async throws -> AgentReply {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/ask"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject: ["text": text])
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["text": text, "internal": isInternal])
         req.timeoutInterval = 120
 
         let (data, _) = try await URLSession.shared.data(for: req)

@@ -84,7 +84,10 @@ class Agent:
         """Forget the current session's back-and-forth (not the on-disk memory)."""
         self.history = []
 
-    def run(self, user_input: str) -> AgentResult:
+    def run(self, user_input: str, *, record: bool = True) -> AgentResult:
+        """``record=False`` answers without writing to memory — for scripted,
+        internal prompts (greetings, background reflections). The twin should
+        learn from the USER, never from its own boilerplate."""
         decision: RouteDecision | None = None
         if self.router is not None:
             decision = self.router.route(user_input)
@@ -176,7 +179,7 @@ class Agent:
             if not reply.tool_calls:
                 # model produced a final answer
                 answer = reply.content.strip()
-                if self.use_memory:
+                if self.use_memory and record:
                     _memory.record(user_input, answer,
                                    model=getattr(self.client, "model", None))
                     # let her grow a little with each exchange

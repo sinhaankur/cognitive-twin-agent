@@ -208,7 +208,8 @@ def test_reflect_once_saves_thought():
     assert soul.project_seeds()  # there is something to reflect on
 
     # avoid needing a live model: stub the captured run to return a thought
-    cli._run_once_capture = lambda agent, prompt: ("a fresh idea about rust", None)
+    # (accepts record=… like the real one — reflections pass record=False)
+    cli._run_once_capture = lambda agent, prompt, **kw: ("a fresh idea about rust", None)
     # and stub build_agent so no Ollama is contacted
     class _FakeClient:
         def is_up(self): return True

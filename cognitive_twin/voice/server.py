@@ -146,8 +146,11 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": "no text"})
                 return
             agent = self.server.agent  # type: ignore[attr-defined]
+            # "internal": scripted prompts (the app's greeting etc.) — answer
+            # them, but never learn from them as if the user said it
+            internal = bool(data.get("internal"))
             try:
-                answer, route = _run_once_capture(agent, text)
+                answer, route = _run_once_capture(agent, text, record=not internal)
             except Exception as e:  # never 500 the UI on an agent hiccup
                 self._json(200, {"answer": f"(error: {e})", "route": None})
                 return

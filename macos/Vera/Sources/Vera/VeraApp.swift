@@ -358,7 +358,28 @@ final class AppModel: ObservableObject {
         enableLaunchAtLogin()      // so Anita is always there after a reboot
         autoUpdate()               // she keeps herself current — nothing to download
         ensureServer()
+        launchVizServer()          // the Mind (Brain view + browser) on :7879
         startWatchdog()            // keep her alive if the brain ever stops
+    }
+
+    /// Start the Visualize Engine so the Brain window (and the browser) can
+    /// show the Mind. If the port is already served, the child exits on its
+    /// own — safe to attempt once per launch.
+    private var vizProcess: Process?
+    private func launchVizServer() {
+        guard vizProcess == nil else { return }
+        let env = ProcessInfo.processInfo.environment
+        let repo = env["CTWIN_REPO"]
+            ?? (NSHomeDirectory() + "/Documents/cognitive-twin-agent")
+        let p = Process()
+        p.currentDirectoryURL = URL(fileURLWithPath: repo)
+        let pythons = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3",
+                       "/usr/bin/python3"]
+        let python = pythons.first { FileManager.default.isExecutableFile(atPath: $0) }
+        p.executableURL = URL(fileURLWithPath: python ?? "/usr/bin/env")
+        p.arguments = (python != nil ? [] : ["python3"])
+            + ["-m", "cognitive_twin", "viz", "--no-open", "--port", "7879"]
+        do { try p.run(); vizProcess = p } catch { /* Brain view shows a retry */ }
     }
 
     /// She updates herself: her brain runs straight from the repo, so a
@@ -413,7 +434,7 @@ final class AppModel: ObservableObject {
         guard !didGreet else { return }
         didGreet = true
         do {
-            let reply = try await agent.ask("Greet me for the day using your greeting tool. One or two warm sentences.")
+            let reply = try await agent.ask("Greet me for the day using your greeting tool. One or two warm sentences.", internal: true)
             await MainActor.run {
                 self.answer = reply.answer
                 if let m = reply.model { self.modelName = m }

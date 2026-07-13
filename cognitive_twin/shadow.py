@@ -96,7 +96,7 @@ def _words(text: str) -> set[str]:
     out: set[str] = set()
     for raw in (text or "").lower().split():
         w = "".join(c for c in raw if c.isalnum())
-        if len(w) > 3 and not w.isdigit() and w not in _memory._STOP:
+        if len(w) >= 3 and not w.isdigit() and w not in _memory._STOP:
             out.add(w)
     return out
 
