@@ -477,6 +477,11 @@ Anita » finished the voice sample!
 - **She already knows** — open tasks fold into her system prompt, so "what
   should I focus on?" doesn't need explaining, and the chat greets you with
   what's still on your plate.
+- **Seen, not just heard** — while the [watch observer](#) runs, explicit
+  markers she reads on screen (uppercase `TODO:` / `FIXME:`, unchecked
+  `- [ ]` boxes) become *proposals*, never tasks: the day view shows
+  "noticed on your screen", and `day keep 1` / `day ignore 1` is your call.
+  An ignore is an answer — she won't propose it again.
 - **Local + yours** — an append-only `shadow.jsonl` next to memory, owner-only
   (0600), one readable event per line. Per-twin, like everything else.
 

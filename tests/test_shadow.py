@@ -125,6 +125,68 @@ def test_empty_view_is_safe():
     assert "Nothing on your plate" in view
 
 
+# ---- seen on screen (the watch → shadow link) -------------------------------------
+def test_extract_seen_is_narrow():
+    sh = _fresh()
+    text = ("some code here\n"
+            "# TODO: fix the parser */\n"
+            "- [ ] send the deck to sam\n"
+            "- [x] already done thing\n"
+            "we have a todo list for later\n")   # lowercase prose — not a marker
+    assert sh.extract_seen(text) == ["fix the parser", "send the deck to sam"]
+
+
+def test_propose_keep_ignore_flow():
+    sh = _fresh()
+    found = sh.propose_from_screen("Code", "// TODO: fix the parser\n")
+    assert [p.text for p in found] == ["fix the parser"]
+    # same screen again → no re-proposal
+    assert sh.propose_from_screen("Code", "// TODO: fix the parser\n") == []
+    # a proposal is not a task
+    assert sh.open_tasks() == []
+    assert "Noticed on your screen" in sh.day_view()
+    # keep → becomes a real open task, sourced 'seen'
+    sh.keep(sh.proposals()[0])
+    assert [t.text for t in sh.open_tasks()] == ["fix the parser"]
+    assert sh.open_tasks()[0].source == "seen"
+    assert sh.proposals() == []
+
+
+def test_ignored_sighting_never_returns():
+    sh = _fresh()
+    sh.propose_from_screen("Notes", "- [ ] water the plants")
+    sh.ignore(sh.proposals()[0])
+    assert sh.proposals() == []
+    # an ignore is an answer — the same sighting stays gone
+    assert sh.propose_from_screen("Notes", "- [ ] water the plants") == []
+    assert sh.open_tasks() == []
+
+
+def test_saying_a_proposed_task_resolves_the_sighting():
+    sh = _fresh()
+    sh.propose_from_screen("Code", "TODO: fix the parser")
+    # the user commits to it in conversation — the sighting is answered
+    sh.observe("remind me to fix the parser")
+    assert [t.text for t in sh.open_tasks()] == ["fix the parser"]
+    assert sh.proposals() == []
+
+
+def test_welcome_back_mentions_pending_sightings(tmp_path=None):
+    sh = _fresh()
+    import tempfile as _tf
+    notes = Path(_tf.mkdtemp()) / "watch-notes.md"
+    notes.write_text("### 2026-07-13 09:14:02 — Code  _(via ocr)_\nsome text\n",
+                     encoding="utf-8")
+    os.environ["CTWIN_WATCH_FILE"] = str(notes)
+    try:
+        sh.propose_from_screen("Code", "TODO: fix the parser")
+        from cognitive_twin import watch_review
+        out = watch_review.welcome_back(use_llm=False)
+        assert "1 possible task(s)" in out
+    finally:
+        del os.environ["CTWIN_WATCH_FILE"]
+
+
 if __name__ == "__main__":
     fns = [g for n, g in sorted(globals().items())
            if n.startswith("test_") and callable(g)]

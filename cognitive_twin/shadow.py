@@ -22,10 +22,17 @@ What "understanding" means here, concretely:
   - Open tasks fold into her system prompt, so "what should I focus on?"
     already knows what's on your plate.
 
+Seen, not just heard: the watch observer (watch.py) passes what it reads on
+screen through this module too. Explicit markers only — uppercase `TODO:` /
+`FIXME:` and unchecked `- [ ]` boxes — become *proposals*, never tasks, until
+you keep them. Your screen is none of her business beyond that.
+
 CLI:  python -m cognitive_twin day             # your day, shadowed
       python -m cognitive_twin day add "…"     # note a task yourself
       python -m cognitive_twin day done 2      # cross one off (number or words)
       python -m cognitive_twin day drop 2      # let one go
+      python -m cognitive_twin day keep 1      # hold a task she saw on screen
+      python -m cognitive_twin day ignore 1    # …or let the sighting pass
       python -m cognitive_twin day clear       # wipe the ledger
 """
 
@@ -223,6 +230,11 @@ def add(text: str, *, source: str = "you") -> tuple[Task, bool]:
     tid = hashlib.sha256(f"{ts} {text}".encode("utf-8")).hexdigest()[:8]
     task = Task(id=tid, text=text, source=source, created=ts)
     _append_event({"ts": ts, "ev": "add", "id": tid, "text": text, "source": source})
+    # a pending sighting of the same task is now answered — resolve it so the
+    # day view never shows the same thing as both held and noticed
+    for p in proposals():
+        if _key(p.text) == k:
+            _append_event({"ts": ts, "ev": "keep", "id": p.id})
     return task, True
 
 
@@ -275,6 +287,105 @@ def observe(text: str) -> str:
         return ""
 
 
+# ---- seen on screen: proposals from the watch observer -------------------------
+# The watch (watch.py) is read-only; when it reads your screen it may spot an
+# explicit task marker. Those become *proposals* — never tasks — until you keep
+# them. Uppercase TODO:/FIXME: and unchecked "- [ ]" boxes only: the honest,
+# unambiguous signals. Everything else on your screen is none of her business.
+_SEEN_MARKER = re.compile(r"\b(?:TODO|FIXME)\b\s*[:\-–—]\s*(\S.+)")
+_SEEN_CHECKBOX = re.compile(r"^\s*[-*]\s*\[ \]\s+(\S.+)$", re.MULTILINE)
+_SEEN_CAP = 3          # max new proposals per screen read — never flood the day
+
+
+@dataclass
+class Proposal:
+    id: str
+    text: str
+    app: str             # where it was seen
+    ts: str              # ISO timestamp of the sighting
+    state: str = "pending"   # pending | kept | ignored
+
+
+def extract_seen(text: str) -> list[str]:
+    """Explicit task markers in a piece of on-screen text. Deliberately narrow:
+    OCR text is noisy, and a word like 'todo' in prose is not a marker."""
+    t = (text or "")[:4000]
+    out: list[str] = []
+    for m in list(_SEEN_MARKER.finditer(t)) + list(_SEEN_CHECKBOX.finditer(t)):
+        clause = _clean_clause(m.group(1)).rstrip("*/#>–— -").strip()
+        if len(clause) >= 3 and _words(clause) and clause not in out:
+            out.append(clause)
+    return out
+
+
+def proposals(all_states: bool = False) -> list[Proposal]:
+    """Sightings, replayed from the event log — pending only by default."""
+    by_id: dict[str, Proposal] = {}
+    for ev in _events():
+        kind = ev.get("ev")
+        pid = ev.get("id", "")
+        if kind == "seen" and pid and pid not in by_id:
+            by_id[pid] = Proposal(id=pid, text=ev.get("text", ""),
+                                  app=ev.get("app", ""), ts=ev.get("ts", ""))
+        elif kind == "keep" and pid in by_id:
+            by_id[pid].state = "kept"
+        elif kind == "ignore" and pid in by_id:
+            by_id[pid].state = "ignored"
+    ps = list(by_id.values())
+    return ps if all_states else [p for p in ps if p.state == "pending"]
+
+
+def propose(text: str, *, app: str = "") -> tuple[Proposal, bool]:
+    """Suggest a task Vera *saw*, without putting it on the plate. Returns
+    (proposal, created). Never re-proposes something already sighted — an
+    ignore is an answer, not an invitation to nag — and never proposes what's
+    already an open task."""
+    text = (text or "").strip()
+    k = _key(text)
+    for p in proposals(all_states=True):
+        if _key(p.text) == k:
+            return p, False
+    for t in open_tasks():
+        if _key(t.text) == k:
+            return Proposal(id=t.id, text=t.text, app=app, ts=t.created,
+                            state="kept"), False
+    ts = _dt.datetime.now().isoformat(timespec="seconds")
+    pid = hashlib.sha256(f"seen {ts} {text}".encode("utf-8")).hexdigest()[:8]
+    _append_event({"ts": ts, "ev": "seen", "id": pid, "text": text, "app": app})
+    return Proposal(id=pid, text=text, app=app, ts=ts), True
+
+
+def propose_from_screen(app: str, text: str) -> list[Proposal]:
+    """Scan one read-only screen capture for explicit markers and propose the
+    new ones (capped per read). Never raises — the watch must not die over
+    the shadow."""
+    try:
+        new: list[Proposal] = []
+        for clause in extract_seen(text):
+            p, created = propose(clause, app=app or "")
+            if created:
+                new.append(p)
+            if len(new) >= _SEEN_CAP:
+                break
+        return new
+    except Exception:
+        return []
+
+
+def keep(p: Proposal) -> Task:
+    """Accept a sighting: it becomes a real open task (source 'seen')."""
+    _append_event({"ts": _dt.datetime.now().isoformat(timespec="seconds"),
+                   "ev": "keep", "id": p.id})
+    t, _ = add(p.text, source="seen")
+    return t
+
+
+def ignore(p: Proposal) -> None:
+    """Decline a sighting. It won't be proposed again."""
+    _append_event({"ts": _dt.datetime.now().isoformat(timespec="seconds"),
+                   "ev": "ignore", "id": p.id})
+
+
 # ---- read: the day, rendered ----------------------------------------------------
 def _age_label(created: str) -> str:
     try:
@@ -323,6 +434,15 @@ def day_view() -> str:
         for t in dn:
             lines.append(f"    ✓ {t.text}")
 
+    props = proposals()
+    if props:
+        lines.append("")
+        lines.append("  Noticed on your screen (not on your plate until you say so):")
+        for i, p in enumerate(props, 1):
+            where = f"seen in {p.app}" if p.app else "seen"
+            lines.append(f"    {i}. {p.text}  ({where} · {_age_label(p.ts) or 'today'})")
+        lines.append("    → `day keep <n>` to hold one · `day ignore <n>` to let it pass")
+
     return "\n".join(lines)
 
 
@@ -358,8 +478,9 @@ def clear() -> bool:
 
 
 def status() -> str:
-    op, dn = open_tasks(), done_today()
-    return (f"day shadow: {len(op)} open, {len(dn)} done today — "
+    op, dn, pr = open_tasks(), done_today(), proposals()
+    seen = f", {len(pr)} noticed on screen" if pr else ""
+    return (f"day shadow: {len(op)} open, {len(dn)} done today{seen} — "
             f"private, on-device ({_file()})")
 
 

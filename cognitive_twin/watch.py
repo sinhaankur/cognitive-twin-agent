@@ -7,7 +7,10 @@ notes to a review file. When you come back, you read the log.
 
 STRICTLY read-only and passive:
   - It NEVER edits files, types, clicks, runs commands, or changes any app.
-  - It only observes the screen and writes to its own notes file.
+  - It only observes the screen and writes to Vera's own local files (the
+    notes file, plus task *proposals* for the day shadow — explicit TODO:/
+    FIXME:/checkbox markers it spots, which stay proposals until you keep
+    them with `ctwin day keep`).
   - It honors the same opt-in gate as the rest of control (CTWIN_CONTROL), plus
     its own explicit start — nothing here runs unless you launch it.
 
@@ -139,6 +142,14 @@ def watch(*, interval: float = 60.0, minutes: float = 60.0,
                 last_fp = obs["fp"]
                 logged += 1
                 print(f"  · noted {obs['app'] or '(unknown)'} ({logged})")
+                # explicit TODO/FIXME/checkbox markers become day-shadow
+                # *proposals* to keep or ignore later — never tasks by fiat
+                try:
+                    from . import shadow
+                    for p in shadow.propose_from_screen(obs["app"], obs["text"]):
+                        print(f"    · spotted a possible task: {p.text}")
+                except Exception:
+                    pass
             if deadline and time.time() >= deadline:
                 break
             time.sleep(interval)
