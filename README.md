@@ -54,6 +54,8 @@ extracts a clean voice sample from any video/audio for the cloning.
   reasons and speaks as you, not a generic assistant. → [Persona](#persona)
 - **Remember you** — private, on-device memory of how you actually behave; folds
   into how it answers. Clearable anytime. → [Memory](#memory--local-private-secure)
+- **Shadow your day** — catches tasks you mention in conversation, tracks them
+  to done, carries them across days. → [Your day, shadowed](#your-day-shadowed--tasks-caught-from-conversation)
 - **Pick the right brain** — routes each request to the best local model by task;
   can use **Apple Intelligence** on-device, **Ollama**, or any **OpenAI-compatible
   server** (LM Studio, llama.cpp, Jan, vLLM) — switch models live in Settings.
@@ -449,6 +451,47 @@ python -m cognitive_twin "give me thoughts of the day"
 
 `thoughts_of_the_day` connects today's tasks with your recurring interests and
 writes a short reflection in your own voice — all from local context.
+
+## Your day, shadowed — tasks caught from conversation
+
+Vera follows your day the way a person would: you *mention* a task, she holds
+it; you say it's done, she crosses it off. No forms, no separate tracker — the
+tracking happens in the conversation itself.
+
+```
+Anita » remind me to send mom the voice sample
+  · noted: send mom the voice sample
+
+Anita » finished the voice sample!
+  · crossed off: send mom the voice sample
+```
+
+- **Caught from talk** — "remind me to…", "I need to…", "todo: …" go on a local
+  day ledger; "finished…", "done with…" close the matching task. A transparent
+  rule layer, no model call — same spirit as the router and email triage. It
+  errs toward catching *less*: questions and "can you…" requests aren't your
+  tasks.
+- **Carried across days, honestly** — an open task ages ("carried 3 days") and
+  the day view links tasks to the topics you keep raising, so it reads like
+  someone who knows what you care about.
+- **She already knows** — open tasks fold into her system prompt, so "what
+  should I focus on?" doesn't need explaining, and the chat greets you with
+  what's still on your plate.
+- **Local + yours** — an append-only `shadow.jsonl` next to memory, owner-only
+  (0600), one readable event per line. Per-twin, like everything else.
+
+```bash
+python -m cognitive_twin day               # your day, shadowed
+python -m cognitive_twin day add "…"       # note one yourself
+python -m cognitive_twin day done 2        # cross off (number or words)
+python -m cognitive_twin day drop 2        # let one go
+python -m cognitive_twin day clear         # wipe the ledger
+```
+
+In chat, `/day` shows the same view; the agent also has `my_day`, `note_task`,
+and `complete_task` skills, so you can just ask. The rules live in
+[`cognitive_twin/shadow.py`](cognitive_twin/shadow.py) and are proven offline in
+[`tests/test_shadow.py`](tests/test_shadow.py).
 
 ## Screen control — opt-in, permissioned, safe
 

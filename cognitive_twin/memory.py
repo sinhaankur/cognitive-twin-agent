@@ -76,6 +76,13 @@ def record(prompt: str, answer: str, *, model: str | None = None,
             _secure(path)
     except OSError:
         pass  # memory is best-effort; never break the agent over it
+    # let the day shadow listen for tasks/completions in what was said — cheap
+    # rules, dedup-safe, and never allowed to break memory
+    try:
+        from . import shadow
+        shadow.observe(prompt or "")
+    except Exception:
+        pass
 
 
 # ---- read ---------------------------------------------------------------------
