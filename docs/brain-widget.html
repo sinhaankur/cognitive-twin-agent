@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vera · The Brain</title>
+<!--
+  Vera — The Brain, as an embeddable widget.
+
+  A self-contained, dependency-free living visualization of a cognitive twin's
+  memory: a force-directed constellation of "neurons" that breathes, drifts, and
+  grows over time. No server, no build step, no libraries — drop this one file
+  anywhere (GitHub Pages, your website, an <iframe>).
+
+  Embed it:
+      <iframe src="brain-widget.html" width="100%" height="360"
+              style="border:0;border-radius:14px"></iframe>
+
+  Feed it your own memory nodes (optional) — put JSON on the <body> data attrs,
+  or post a message to the iframe:
+      <body data-topics='["voice cloning","the brain","rust core"]'
+            data-reflections='["she remembers Sundays"]' data-name="Vera">
+      iframe.contentWindow.postMessage(
+        {topics:[...], reflections:[...], name:"Vera"}, "*");
+
+  With no data supplied it shows a gentle sample so the widget is never empty.
+-->
+<style>
+  :root{ --bg:#0b0d12; --hub:#2b59ff; --topic:#7fd1b9; --refl:#c98bff;
+         --edge:#2a2d36; --label:#cfd3da; --muted:#6a6a6a; }
+  html,body{margin:0;height:100%;background:var(--bg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+  #wrap{position:relative;width:100%;height:100%;min-height:280px;}
+  svg{width:100%;height:100%;display:block;}
+  #cap{position:absolute;left:14px;bottom:10px;color:var(--muted);
+    font-size:12px;letter-spacing:.02em;pointer-events:none;}
+</style>
+</head>
+<body>
+  <div id="wrap"><svg id="brain" viewBox="0 0 760 320" preserveAspectRatio="xMidYMid meet"></svg></div>
+  <div id="cap">The Brain — memory grows as you talk to your twin.</div>
+<script>
+"use strict";
+const SVGNS="http://www.w3.org/2000/svg";
+const svg=document.getElementById("brain");
+const CX=380, CY=160;
+function el(t,a){const e=document.createElementNS(SVGNS,t);for(const k in a)e.setAttribute(k,a[k]);return e;}
+
+// ---- data: from body data-*, else a sample so it's never empty --------------
+function readData(){
+  const b=document.body;
+  const parse=(s,d)=>{ try{ return s?JSON.parse(s):d; }catch(_){ return d; } };
+  return {
+    name: b.getAttribute("data-name") || "you",
+    topics: parse(b.getAttribute("data-topics"), null) || SAMPLE.topics,
+    reflections: parse(b.getAttribute("data-reflections"), null) || SAMPLE.reflections,
+  };
+}
+const SAMPLE={
+  topics:["voice cloning","the brain","memory recall","rust core",
+          "screen OCR","email triage","local-first"],
+  reflections:["she remembers Sundays","stays on your machine"],
+};
+let STATE=readData();
+
+// ---- living brain (same sim as Vera's viz engine) ---------------------------
+let brain={nodes:[], byKey:{}, raf:0, t:0};
+
+function brainModel(){
+  const topics=(STATE.topics||[]).slice(0,8);
+  const refl=(STATE.reflections||[]).slice(0,3);
+  const want=[];
+  topics.forEach((t,i)=>want.push({key:"t:"+t,label:t,c:"var(--topic)",r:18-Math.min(6,i)*1.1}));
+  refl.forEach(t=>want.push({key:"r:"+t,label:(t.length>20?t.slice(0,20)+"…":t),c:"var(--refl)",r:12}));
+  return want;
+}
+function syncBrain(){
+  const want=brainModel(), keys=new Set(want.map(w=>w.key));
+  want.forEach(w=>{
+    let n=brain.byKey[w.key];
+    if(!n){ const a=Math.random()*2*Math.PI;
+      n={...w,x:CX+Math.cos(a)*12,y:CY+Math.sin(a)*12,
+         vx:Math.cos(a)*0.6,vy:Math.sin(a)*0.6,appear:0};
+      brain.byKey[w.key]=n; brain.nodes.push(n);
+    } else { n.r=w.r; n.c=w.c; n.label=w.label; }
+  });
+  brain.nodes=brain.nodes.filter(n=>keys.has(n.key));
+  brain.byKey={}; brain.nodes.forEach(n=>brain.byKey[n.key]=n);
+}
+function stepBrain(){
+  brain.t++; const ns=brain.nodes, k=ns.length||1;
+  for(let i=0;i<k;i++){
+    const a=ns[i]; if(!a) continue;
+    const dx=a.x-CX, dy=a.y-CY, d=Math.hypot(dx,dy)||1;
+    const ideal=95+(i%2)*26, pull=(ideal-d)*0.012;
+    a.vx+=(dx/d)*pull; a.vy+=(dy/d)*pull;
+    for(let j=i+1;j<k;j++){ const b=ns[j];
+      const ex=a.x-b.x, ey=a.y-b.y, e=Math.hypot(ex,ey)||1;
+      if(e<70){ const f=(70-e)/e*0.06; a.vx+=ex*f; a.vy+=ey*f; b.vx-=ex*f; b.vy-=ey*f; } }
+    a.vx+=Math.cos(brain.t*0.01+i)*0.006; a.vy+=Math.sin(brain.t*0.012+i)*0.006;
+    a.vx*=0.90; a.vy*=0.90; a.x+=a.vx; a.y+=a.vy;
+    if(a.appear<1) a.appear=Math.min(1,a.appear+0.05);
+  }
+}
+function paintBrain(){
+  svg.innerHTML="";
+  if(!brain.nodes.length){
+    const t=el("text",{x:CX,y:CY,fill:"var(--muted)","font-size":14,"text-anchor":"middle"});
+    t.textContent="No memories yet."; svg.appendChild(t); return;
+  }
+  brain.nodes.forEach(n=>svg.appendChild(el("line",
+    {x1:CX,y1:CY,x2:n.x,y2:n.y,stroke:"var(--edge)","stroke-width":1.4,"stroke-opacity":0.6*n.appear})));
+  const glow=8*Math.sin(brain.t*0.05)+30;
+  svg.appendChild(el("circle",{cx:CX,cy:CY,r:glow,fill:"var(--hub)","fill-opacity":0.10}));
+  svg.appendChild(el("circle",{cx:CX,cy:CY,r:26,fill:"var(--hub)"}));
+  const me=el("text",{x:CX,y:CY+4,fill:"#fff","font-size":12,"text-anchor":"middle"});
+  me.textContent=STATE.name||"you"; svg.appendChild(me);
+  brain.nodes.forEach(n=>{
+    const r=n.r*n.appear;
+    svg.appendChild(el("circle",{cx:n.x,cy:n.y,r:r+4,fill:n.c,"fill-opacity":0.15*n.appear}));
+    svg.appendChild(el("circle",{cx:n.x,cy:n.y,r,fill:n.c,"fill-opacity":0.92*n.appear}));
+    const tx=el("text",{x:n.x,y:n.y+(n.y>CY?n.r+16:-n.r-9),fill:"var(--label)",
+      "font-size":11,"text-anchor":"middle","fill-opacity":n.appear});
+    tx.textContent=n.label; svg.appendChild(tx);
+  });
+}
+function loop(){ stepBrain(); paintBrain(); brain.raf=requestAnimationFrame(loop); }
+
+// ---- live updates: host page can push new memories --------------------------
+window.addEventListener("message",(ev)=>{
+  const d=ev.data||{};
+  if(d.topics) STATE.topics=d.topics;
+  if(d.reflections) STATE.reflections=d.reflections;
+  if(d.name) STATE.name=d.name;
+  syncBrain();
+});
+
+// Respect reduced-motion: still show the graph, just settle it without the loop.
+const reduce=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+syncBrain();
+if(reduce){ for(let i=0;i<180;i++) stepBrain(); paintBrain(); }
+else loop();
+</script>
+</body>
+</html>
