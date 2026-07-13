@@ -337,3 +337,53 @@ def status() -> str:
     if not _enabled:
         return "screen control: OFF (safe default). Enable with CTWIN_CONTROL=1."
     return "screen control: ON — read + safe actions (open app/url/shortcut), each confirmed."
+
+
+# ---- CLI ----------------------------------------------------------------------
+def _main(argv: list[str]) -> int:
+    """Direct CLI for the read-only screen actions, so you can run them without
+    the twin:  python3 -m cognitive_twin.control <command>
+
+    Commands:
+      app                     print the frontmost app
+      windows                 list the frontmost app's window titles
+      read                    read visible text (Accessibility tree)
+      capture [--full]        screenshot + on-device OCR (front window, or --full)
+                              --no-ocr to just save the PNG and print its path
+      status                  show whether control is on/off
+    """
+    if not argv or argv[0] in {"-h", "--help", "help"}:
+        print(_main.__doc__)
+        return 0
+
+    cmd = argv[0]
+    rest = argv[1:]
+
+    if cmd == "status":
+        print(status())
+        return 0
+
+    # Running this CLI is an explicit, present-user request, so enable control
+    # for the invocation. (The env gate still governs programmatic/library use.)
+    enable(True)
+    # Read/capture are read-only and never mutate, so no confirmation hook needed.
+
+    if cmd == "app":
+        print(current_app())
+    elif cmd == "windows":
+        print(list_windows())
+    elif cmd == "read":
+        print(read_screen_text())
+    elif cmd == "capture":
+        scope = "full" if "--full" in rest else "window"
+        ocr = "--no-ocr" not in rest
+        print(capture_screen(scope=scope, ocr=ocr))
+    else:
+        print(f"unknown command: {cmd}\n")
+        print(_main.__doc__)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main(sys.argv[1:]))
