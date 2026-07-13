@@ -213,6 +213,15 @@ def welcome_back(*, since: str | None = None, use_llm: bool = True) -> str:
     roll = rollup(review)
     if not review.observations:
         return roll
+    # tasks the watch spotted on screen, still waiting for a keep/ignore
+    try:
+        from . import shadow
+        n = len(shadow.proposals())
+        if n:
+            roll += (f"\n\nSpotted on screen: {n} possible task(s) — "
+                     "`python3 -m cognitive_twin day` to keep or ignore.")
+    except Exception:
+        pass
     note = digest(review) if use_llm else ""
     if note:
         return "— Welcome back —\n\n" + note + "\n\n" + roll

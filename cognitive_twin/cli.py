@@ -411,6 +411,24 @@ def _day_command(rest: list[str]) -> int:
             return 0
         print("usage: ctwin day drop <number>")
         return 1
+    if sub in {"keep", "ignore"}:
+        arg = " ".join(rest[1:]).strip()
+        if not arg.isdigit():
+            print(f"usage: ctwin day {sub} <number>   (`ctwin day` lists what she noticed)")
+            return 1
+        props = shadow.proposals()
+        i = int(arg)
+        if not 1 <= i <= len(props):
+            print(f"  no sighting #{i} — `ctwin day` to see them.")
+            return 1
+        p = props[i - 1]
+        if sub == "keep":
+            shadow.keep(p)
+            print(f"  · on your plate now: {p.text}")
+        else:
+            shadow.ignore(p)
+            print(f"  · let it pass: {p.text}")
+        return 0
     if sub == "clear":
         print("cleared" if shadow.clear() else "nothing to clear")
         return 0
