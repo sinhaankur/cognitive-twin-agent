@@ -276,6 +276,11 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 
 const cv = document.getElementById("sky"), ctx = cv.getContext("2d");
 let W = 0, H = 0, DPR = 1;
+// offscreen pair for the bloom pipeline: grains render to CLOUD_CV, then get
+// blitted twice — sharp, and downscaled→upscaled through BLOOM_CV, which the
+// browser's smoothing turns into a soft gaussian-ish glow. No filters needed.
+const CLOUD_CV = document.createElement("canvas"), cctx = CLOUD_CV.getContext("2d");
+const BLOOM_CV = document.createElement("canvas"), bctx = BLOOM_CV.getContext("2d");
 
 /* ---------- live data ------------------------------------------------------ */
 let STATE = {}, LAND = {points:[],links:[],types:{}}, BRAIN = {nodes:[],edges:[],state:{}};
@@ -335,7 +340,12 @@ function buildCloud(){
     const r = 0.13 + (band < 0.72 ? Math.pow(rnd(i*11+1), 1.4) * 0.5
                                   : 0.36 + Math.pow(rnd(i*11+1), 0.8) * 0.85);
     const neutral = rnd(i*11+2) < 0.34;
-    const c = neutral ? NEUTRAL[(rnd(i*11+3)*NEUTRAL.length)|0] : pool[(rnd(i*11+3)*pool.length)|0];
+    let c = neutral ? NEUTRAL[(rnd(i*11+3)*NEUTRAL.length)|0] : pool[(rnd(i*11+3)*pool.length)|0];
+    // astro colour grade: warm toward the heart, cool toward the rim
+    const gfrac = Math.max(0, Math.min(1, (r - 0.13) / 1.1));
+    const wm = (1 - gfrac) * 0.42, cm = gfrac * 0.30;
+    c = [ c[0]*(1-wm) + 255*wm, c[1]*(1-wm) + 212*wm, c[2]*(1-wm) + 158*wm ];
+    c = [ (c[0]*(1-cm) + 140*cm)|0, (c[1]*(1-cm) + 180*cm)|0, (c[2]*(1-cm) + 255*cm)|0 ];
     const tier = rnd(i*11+7);
     return {
       r, a: rnd(i*11+4) * 6.2832,
@@ -351,9 +361,13 @@ function buildCloud(){
 function cloudR(){ return R0() * 0.225; }
 function drawCloud(now, dt){
   const Rc = cloudR();
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
+  cctx.clearRect(0, 0, W, H);
+  cctx.globalCompositeOperation = "lighter";
   const heat = Math.min(1, streams.length / 120);      // thinking = the mind stirs
+  // a heartbeat: every ~8s a soft shimmer washes outward through the mass
+  const beatT = (now % 8000) / 8000;
+  const waveR = 0.13 + beatT * 1.4;
+  const beatGain = Math.sin(beatT * Math.PI) * 0.5;
   for (let i = 0; i < cloud.length; i++){
     const p = cloud[i];
     p.a += p.w * dt * (1 + heat * 1.6);
@@ -363,22 +377,32 @@ function drawCloud(now, dt){
     const P = S(w.x, w.y);
     const front = w.z >= 0;
     const twk = 0.75 + 0.25 * Math.sin(now * 0.0016 + p.tw);
-    ctx.globalAlpha = p.al * twk * (front ? 1 : 0.45);
-    ctx.fillStyle = "rgb(" + p.c[0] + "," + p.c[1] + "," + p.c[2] + ")";
+    const pulse = Math.max(0, 1 - Math.abs(p.r - waveR) * 5) * beatGain;
+    cctx.globalAlpha = Math.min(1, (p.al * twk + pulse * 0.55)) * (front ? 1 : 0.45);
+    cctx.fillStyle = "rgb(" + p.c[0] + "," + p.c[1] + "," + p.c[2] + ")";
     const sz = p.s * Math.max(0.7, Math.sqrt(cam.zoom));
-    ctx.fillRect(P.X - sz/2, P.Y - sz/2, sz, sz);
+    cctx.fillRect(P.X - sz/2, P.Y - sz/2, sz, sz);
     if (p.spark){                                     // luminous grains get a halo
-      ctx.globalAlpha = 0.18 * twk;
-      ctx.beginPath(); ctx.arc(P.X, P.Y, sz * 2.6, 0, 7); ctx.fill();
+      cctx.globalAlpha = 0.18 * twk;
+      cctx.beginPath(); cctx.arc(P.X, P.Y, sz * 2.6, 0, 7); cctx.fill();
     }
   }
   // a soft luminous heart behind the dark core (the dense unresolved middle)
   const core = S(0, 0), CR = Rc * 0.34 * cam.zoom;
-  let g = ctx.createRadialGradient(core.X, core.Y, 0, core.X, core.Y, CR * 2.1);
+  let g = cctx.createRadialGradient(core.X, core.Y, 0, core.X, core.Y, CR * 2.1);
   g.addColorStop(0, "rgba(190,200,255,0.16)"); g.addColorStop(0.5, "rgba(230,180,240,0.07)");
   g.addColorStop(1, "rgba(190,200,255,0)");
+  cctx.globalAlpha = 1;
+  cctx.fillStyle = g; cctx.beginPath(); cctx.arc(core.X, core.Y, CR * 2.1, 0, 7); cctx.fill();
+  // composite: once sharp, once through the bloom pipeline
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.drawImage(CLOUD_CV, 0, 0, W, H);
+  bctx.clearRect(0, 0, BLOOM_CV.width, BLOOM_CV.height);
+  bctx.drawImage(CLOUD_CV, 0, 0, BLOOM_CV.width, BLOOM_CV.height);
+  ctx.globalAlpha = 0.6;
+  ctx.drawImage(BLOOM_CV, 0, 0, W, H);
   ctx.globalAlpha = 1;
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(core.X, core.Y, CR * 2.1, 0, 7); ctx.fill();
   ctx.restore();
   // the dark core — a quiet centre the mind turns around
   g = ctx.createRadialGradient(core.X, core.Y, 0, core.X, core.Y, CR);
@@ -486,15 +510,21 @@ function stepStreams(dt){
   ctx.globalCompositeOperation = "lighter";
   streams.forEach(p => {
     p.t += dt * p.v;
-    if (p.t < 0) return;
+    if (p.t < 0){ p.lX = undefined; return; }
     const t = p.t, u = 1 - t;
     const x = u*u*p.p0.x + 2*u*t*p.p1.x + t*t*p.p2.x;
     const y = u*u*p.p0.y + 2*u*t*p.p1.y + t*t*p.p2.y;
     const P = S(x, y);
     const fade = Math.sin(Math.min(1, Math.max(0, t)) * Math.PI);
-    ctx.globalAlpha = 0.65 * fade;
-    ctx.fillStyle = "rgb(" + p.c[0] + "," + p.c[1] + "," + p.c[2] + ")";
+    const col = p.c[0] + "," + p.c[1] + "," + p.c[2];
+    if (p.lX !== undefined){       // a thread, not a dot — the fluid look
+      ctx.strokeStyle = "rgba(" + col + "," + (0.5 * fade) + ")";
+      ctx.lineWidth = p.s * 0.9;
+      ctx.beginPath(); ctx.moveTo(p.lX, p.lY); ctx.lineTo(P.X, P.Y); ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(" + col + "," + (0.85 * fade) + ")";
     ctx.fillRect(P.X - p.s/2, P.Y - p.s/2, p.s * cam.zoom, p.s * cam.zoom);
+    p.lX = P.X; p.lY = P.Y;
   });
   ctx.restore();
 }
@@ -621,6 +651,8 @@ function resize(){
   W = window.innerWidth; H = window.innerHeight;
   cv.width = W * DPR; cv.height = H * DPR;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  CLOUD_CV.width = W; CLOUD_CV.height = H;                       // 1× is enough —
+  BLOOM_CV.width = Math.ceil(W/5); BLOOM_CV.height = Math.ceil(H/5); // bloom hides it
   buildNodes(); buildChips();
 }
 window.addEventListener("resize", resize);
@@ -661,17 +693,25 @@ function pill(P, text, color, hot, side, edged){
 function inRect(r, mx, my){ return r && mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h; }
 
 /* ---------- render loop ---------------------------------------------------------- */
-let last = performance.now();
+let last = performance.now(), hoverHold = false;
 function frame(now){
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  // she is never frozen: a slow idle orbit, pausing while you read or drag
+  if (!cam.drag && !hoverHold) cam.yaw += dt * 0.012;
   stepThought(dt);
   Object.keys(glow).forEach(k => { glow[k] *= Math.pow(0.4, dt); if (glow[k] < 0.02) delete glow[k]; });
   ctx.clearRect(0, 0, W, H);
 
-  // deep-space vignette
+  // deep-space vignette + two faint colour washes (violet / teal) for depth
   const bg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.7);
   bg.addColorStop(0, "#080b16"); bg.addColorStop(1, "#03040a");
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  let wash = ctx.createRadialGradient(W*0.2, H*0.15, 0, W*0.2, H*0.15, W*0.55);
+  wash.addColorStop(0, "rgba(98,70,180,0.055)"); wash.addColorStop(1, "rgba(98,70,180,0)");
+  ctx.fillStyle = wash; ctx.fillRect(0, 0, W, H);
+  wash = ctx.createRadialGradient(W*0.85, H*0.85, 0, W*0.85, H*0.85, W*0.5);
+  wash.addColorStop(0, "rgba(40,130,150,0.05)"); wash.addColorStop(1, "rgba(40,130,150,0)");
+  ctx.fillStyle = wash; ctx.fillRect(0, 0, W, H);
 
   // faint stars
   bgStars.forEach(d => {
@@ -704,6 +744,20 @@ function frame(now){
     const qx = u*u*A.X + 2*u*ph*C.X + ph*ph*Bp.X, qy = u*u*A.Y + 2*u*ph*C.Y + ph*ph*Bp.Y;
     ctx.fillStyle = "rgba(170,195,255,0.5)";
     ctx.fillRect(qx - 1, qy - 1, 2, 2);
+  });
+
+  // sector captions — the WHAT axis, whispered at the rim
+  Object.keys(SECTOR).forEach(t => {
+    const meta = (LAND.types || {})[t]; if (!meta || !meta.count) return;
+    const mid = -Math.PI/2 + SECTOR[t] * (Math.PI/2) + Math.PI/4;
+    const RR = R0() * 0.47;
+    const w = project(Math.cos(mid)*RR, -R0()*0.015, Math.sin(mid)*RR);
+    const P = S(w.x, w.y);
+    ctx.globalAlpha = 0.16 + 0.14 * ((w.z / RR) + 1) / 2;
+    ctx.fillStyle = meta.color; ctx.font = "9px ui-monospace, Menlo, monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(meta.label.toUpperCase(), P.X, P.Y);
+    ctx.globalAlpha = 1; ctx.textAlign = "left";
   });
 
   // memory constellation on its 3 axes — project, then draw far-to-near
@@ -769,6 +823,7 @@ function frame(now){
   });
 
   // hover card
+  hoverHold = !!(hoverNode || hoverChip);
   if (hoverNode || hoverChip){
     const h = hoverNode || hoverChip;
     card.style.display = "block";
