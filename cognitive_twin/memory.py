@@ -181,6 +181,71 @@ def summary_for_prompt() -> str:
     return "Context about this user (from local history, private): " + "; ".join(bits) + "."
 
 
+# ---- relevance recall (the "it remembers *you*" bit) --------------------------
+def _terms(text: str) -> set[str]:
+    """Content words of a string — lowercased, stopwords and short tokens dropped.
+    Same filter as patterns() so recall and topics agree on what 'signal' is."""
+    out: set[str] = set()
+    for raw in (text or "").lower().replace("?", " ").replace("/", " ").split():
+        w = "".join(c for c in raw if c.isalnum())
+        if len(w) > 3 and not w.isdigit() and w not in _STOP:
+            out.add(w)
+    return out
+
+
+def recall(query: str, k: int = 3) -> list[dict[str, Any]]:
+    """Return the ``k`` past interactions most relevant to ``query``.
+
+    Scoring is deliberately simple and dependency-free: overlap of content
+    words between the query and each stored prompt+gist, weighted by term
+    length (longer shared words are stronger signal) and lightly by recency so
+    ties break toward the more recent memory. No embeddings, no model, O(n) over
+    the local log — fast enough to run on every turn.
+    """
+    q = _terms(query)
+    if not q:
+        return []
+    es = entries()
+    if not es:
+        return []
+    scored: list[tuple[float, int, dict[str, Any]]] = []
+    n = len(es)
+    for i, e in enumerate(es):
+        mem_terms = _terms(e.get("prompt", "")) | _terms(e.get("gist", ""))
+        shared = q & mem_terms
+        if not shared:
+            continue
+        # length-weighted overlap; +small recency nudge (newer entries have higher i)
+        score = sum(len(w) ** 0.5 for w in shared) + (i / n) * 0.5
+        scored.append((score, i, e))
+    scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
+    return [e for _, _, e in scored[:k]]
+
+
+def context_for(query: str, k: int = 3) -> str:
+    """System-prompt context tailored to what the user just said: the most
+    relevant past memories first, then the standing habit summary. This is what
+    turns 'has a memory file' into 'remembers you' — folded in per turn.
+
+    Falls back to summary_for_prompt() when nothing specific is relevant, so a
+    fresh or off-topic message still gets the standing context and never errors.
+    """
+    hits = recall(query, k=k)
+    if not hits:
+        return summary_for_prompt()
+    lines = []
+    for e in hits:
+        when = (e.get("ts", "") or "")[:10]  # YYYY-MM-DD
+        prompt = (e.get("prompt", "") or "").strip()
+        gist = (e.get("gist", "") or "").strip()
+        snippet = prompt if not gist else f"{prompt} → {gist}"
+        lines.append(f"- ({when}) {snippet}"[:220])
+    recalled = ("Relevant things you remember about this user (from local, "
+                "private history — use naturally, don't recite):\n" + "\n".join(lines))
+    standing = summary_for_prompt()
+    return recalled + ("\n\n" + standing if standing else "")
+
+
 # ---- clear --------------------------------------------------------------------
 def clear() -> bool:
     """Delete all stored memory. Returns True if a file was removed."""
