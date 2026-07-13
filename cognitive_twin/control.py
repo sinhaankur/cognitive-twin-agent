@@ -136,6 +136,145 @@ def read_screen_text(max_chars: int = 1200) -> str:
     return out[:max_chars] + ("…[truncated]" if len(out) > max_chars else "")
 
 
+# ---- screenshot + on-device OCR (read-only) -----------------------------------
+# The Accessibility tree (read_screen_text) misses text that apps draw as pixels
+# — a browser <canvas>, a video frame, VS Code's editor, an image. For those we
+# take an actual screenshot and OCR it with Apple's Vision framework, entirely
+# on-device: no cloud, no LLM. The PNG is written to a temp file the caller can
+# keep or discard.
+
+# A tiny Swift program that OCRs an image path with Vision and prints the text.
+# Compiled on first use with `swiftc`; cached so we don't rebuild every call.
+_OCR_SWIFT = r'''
+import Foundation
+import Vision
+import AppKit
+
+let args = CommandLine.arguments
+guard args.count > 1, let img = NSImage(contentsOfFile: args[1]),
+      let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+    FileHandle.standardError.write("could not load image\n".data(using: .utf8)!)
+    exit(2)
+}
+let req = VNRecognizeTextRequest()
+req.recognitionLevel = .accurate
+req.usesLanguageCorrection = true
+let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+do {
+    try handler.perform([req])
+    let lines = (req.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+    print(lines.joined(separator: "\n"))
+} catch {
+    FileHandle.standardError.write("vision failed: \(error)\n".data(using: .utf8)!)
+    exit(3)
+}
+'''
+
+
+def _ocr_binary_path() -> str:
+    """Path to the cached compiled OCR helper (built on first use)."""
+    import tempfile
+    return os.path.join(tempfile.gettempdir(), "ctwin_vision_ocr")
+
+
+def _ensure_ocr_binary() -> str | None:
+    """Compile the Swift OCR helper if needed. Returns its path, or None if the
+    Swift toolchain isn't available (caller then reports the PNG-only result)."""
+    binpath = _ocr_binary_path()
+    if os.path.exists(binpath):
+        return binpath
+    import shutil
+    import tempfile
+    if not shutil.which("swiftc"):
+        return None
+    src = os.path.join(tempfile.gettempdir(), "ctwin_vision_ocr.swift")
+    try:
+        with open(src, "w") as f:
+            f.write(_OCR_SWIFT)
+        r = subprocess.run(["swiftc", "-O", src, "-o", binpath],
+                           capture_output=True, text=True, timeout=90)
+        return binpath if r.returncode == 0 and os.path.exists(binpath) else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _frontmost_window_id() -> str | None:
+    """CGWindowID of the frontmost app's front window, for `screencapture -l`.
+    Best-effort; None if it can't be determined (many apps, e.g. Chromium-based
+    browsers, don't expose AXWindowNumber — caller then falls back to full screen)."""
+    out = _osascript(
+        'tell application "System Events" to get value of attribute "AXWindowNumber" '
+        'of front window of (first application process whose frontmost is true)'
+    )
+    out = out.strip()
+    return out if out.isdigit() else None
+
+
+def capture_screen(scope: str = "window", ocr: bool = True, max_chars: int = 4000) -> str:
+    """Screenshot the front window (scope="window") or the whole display
+    (scope="full"), then optionally OCR it on-device with Vision.
+
+    Read-only: it captures pixels, never changes anything. Returns the OCR text
+    (plus the saved PNG path), or just the path if OCR isn't available.
+    Needs Screen Recording permission the first time (macOS prompts).
+    """
+    if (err := _require_enabled()):
+        return err
+    if scope not in {"window", "full"}:
+        return f"[refused] scope must be 'window' or 'full', got '{scope}'."
+
+    import tempfile
+    png = os.path.join(tempfile.gettempdir(),
+                       f"ctwin_screen_{os.getpid()}.png")
+
+    # -x: silent (no shutter sound/UI). -o: omit window shadow.
+    cmd = ["screencapture", "-x"]
+    fell_back = False
+    if scope == "window":
+        wid = _frontmost_window_id()
+        if wid:
+            cmd += ["-o", "-l", wid]
+        else:
+            scope = "full"  # couldn't resolve a window; grab the display instead
+            fell_back = True
+    cmd.append(png)
+
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError) as e:
+        return f"[error] screencapture failed: {e}"
+    if r.returncode != 0 or not os.path.exists(png):
+        msg = r.stderr.strip() or "screencapture produced no image"
+        return (f"[error] {msg}  (If this mentions permission, grant Screen "
+                "Recording to your terminal/app in System Settings → Privacy & "
+                "Security → Screen Recording, then retry.)")
+
+    header = f"[screenshot: {scope}] saved to {png}"
+    if fell_back:
+        header += "  (front window id wasn't exposed by the app — captured the "
+        header += "full display instead)"
+    if not ocr:
+        return header
+
+    ocr_bin = _ensure_ocr_binary()
+    if ocr_bin is None:
+        return (header + "\n[ocr unavailable] The Swift/Vision toolchain wasn't "
+                "found, so no text was extracted. Install Xcode command-line tools "
+                "(`xcode-select --install`) to enable on-device OCR.")
+    try:
+        r = subprocess.run([ocr_bin, png], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        return header + f"\n[ocr error] {e}"
+    if r.returncode != 0:
+        return header + f"\n[ocr error] {r.stderr.strip() or 'Vision OCR failed'}"
+
+    text = r.stdout.strip()
+    if not text:
+        return header + "\n[no text found] Vision OCR read no text in the image."
+    clipped = text[:max_chars] + ("…[truncated]" if len(text) > max_chars else "")
+    return header + "\n--- on-screen text (Vision OCR) ---\n" + clipped
+
+
 # ---- SAFE actions (confirmation-gated) ----------------------------------------
 _APP_NAME = re.compile(r"^[\w .&'\-]{1,60}$")           # plain app names only
 _URL = re.compile(r"^https?://[^\s]{1,300}$", re.IGNORECASE)
