@@ -249,12 +249,14 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   #answer .t{font-weight:600;color:#7ec8ff;margin-bottom:6px;letter-spacing:.12em;text-transform:uppercase;font-size:10px}
   #answer .row{color:#aeb4c0;margin-top:3px}
   #answer .kv{color:#7fd1b9}
+  #axes{bottom:16px;right:18px;color:rgba(190,200,220,.75);font-size:9.5px;text-transform:uppercase}
 </style></head><body>
 <canvas id="sky"></canvas>
 <div class="hud" id="who"><div class="name box" id="whoname">THE MIND</div><div class="sub" id="stats">reading her real state…</div></div>
 <div class="hud" id="topbar"><span class="box"><span class="live">●</span> LIVE <span id="clock"></span></span></div>
 <div class="hud" id="legend"></div>
-<div class="hud" id="hint">drag to pan · scroll to zoom · double-click resets · hover any node</div>
+<div class="hud" id="hint">drag to orbit her mind · scroll to zoom · double-click resets · hover any node</div>
+<div class="hud box" id="axes">ANGLE · what &nbsp;&nbsp;RADIUS · strength &nbsp;&nbsp;HEIGHT · when</div>
 <div class="hud" id="askbar"><input id="q" placeholder="ask her something — watch the thought move…"><button id="go">think</button></div>
 <div class="hud" id="card"></div>
 <div class="hud" id="answer"></div>
@@ -288,11 +290,23 @@ function rnd(i){ let t = (i + 1) * 0x6D2B79F5;
   t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
 
-/* ---------- camera ----------------------------------------------------------- */
-const cam = { zoom: 1, ox: 0, oy: 0, drag: null };
-function S(x, y){ return { X: W/2 + (x*cam.zoom) + cam.ox, Y: H/2 + (y*cam.zoom) + cam.oy }; }
-function toWorld(sx, sy){ return { x: (sx - W/2 - cam.ox)/cam.zoom, y: (sy - H/2 - cam.oy)/cam.zoom }; }
+/* ---------- camera: orbit the mind ------------------------------------------- */
+/* The memory space is genuinely 3-D (see docs/memory-ia.md): drag orbits it
+   (yaw + a clamped pitch), scroll zooms. No pan — orbit + zoom reads better. */
+const cam = { zoom: 1, yaw: 0, pitch: 0.42, drag: null };
+// ?yaw=&pitch= — start from a given orbit angle (demos + screenshots)
+const qs = new URLSearchParams(location.search);
+if (qs.get("yaw"))   cam.yaw   = parseFloat(qs.get("yaw"))   || 0;
+if (qs.get("pitch")) cam.pitch = parseFloat(qs.get("pitch")) || 0.42;
+function S(x, y){ return { X: W/2 + (x*cam.zoom), Y: H/2 + (y*cam.zoom) }; }
+function toWorld(sx, sy){ return { x: (sx - W/2)/cam.zoom, y: (sy - H/2)/cam.zoom }; }
 function R0(){ return Math.min(W, H); }
+/* world 3-D (x: right, z: toward viewer at yaw 0, h: up) → flat world 2-D */
+function project(x0, h, z0){
+  const c = Math.cos(cam.yaw), s = Math.sin(cam.yaw);
+  const x = x0*c - z0*s, z = x0*s + z0*c;
+  return { x, y: z * cam.pitch - h * 0.9, z };   // z>0 = near, z<0 = far
+}
 
 function hexRgb(h){ if (!h || h[0] !== "#") return [160,180,255];
   const v = parseInt(h.slice(1), 16); return [(v>>16)&255, (v>>8)&255, v&255]; }
@@ -344,11 +358,10 @@ function drawCloud(now, dt){
     const p = cloud[i];
     p.a += p.w * dt * (1 + heat * 1.6);
     const wob = 1 + 0.05 * Math.sin(now * 0.0006 + p.tw);
-    const x = Math.cos(p.a) * p.r * Rc * wob;
-    const z = Math.sin(p.a) * p.r * Rc * wob;
-    const y = p.y * Rc * 0.6 + z * 0.30;               // tilt: depth leans into Y
-    const P = S(x, y);
-    const front = z >= 0;
+    const w = project(Math.cos(p.a) * p.r * Rc * wob, p.y * Rc * 0.55,
+                      Math.sin(p.a) * p.r * Rc * wob);
+    const P = S(w.x, w.y);
+    const front = w.z >= 0;
     const twk = 0.75 + 0.25 * Math.sin(now * 0.0016 + p.tw);
     ctx.globalAlpha = p.al * twk * (front ? 1 : 0.45);
     ctx.fillStyle = "rgb(" + p.c[0] + "," + p.c[1] + "," + p.c[2] + ")";
@@ -387,25 +400,43 @@ function drawCloud(now, dt){
   ctx.restore();
 }
 
-/* ---------- real memories — the labeled constellation ------------------------ */
+/* ---------- real memories — the constellation, placed on 3 real axes --------- */
+/* docs/memory-ia.md: ANGLE = what it is (type sector, related pulled together),
+   RADIUS = how strong (heat: the connected sit near her core, strays drift out),
+   HEIGHT = when (new memories float above the plane, settling as they age). */
+const SECTOR = { emotion:0, task:1, opinion:2, knowledge:3 };
 function buildNodes(){
   const pts = (LAND.points || []).slice();
-  // group by type so neighbours mean something, then spread around the circle
-  const order = ["emotion","task","opinion","knowledge"];
-  pts.sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type) || (a.ts||"").localeCompare(b.ts||""));
-  const N = pts.length;
+  const maxHeat = Math.max(0.001, ...pts.map(p => p.heat || 0));
+  const byAge = pts.slice().sort((a, b) => (a.ts||"").localeCompare(b.ts||""));
   // with a big log, only the most connected memories keep permanent labels —
   // the rest stay quiet dots until hovered, so the constellation never clutters
   const byHeat = pts.slice().sort((a, b) => (b.heat || 0) - (a.heat || 0));
   const labeled = new Set(byHeat.slice(0, 26));
-  nodes = pts.map((p, k) => {
+  // group per sector; within it, order by landscape-x so related sit together
+  const groups = {};
+  pts.forEach(p => { (groups[p.type] = groups[p.type] || []).push(p); });
+  Object.values(groups).forEach(g => g.sort((a, b) => (a.x || 0) - (b.x || 0)));
+  nodes = pts.map(p => {
     const i = (LAND.points || []).indexOf(p);
-    const a = -Math.PI/2 + ((k + 0.5) / Math.max(1, N)) * Math.PI * 2;
-    const band = (k % 2 === 0) ? 0.335 : 0.425;        // two rings → labels never collide
-    const r = R0() * (band + (rnd(i*5+2) - 0.5) * 0.018);
-    return { idx: i, a, r, x: Math.cos(a)*r, y: Math.sin(a)*r*0.86,
-             type: p.type, color: p.color, label: p.label, ts: p.ts,
-             heat: p.heat || 0, named: labeled.has(p), hit: null };
+    const g = groups[p.type], gi = g.indexOf(p);
+    const sect = (SECTOR[p.type] !== undefined ? SECTOR[p.type] : 3);
+    // ANGLE — a 90° sector per type, 12° margins, related neighbours adjacent
+    const a = -Math.PI/2 + sect * (Math.PI/2) + 0.21
+            + ((gi + 0.5) / Math.max(1, g.length)) * (Math.PI/2 - 0.42);
+    // RADIUS — strength: heat 1 → hugging the mass, heat 0 → far periphery
+    const strength = (p.heat || 0) / maxHeat;
+    const r = cloudR() * 1.3 + (R0() * 0.44 - cloudR() * 1.3) * (1 - strength);
+    // HEIGHT — age: newest floats highest, settling toward the plane
+    const ageRank = byAge.indexOf(p) / Math.max(1, byAge.length - 1);  // 0 old → 1 new
+    const h = R0() * (-0.04 + ageRank * 0.20);
+    const n = { idx: i, a, r, h, x3: Math.cos(a)*r, z3: Math.sin(a)*r,
+                type: p.type, color: p.color, label: p.label, ts: p.ts,
+                heat: p.heat || 0, strength, named: labeled.has(p),
+                px: 0, py: 0, pz: 0, hit: null };
+    const w = project(n.x3, n.h, n.z3);
+    n.px = w.x; n.py = w.y; n.pz = w.z;
+    return n;
   });
 }
 function nodeShort(n){ return n.label.length > 26 ? n.label.slice(0, 25) + "…" : n.label; }
@@ -497,8 +528,8 @@ function stepThought(dt){
     if (T.t >= at && !T.fired[key]){
       T.fired[key] = true;
       glow["node:" + n.idx] = 1;
-      ripples.push({ x: n.x, y: n.y, r: 6, a: 0.8 });
-      spawnStream(n, {x: 0, y: 0}, { n: 30, color: hexRgb(n.color), spread: 40, stagger: 0.4 });
+      ripples.push({ x: n.px, y: n.py, r: 6, a: 0.8 });
+      spawnStream({x: n.px, y: n.py}, {x: 0, y: 0}, { n: 30, color: hexRgb(n.color), spread: 40, stagger: 0.4 });
     }
   });
   // then the faculties light along the real path, motes rushing station→station
@@ -536,15 +567,18 @@ let mouse = { x: -1, y: -1 };
 const card = document.getElementById("card");
 cv.addEventListener("mousemove", e => {
   mouse = { x: e.clientX, y: e.clientY };
-  if (cam.drag){ cam.ox += e.clientX - cam.drag.x; cam.oy += e.clientY - cam.drag.y;
-                 cam.drag = { x: e.clientX, y: e.clientY }; }
+  if (cam.drag){
+    cam.yaw   += (e.clientX - cam.drag.x) * 0.006;
+    cam.pitch  = Math.max(0.16, Math.min(0.8, cam.pitch + (e.clientY - cam.drag.y) * 0.003));
+    cam.drag = { x: e.clientX, y: e.clientY };
+  }
 });
 cv.addEventListener("mousedown", e => { cam.drag = { x: e.clientX, y: e.clientY }; cv.style.cursor = "grabbing"; });
 window.addEventListener("mouseup", () => { cam.drag = null; cv.style.cursor = "grab"; });
 cv.addEventListener("wheel", e => { e.preventDefault();
-  const f = e.deltaY < 0 ? 1.1 : 1/1.1, nz = Math.max(0.5, Math.min(3.2, cam.zoom * f));
-  cam.ox = (cam.ox) * (nz/cam.zoom); cam.oy = (cam.oy) * (nz/cam.zoom); cam.zoom = nz; }, { passive:false });
-cv.addEventListener("dblclick", () => { cam.zoom = 1; cam.ox = 0; cam.oy = 0; });
+  const f = e.deltaY < 0 ? 1.1 : 1/1.1;
+  cam.zoom = Math.max(0.5, Math.min(3.2, cam.zoom * f)); }, { passive:false });
+cv.addEventListener("dblclick", () => { cam.zoom = 1; cam.yaw = 0; cam.pitch = 0.42; });
 cv.style.cursor = "grab";
 
 /* ---------- HUD --------------------------------------------------------------- */
@@ -641,7 +675,7 @@ function frame(now){
 
   // faint stars
   bgStars.forEach(d => {
-    const px = W/2 + d.x*W*0.75 + cam.ox*d.z*0.2, py = H/2 + d.y*H*0.75 + cam.oy*d.z*0.2;
+    const px = W/2 + d.x*W*0.75 + cam.yaw*36*d.z, py = H/2 + d.y*H*0.75;
     ctx.globalAlpha = (0.12 + 0.3*d.z) * (0.8 + 0.2*Math.sin(now*0.0012 + d.tw));
     ctx.fillStyle = "rgb(" + d.c[0] + "," + d.c[1] + "," + d.c[2] + ")";
     ctx.beginPath(); ctx.arc(px, py, d.s, 0, 7); ctx.fill();
@@ -672,36 +706,44 @@ function frame(now){
     ctx.fillRect(qx - 1, qy - 1, 2, 2);
   });
 
-  // memory constellation: line from each node toward the cloud + related links
+  // memory constellation on its 3 axes — project, then draw far-to-near
   let hoverNode = null, hoverChip = null;
+  nodes.forEach(n => {
+    const w = project(n.x3, n.h, n.z3);
+    n.px = w.x; n.py = w.y; n.pz = w.z;
+  });
   (LAND.links || []).forEach(l => {
     const a = nodes.find(n => n.idx === l.a), b = nodes.find(n => n.idx === l.b);
     if (!a || !b) return;
-    const A = S(a.x, a.y), Bp = S(b.x, b.y);
+    const A = S(a.px, a.py), Bp = S(b.px, b.py);
     ctx.strokeStyle = "rgba(150,170,255," + (0.05 + (l.w || 0) * 0.18) + ")";
     ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(A.X, A.Y); ctx.lineTo(Bp.X, Bp.Y); ctx.stroke();
   });
-  nodes.forEach(n => {
-    const P = S(n.x, n.y);
+  const maxZ = R0() * 0.44;
+  nodes.slice().sort((a, b) => a.pz - b.pz).forEach(n => {
+    const P = S(n.px, n.py);
+    const depth = 0.62 + 0.38 * ((n.pz / maxZ) + 1) / 2;   // far = dimmer, smaller
     const hot = glow["node:" + n.idx] || 0;
     const near = Math.hypot(P.X-mouse.x, P.Y-mouse.y) < 10;
     // tether to the cloud edge, with a tick where it meets the mass
-    const m = Math.hypot(n.x, n.y) || 1;
-    const E = S(n.x/m * cloudR() * 1.05, n.y/m * cloudR() * 1.05 * 0.86);
-    ctx.strokeStyle = "rgba(190,205,235," + (0.15 + hot * 0.5) + ")";
+    const m = Math.hypot(n.px, n.py) || 1;
+    const E = S(n.px/m * cloudR() * 1.02, n.py/m * cloudR() * 1.02);
+    ctx.strokeStyle = "rgba(190,205,235," + ((0.15 + hot * 0.5) * depth) + ")";
     ctx.lineWidth = hot > 0.1 ? 1.2 : 0.7;
     ctx.beginPath(); ctx.moveTo(P.X, P.Y); ctx.lineTo(E.X, E.Y); ctx.stroke();
     ctx.fillStyle = "rgba(190,205,235,0.4)";
     ctx.fillRect(E.X - 1, E.Y - 1, 2, 2);
-    // the node dot
-    const r = 2.2 + Math.min(2.2, (n.heat || 0) * 1.8) + hot * 2;
+    // the node dot — sized by strength (the RADIUS axis, restated in the dot)
+    const r = (2.2 + n.strength * 2.2 + hot * 2) * depth;
+    ctx.globalAlpha = depth;
     ctx.fillStyle = n.color; ctx.shadowColor = n.color; ctx.shadowBlur = 6 + hot * 14;
     ctx.beginPath(); ctx.arc(P.X, P.Y, r, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
     // the label pill (screen-side aware so text points away from the centre);
     // unnamed nodes stay quiet dots until hovered
     n.hit = (n.named || near || hot > 0.1)
-      ? pill(P, nodeShort(n), n.color, hot > 0.1, n.x < 0 ? -1 : 1)
+      ? pill(P, nodeShort(n), n.color, hot > 0.1, n.px < 0 ? -1 : 1)
       : null;
+    ctx.globalAlpha = 1;
     if (inRect(n.hit, mouse.x, mouse.y) || near) hoverNode = { n, P };
   });
 
