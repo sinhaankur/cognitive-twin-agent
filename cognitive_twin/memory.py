@@ -16,7 +16,9 @@ more like you — without any profiling leaving the machine.
 from __future__ import annotations
 
 import json
+import math
 import os
+import re
 import stat
 import datetime as _dt
 from collections import Counter
@@ -199,6 +201,117 @@ def summary_for_prompt() -> str:
     return "Context about this user (from local history, private): " + "; ".join(bits) + "."
 
 
+# ---- episodic date recall ("what happened on July 1?") ------------------------
+# A human hippocampus can travel to a day. So can she: if you name a date, the
+# episodes from that day surface. Rule-based and transparent — no model call.
+_MONTHS = {m[:3]: i + 1 for i, m in enumerate(
+    ["january", "february", "march", "april", "may", "june", "july",
+     "august", "september", "october", "november", "december"])}
+
+
+def _parse_date_query(text: str) -> tuple[_dt.date, _dt.date] | None:
+    """Return a (start, end) day range if the text asks about a specific time
+    ('what happened on july 1', 'yesterday', '3 days ago', '2026-07-01',
+    'last week'); None otherwise."""
+    t = (text or "").lower()
+    today = _dt.date.today()
+    m = re.search(r"\b(20\d{2})-(\d{1,2})-(\d{1,2})\b", t)          # ISO
+    if m:
+        try:
+            d = _dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            return (d, d)
+        except ValueError:
+            return None
+    if "day before yesterday" in t:
+        d = today - _dt.timedelta(days=2); return (d, d)
+    if "yesterday" in t:
+        d = today - _dt.timedelta(days=1); return (d, d)
+    # bare "today" is in half of casual speech ("3 tasks today") — only the
+    # explicitly backward-looking phrasings mean the day's episodes
+    if "earlier today" in t or "so far today" in t:
+        return (today, today)
+    m = re.search(r"\b(\d+)\s+days?\s+ago\b", t)
+    if m:
+        d = today - _dt.timedelta(days=int(m.group(1))); return (d, d)
+    if "last week" in t:
+        return (today - _dt.timedelta(days=13), today - _dt.timedelta(days=7))
+    if "this week" in t:
+        return (today - _dt.timedelta(days=today.weekday()), today)
+    # "july 1", "july 1st", "1 july", "1st of july" — month name validates the
+    # match, so ordinary words followed by numbers never trigger a date
+    pair = None
+    m = re.search(r"\b([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b", t)
+    if m and m.group(1)[:3] in _MONTHS:
+        pair = (m.group(1), m.group(2))
+    else:
+        m = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?([a-z]{3,9})\b", t)
+        if m and m.group(2)[:3] in _MONTHS:
+            pair = (m.group(2), m.group(1))
+    if pair:
+        try:
+            d = _dt.date(today.year, _MONTHS[pair[0][:3]], int(pair[1]))
+            if d > today:                          # "july 1" said in June = last year's
+                d = d.replace(year=today.year - 1)
+            return (d, d)
+        except ValueError:
+            return None
+    return None
+
+
+def on_dates(start: _dt.date, end: _dt.date) -> list[dict[str, Any]]:
+    """All episodes whose timestamp falls inside [start, end], in time order."""
+    out = []
+    for e in entries():
+        try:
+            d = _dt.datetime.fromisoformat(e.get("ts", "")).date()
+        except ValueError:
+            continue
+        if start <= d <= end:
+            out.append(e)
+    return out
+
+
+# ---- reconsolidation (memories she actually uses grow stronger) ---------------
+# In a human brain, every recall re-writes the memory a little stronger; the
+# untouched ones fade in priority (never deleted). Here: a small owner-only
+# sidecar counts how often each episode was folded into her real thinking, and
+# recall scoring favours the well-worn ones.
+def _strength_file() -> Path:
+    return _dir() / "strength.json"
+
+
+def _strengths() -> dict[str, int]:
+    try:
+        return json.loads(_strength_file().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _skey(e: dict[str, Any]) -> str:
+    return (e.get("ts", "") or "") + "|" + ((e.get("prompt", "") or "")[:60])
+
+
+def strength_of(e: dict[str, Any]) -> int:
+    """How many times this episode has been recalled into real thinking."""
+    return _strengths().get(_skey(e), 0)
+
+
+def reinforce(hits: list[dict[str, Any]]) -> None:
+    """Mark these episodes as used-in-thought (reconsolidation). Best-effort."""
+    if not hits:
+        return
+    try:
+        counts = _strengths()
+        for e in hits:
+            k = _skey(e)
+            counts[k] = counts.get(k, 0) + 1
+        path = _strength_file()
+        path.write_text(json.dumps(counts), encoding="utf-8")
+        _secure(path)
+    except OSError:
+        pass
+
+
 # ---- relevance recall (the "it remembers *you*" bit) --------------------------
 def _terms(text: str) -> set[str]:
     """Content words of a string — lowercased, stopwords and short tokens dropped.
@@ -214,18 +327,32 @@ def _terms(text: str) -> set[str]:
 def recall(query: str, k: int = 3) -> list[dict[str, Any]]:
     """Return the ``k`` past interactions most relevant to ``query``.
 
-    Scoring is deliberately simple and dependency-free: overlap of content
-    words between the query and each stored prompt+gist, weighted by term
-    length (longer shared words are stronger signal) and lightly by recency so
-    ties break toward the more recent memory. No embeddings, no model, O(n) over
-    the local log — fast enough to run on every turn.
+    Two honest paths, like a human recall:
+    - name a date ("what happened on july 1", "yesterday") and you get that
+      day's episodes — time-travel first, topic words (if any) rank within it;
+    - otherwise, scoring is simple and dependency-free: overlap of content
+      words weighted by term length, a light recency nudge, and a
+      reconsolidation bonus for memories she has actually used before.
+    No embeddings, no model, O(n) over the local log — runs every turn.
     """
+    span = _parse_date_query(query)
     q = _terms(query)
+    if span:
+        day = on_dates(*span)
+        if not day:
+            return []
+        if q:  # "what did we say about mom yesterday" — rank within the day
+            def overlap(e: dict[str, Any]) -> float:
+                shared = q & (_terms(e.get("prompt", "")) | _terms(e.get("gist", "")))
+                return sum(len(w) ** 0.5 for w in shared)
+            day.sort(key=overlap, reverse=True)
+        return day[:max(k, 6)]      # a day deserves a fuller answer
     if not q:
         return []
     es = entries()
     if not es:
         return []
+    strengths = _strengths()
     scored: list[tuple[float, int, dict[str, Any]]] = []
     n = len(es)
     for i, e in enumerate(es):
@@ -233,8 +360,10 @@ def recall(query: str, k: int = 3) -> list[dict[str, Any]]:
         shared = q & mem_terms
         if not shared:
             continue
-        # length-weighted overlap; +small recency nudge (newer entries have higher i)
-        score = sum(len(w) ** 0.5 for w in shared) + (i / n) * 0.5
+        # length-weighted overlap; +small recency nudge (newer entries have
+        # higher i); +reconsolidation: the well-worn memories come up easier
+        score = (sum(len(w) ** 0.5 for w in shared) + (i / n) * 0.5
+                 + math.log1p(strengths.get(_skey(e), 0)) * 0.25)
         scored.append((score, i, e))
     scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
     return [e for _, _, e in scored[:k]]
@@ -251,6 +380,7 @@ def context_for(query: str, k: int = 3) -> str:
     hits = recall(query, k=k)
     if not hits:
         return summary_for_prompt()
+    reinforce(hits)   # reconsolidation: used-in-thought memories grow stronger
     lines = []
     for e in hits:
         when = (e.get("ts", "") or "")[:10]  # YYYY-MM-DD
@@ -266,15 +396,16 @@ def context_for(query: str, k: int = 3) -> str:
 
 # ---- clear --------------------------------------------------------------------
 def clear() -> bool:
-    """Delete all stored memory. Returns True if a file was removed."""
-    path = _file()
-    try:
-        if path.is_file():
-            path.unlink()
-            return True
-    except OSError:
-        pass
-    return False
+    """Delete all stored memory (and its strength sidecar). True if removed."""
+    removed = False
+    for path in (_file(), _strength_file()):
+        try:
+            if path.is_file():
+                path.unlink()
+                removed = True
+        except OSError:
+            pass
+    return removed
 
 
 def status() -> str:

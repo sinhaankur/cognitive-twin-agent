@@ -110,27 +110,31 @@ saves a single fresh thought; the next chat opens with it. Local model, on-devic
 
 ### The Mind — see how she thinks, stores, and perceives
 
-Most assistants are a black box. Open a local page that renders the whole app
-as a **living galaxy**, drawn from real on-device data (visual language adapted
-from the author's [Universe Engine](https://sinhaankur.com), rebuilt
-dependency-free in 2D canvas — no build step, works offline):
+Most assistants are a black box. Open a local page that renders her brain as a
+**living particle mind**, drawn from real on-device data (dependency-free 2D
+canvas — no build step, works offline):
 
 ```bash
 python -m cognitive_twin viz        # opens 127.0.0.1:7879
 ```
 
-- **Perceives** — every memory is a star; the four memory types are spiral arms
-  (logarithmic, `r = a·e^(bθ)`), related memories linked by filaments.
+- **Perceives** — the central nebula is her memory mass; its colour mix follows
+  the real mix of memory types. Every real memory is a labeled node placed on
+  three meaningful axes (see `docs/memory-ia.md`): ANGLE = what it is,
+  RADIUS = how strong (memories she actually uses drift toward her core),
+  HEIGHT = when. Drag orbits the mind; hover anything to read it.
 - **How it works** — the faculties (memory, persona, soul, mood, rhythms,
-  shadow, router, voice) are planets riding drawn orbit trails, Kepler-style,
-  with the app's real wiring flowing between them — a live flow diagram.
-- **Thinks** — ask something and a comet flies the actual thought-path: the
-  memories recall() really surfaces for that prompt, then the faculties, ending
-  at the model the routing policy really picks.
+  shadow, router, voice) are labeled stations joined by the app's real wiring,
+  with motes flowing along the conduits — a live flow diagram.
+- **Thinks** — ask something and watch the actual thought as particle streams:
+  the prompt pours into the cloud, the memories recall() really surfaces flash
+  and stream inward, the faculties on the real path light in order, and the
+  router card shows the model the policy actually picks. Ask by date, too —
+  "what happened on July 1" surfaces that day's episodes.
 
-Nothing is faked: an empty log is an empty sky. The Mac app's Brain window is
-the same page, embedded — one visualization everywhere. Nothing leaves the
-machine.
+Nothing is faked: no memories means a bare, quiet mind. The Mac app's Brain
+window is the same page, embedded — one visualization everywhere. Nothing
+leaves the machine.
 
 The interactive chat names the twin you're talking to and takes in-session
 slash commands, so you never have to leave it:

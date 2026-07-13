@@ -194,6 +194,7 @@ def landscape(limit: int = 60) -> dict[str, Any]:
             "label": (label[:40] + "…") if len(label) > 41 else label,
             "ts": (e.get("ts", "") or "")[:10],
             "type": mtype,
+            "entry": e,
         })
     n = len(pts)
     if n == 0:
@@ -239,10 +240,14 @@ def landscape(limit: int = 60) -> dict[str, Any]:
     miny, maxy = min(ys), max(ys)
     sx = (maxx - minx) or 1.0
     sy = (maxy - miny) or 1.0
+    strengths = _safe(memory._strengths, {})
     points = []
     for i, p in enumerate(pts):
         # heat = how clustered this point is (sum of similarities to others)
+        # + reconsolidation: memories she actually uses in thought grow hotter,
+        # which the Mind renders as drifting closer to her core
         heat = sum(sim(i, j) for j in range(n) if j != i)
+        heat += 0.35 * math.log1p(strengths.get(memory._skey(p["entry"]), 0))
         points.append({
             "x": round((xs[i] - minx) / sx, 4),
             "y": round((ys[i] - miny) / sy, 4),

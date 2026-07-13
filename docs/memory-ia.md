@@ -32,12 +32,29 @@ real code; layers marked *proposed* do not exist yet.
 | Day ledger | prospective memory | `shadow.jsonl` | exists |
 | Rhythms | implicit/temporal | derived from timestamps | exists |
 | Reflections | inner voice | soul store | exists |
+| Reconsolidation | strengthening | `strength.json` sidecar | exists — every episode folded into her real thinking gets stronger; recall favours the well-worn (never deletes) |
+| Date recall | hippocampal time-travel | rule-based date parser | exists — "what happened on july 1", "yesterday", "3 days ago", "earlier today" surface that day's episodes |
 | Distilled facts | semantic memory | — | *proposed*: idle-time consolidation of episodes into stable facts with provenance links back to their episodes |
-| Reconsolidation | strengthening | — | *proposed*: each real recall bumps a memory's strength; the unused fade in rank (never deleted — honest) |
 
 Principles (non-negotiable): episodes are append-only truth; every derived
 layer must point back to the episodes it came from; no layer requires a model
 call to *read*; nothing leaves the machine.
+
+## How a human brain does it — and how she does
+
+| Human mechanism | Her mechanism |
+|---|---|
+| The hippocampus encodes an *episode* — what, when, the gist, the feeling | `record()`: prompt, timestamp, gist, rule-typed emotion/task/opinion/knowledge |
+| Recall is *reconstruction by association* — cues activate overlapping traces | `recall()`: content-word overlap between what you said and every stored episode |
+| Each recall *re-writes* the memory a little stronger (reconsolidation) | `reinforce()`: episodes used in real thought bump `strength.json`; scoring favours them; the Mind pulls them toward her core |
+| Unused memories fade in *priority*, not existence | strength only ever adds rank — nothing is deleted |
+| You can travel to a day ("that Sunday…") — episodic time indexing | date-query recall: name a day, get its episodes |
+| Sleep consolidates episodes into stable *semantic* knowledge | *proposed*: her idle reflection cycle distilling facts, each linked to its source episodes |
+| Emotional salience makes memories vivid | memory types carry through every layer — colour, sector, recall context |
+
+The differences are deliberate: a human brain forgets and confabulates; hers
+keeps the append-only truth and can always show you exactly why a memory
+surfaced. She is not a simulation of a brain — she is an *honest* one.
 
 ## The three dimensions
 
