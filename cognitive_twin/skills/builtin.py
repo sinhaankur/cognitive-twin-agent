@@ -337,6 +337,15 @@ def capture_screen(scope: str = "window") -> str:
     return control.capture_screen(scope=scope)
 
 
+@R.add("read_active_app", "Read whatever app the user is currently in — Vera picks "
+       "the best method per app (Accessibility text for Terminal/Notes/Mail, "
+       "screenshot+OCR for VS Code/browsers/PDFs). Read-only. Use to understand "
+       "what the user is working on right now, e.g. their code, terminal, or doc.")
+def read_active_app() -> str:
+    from .. import app_context
+    return app_context.read_active().as_prompt()
+
+
 @R.add("open_app", "Open a macOS app by name (asks the user to confirm first).",
        {"type": "object", "properties": {"name": {"type": "string", "description": "app name, e.g. Safari"}},
         "required": ["name"]})
