@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var voiceLearnWindow: NSWindow?
     private var brainWindow: NSWindow?
+    private var eyeWindow: NSWindow?     // her opt-in eye (small, always visible while on)
     private var statusItem: NSStatusItem?
     private var privacyItem: NSMenuItem?
     private var learnItem: NSMenuItem?
@@ -30,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)   // background app, NO Dock icon
         model.openSettings = { [weak self] in self?.showSettings() }
         model.openVoiceLearn = { [weak self] in self?.showVoiceLearn() }
+        model.toggleEye = { [weak self] in self?.toggleEye() }
         makeStatusItem()                         // menu-bar icon (like battery) — shows she's active
         makeOrbWindow()
         makeChatWindow()
@@ -71,6 +73,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         voice.target = self; menu.addItem(voice)
         let brain = NSMenuItem(title: "See how she thinks…", action: #selector(menuBrain), keyEquivalent: "b")
         brain.target = self; menu.addItem(brain)
+        let eye = NSMenuItem(title: "Let her see me (on/off)", action: #selector(menuEye), keyEquivalent: "")
+        eye.target = self; menu.addItem(eye)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit \(model.assistantName)", action: #selector(menuQuit), keyEquivalent: "q")
         quit.target = self; menu.addItem(quit)
@@ -83,7 +87,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func menuSettings() { showSettings() }
     @objc private func menuVoice() { showVoiceLearn() }
     @objc private func menuBrain() { showBrain() }
+    @objc private func menuEye() { toggleEye() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
+
+    /// The See-me switch. ON opens a small floating preview window (her eye is
+    /// never on without a visible preview); OFF — or just closing the window —
+    /// stops the camera and posts /api/presence/stop so she forgets at once.
+    private func toggleEye() {
+        if let w = eyeWindow {                 // ON → OFF
+            w.close()                          // willClose handler does the rest
+            return
+        }
+        let w = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 288, height: 216),
+            styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        w.title = "she can see you"
+        w.level = .floating
+        w.isReleasedWhenClosed = false
+        w.contentView = NSHostingView(rootView: EyeView())
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: w, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.eyeWindow = nil
+                self.model.eyeOn = false
+                self.postPresenceStop()
+            }
+        }
+        w.center(); w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        eyeWindow = w
+        model.eyeOn = true
+    }
+
+    /// Belt-and-braces forget: the page's pagehide beacon usually fires first,
+    /// but the native side never relies on the page for the privacy contract.
+    private func postPresenceStop() {
+        guard let url = URL(string: "http://127.0.0.1:7878/api/presence/stop") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        URLSession.shared.dataTask(with: req).resume()
+    }
 
     @objc private func menuTogglePrivate() {
         model.setPrivate(!model.activityPrivate)
@@ -247,6 +291,9 @@ final class AppModel: ObservableObject {
     var openSettings: (() -> Void)?
     /// Opens the gentle "teach a loved one's voice" window.
     var openVoiceLearn: (() -> Void)?
+    /// The See-me switch (her opt-in eye). Wired by the AppDelegate.
+    @Published var eyeOn = false
+    var toggleEye: (() -> Void)?
 
     /// Teach Anita a loved one's voice from their messages. Returns sample count.
     func addVoice(person: String, text: String) async -> Int {

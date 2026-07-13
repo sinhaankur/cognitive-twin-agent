@@ -44,8 +44,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <!-- identifier kept as 'anita' on purpose: changing it would reset the
        mic/speech/accessibility permissions the user already granted -->
   <key>CFBundleIdentifier</key>      <string>com.sinhaankur.anita</string>
-  <key>CFBundleVersion</key>         <string>0.2.0</string>
-  <key>CFBundleShortVersionString</key> <string>0.2.0</string>
+  <key>CFBundleVersion</key>         <string>0.2.1</string>
+  <key>CFBundleShortVersionString</key> <string>0.2.1</string>
   <key>CFBundlePackageType</key>     <string>APPL</string>
   <key>CFBundleExecutable</key>      <string>Vera</string>
   <key>CFBundleIconFile</key>        <string>AppIcon</string>
@@ -60,6 +60,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <string>Anita listens to your voice so you can talk with her - audio stays on this machine.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
   <string>Anita transcribes your speech on-device to understand you.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Only when you turn on "See me": she reads motion cues (calm vs animated, a nod) on-device. No video is stored or sent anywhere.</string>
 </dict>
 </plist>
 PLIST

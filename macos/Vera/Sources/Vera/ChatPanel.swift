@@ -43,6 +43,15 @@ struct ChatPanel: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            Button { model.toggleEye?() } label: {
+                Image(systemName: model.eyeOn ? "eye.fill" : "eye.slash")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(model.eyeOn ? Color.cyan : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(model.eyeOn
+                  ? "She can see you — motion cues only, on-device. Click to stop."
+                  : "Let her see you (opt-in): motion cues only, on-device, nothing stored.")
             Button { model.openSettings?() } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 15, weight: .medium))
