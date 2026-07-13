@@ -281,7 +281,9 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(200, {"ok": False, "reason": "no projects yet"})
                 return
             try:
-                answer, _ = _run_once_capture(agent, instruction)
+                # record=False: the reflection instruction is scripted, not the
+                # user speaking — it must never become a "memory" of them
+                answer, _ = _run_once_capture(agent, instruction, record=False)
                 soul.add_reflection(answer)
                 self._json(200, {"ok": True, "thought": answer})
             except Exception as e:
