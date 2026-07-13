@@ -74,9 +74,16 @@ if [ -f "$HARVESTER/refine.py" ]; then
     base="$(basename "${v%.*}")"
     ref="$OUT_DIR/${base}_ref.wav"
     echo "    · $base"
-    OUT_JSON="$(python3 "$HARVESTER/refine.py" "$v" --out "$ref" 2>/dev/null || true)"
-    # pull duration + snr from the JSON result (grep keeps this dependency-free)
-    snr="$(printf '%s' "$OUT_JSON" | grep -o '"snr_db":[^,]*' | head -1 | grep -o '[-0-9.]*' || echo 0)"
+    # Let refine.py's own progress/errors reach the user; capture only stdout
+    # (the JSON result). If it fails, we say so and fall back below.
+    if ! OUT_JSON="$(python3 "$HARVESTER/refine.py" "$v" --out "$ref")"; then
+      echo "      (refine.py couldn't process $base — will try the classic extractor)" >&2
+      continue
+    fi
+    # pull the SNR from the JSON result (grep keeps this dependency-free);
+    # default to a sentinel so an empty/garbled result never breaks the compare.
+    snr="$(printf '%s' "$OUT_JSON" | grep -o '"snr_db":[^,}]*' | head -1 | grep -oE '[-0-9.]+' | head -1)"
+    [ -n "$snr" ] || snr="-998"
     if [ -f "$ref" ] && awk "BEGIN{exit !($snr > $BEST_SNR)}"; then
       BEST="$ref"; BEST_SNR="$snr"; REPORT="$OUT_JSON"
     fi
@@ -95,7 +102,11 @@ fi
 # Fallback: if refine.py isn't present or produced nothing, use the classic
 # extractor (isolate + merge). Always leaves a usable sample.
 if [ -z "${SAMPLE:-}" ] || [ ! -f "$SAMPLE" ]; then
-  echo "    (using classic extractor)"
+  if [ -f "$HARVESTER/refine.py" ]; then
+    echo "    refine.py produced no usable reference — using the classic extractor."
+  else
+    echo "    refine.py not found in $HARVESTER — using the classic extractor."
+  fi
   python3 "$HARVESTER/cli.py" "${VIDEOS[@]}" -o "$OUT_DIR" --merge
   if [ -f "$OUT_DIR/combined_voice_sample.wav" ]; then
     SAMPLE="$OUT_DIR/combined_voice_sample.wav"
