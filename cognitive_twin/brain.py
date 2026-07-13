@@ -246,12 +246,22 @@ def landscape(limit: int = 60) -> dict[str, Any]:
             "heat": round(heat, 3),
             "terms": sorted(p["terms"])[:5],
         })
+    # links = related memory pairs (shared words), so the universe view can draw
+    # the filaments that show *how* thoughts connect. Cap per-node degree so the
+    # web stays legible; keep each node's strongest few ties.
+    links: list[dict[str, Any]] = []
+    for i in range(n):
+        sims = sorted(((sim(i, j), j) for j in range(n) if j != i), reverse=True)
+        for s, j in sims[:3]:
+            if s >= 0.12 and i < j:      # threshold + de-dupe (i<j)
+                links.append({"a": i, "b": j, "w": round(s, 3)})
+
     # per-type tallies so the UI can show a legend / region sizes
     type_counts: dict[str, int] = {}
     for p in points:
         type_counts[p["type"]] = type_counts.get(p["type"], 0) + 1
     return {
-        "points": points, "bounds": [0, 0, 1, 1], "count": n,
+        "points": points, "links": links, "bounds": [0, 0, 1, 1], "count": n,
         "types": {t: {"count": type_counts.get(t, 0),
                       "color": mem_types.color(t), "label": mem_types.label(t)}
                   for t in mem_types.TYPES},
