@@ -210,7 +210,13 @@ async function load(){
   STATE=await (await fetch("/api/state")).json();
   $("#who").textContent = (STATE.persona&&STATE.persona.name? "talking to "+STATE.persona.name : "twin: "+(STATE.twin||"default"))
      + " · "+(STATE.memory_count||0)+" memories · "+(STATE.reflections||[]).length+" pending thoughts";
+  // If the brain is on screen, fold any new memories in as fresh neurons —
+  // this is what makes the graph visibly grow while you use the twin.
+  if($("#p-graph").classList.contains("active")) syncBrain();
 }
+
+// Re-poll gently so the brain grows on its own as new memories are recorded.
+setInterval(()=>{ load().catch(()=>{}); }, 8000);
 
 // ---- trace ----
 async function trace(q){
@@ -236,35 +242,106 @@ async function trace(q){
 $("#go").onclick=()=>{const q=$("#q").value.trim();if(q)trace(q);};
 $("#q").addEventListener("keydown",e=>{if(e.key==="Enter")$("#go").click();});
 
-// ---- knowledge graph ----
-let graphDone=false;
-function drawGraph(){
-  if(graphDone)return;graphDone=true;
-  const svg=$("#graph-svg");svg.innerHTML="";
-  const topics=(STATE.topics||[]).slice(0,6);
+// ---- knowledge graph: a living brain --------------------------------------
+// A force-directed constellation of memory nodes that breathes and drifts, and
+// grows as new memories arrive. No libraries — a tiny spring/repulsion sim on
+// requestAnimationFrame. Node identity is keyed by label so re-polls animate
+// new neurons in and gone ones out, rather than snapping the whole graph.
+const CX=380, CY=160;
+let brain={nodes:[], byKey:{}, raf:0, t:0};
+
+function brainModel(){
+  // Build the desired node set from current state; sizes reflect memory weight.
+  const topics=(STATE.topics||[]).slice(0,8);
   const refl=(STATE.reflections||[]).slice(0,3);
-  if(!topics.length&&!refl.length){
-    const t=el("text",{x:380,y:160,fill:"#6a6a6a","font-size":14,"text-anchor":"middle"});
-    t.textContent="No memories yet — talk with your twin to grow its knowledge.";svg.appendChild(t);return;
-  }
-  const cx=380,cy=160;
-  svg.appendChild(el("circle",{cx,cy,r:26,fill:"#2b59ff"}));
-  const me=el("text",{x:cx,y:cy+4,fill:"#fff","font-size":12,"text-anchor":"middle"});
-  me.textContent=(STATE.persona&&STATE.persona.name)||"you";svg.appendChild(me);
-  const all=topics.map(t=>({t,c:"#7fd1b9"})).concat(refl.map(t=>({t:t.slice(0,18)+"…",c:"#c98bff"})));
-  const n=all.length;
-  all.forEach((node,i)=>{
-    const ang=(i/n)*2*Math.PI, R=115;
-    const x=cx+R*Math.cos(ang), y=cy+R*Math.sin(ang);
-    const ln=el("line",{x1:cx,y1:cy,x2:cx,y2:cy,stroke:"#2a2d36","stroke-width":1.5});
-    svg.appendChild(ln);
-    setTimeout(()=>{ln.style.transition="all .5s";ln.setAttribute("x2",x);ln.setAttribute("y2",y);},150+i*100);
-    const g=el("g",{});g.style.opacity=0;g.style.transition="opacity .5s";
-    g.appendChild(el("circle",{cx:x,cy:y,r:i<topics.length?16:13,fill:node.c,"fill-opacity":.9}));
-    const tx=el("text",{x,y:y+ (y>cy?28:-22),fill:"#cfd3da","font-size":11,"text-anchor":"middle"});
-    tx.textContent=node.t;g.appendChild(tx);svg.appendChild(g);
-    setTimeout(()=>g.style.opacity=1,300+i*120);
+  const want=[];
+  topics.forEach((t,i)=>want.push({
+    key:"t:"+t, label:t, c:"#7fd1b9",
+    r:18-Math.min(6,i)*1.1        // earlier (more frequent) topics are larger
+  }));
+  refl.forEach(t=>want.push({
+    key:"r:"+t, label:(t.length>18?t.slice(0,18)+"…":t), c:"#c98bff", r:12
+  }));
+  return want;
+}
+
+function syncBrain(){
+  const want=brainModel();
+  const wantKeys=new Set(want.map(w=>w.key));
+  // add new neurons near the hub with a gentle outward kick
+  want.forEach((w,i)=>{
+    let node=brain.byKey[w.key];
+    if(!node){
+      const a=Math.random()*2*Math.PI;
+      node={...w, x:CX+Math.cos(a)*12, y:CY+Math.sin(a)*12,
+            vx:Math.cos(a)*0.6, vy:Math.sin(a)*0.6, born:brain.t, appear:0};
+      brain.byKey[w.key]=node; brain.nodes.push(node);
+    } else { node.r=w.r; node.c=w.c; node.label=w.label; }
   });
+  // drop neurons whose memory is gone
+  brain.nodes=brain.nodes.filter(n=>wantKeys.has(n.key));
+  brain.byKey={}; brain.nodes.forEach(n=>brain.byKey[n.key]=n);
+}
+
+function stepBrain(){
+  brain.t++;
+  const ns=brain.nodes, k=ns.length||1;
+  for(let i=0;i<k;i++){
+    const a=ns[i]; if(!a) continue;
+    // spring toward an ideal orbit radius (keeps the constellation readable)
+    const dx=a.x-CX, dy=a.y-CY, d=Math.hypot(dx,dy)||1;
+    const ideal=95+ (i%2)*26;                 // two soft shells
+    const pull=(ideal-d)*0.012;
+    a.vx+=(dx/d)*pull; a.vy+=(dy/d)*pull;
+    // pairwise repulsion so labels don't pile up
+    for(let j=i+1;j<k;j++){
+      const b=ns[j]; const ex=a.x-b.x, ey=a.y-b.y; const e=Math.hypot(ex,ey)||1;
+      if(e<70){ const f=(70-e)/e*0.06; a.vx+=ex*f; a.vy+=ey*f; b.vx-=ex*f; b.vy-=ey*f; }
+    }
+    // a slow, breathing drift so the brain feels alive even at rest
+    a.vx+=Math.cos(brain.t*0.01+i)*0.006;
+    a.vy+=Math.sin(brain.t*0.012+i)*0.006;
+    a.vx*=0.90; a.vy*=0.90;                    // damping
+    a.x+=a.vx; a.y+=a.vy;
+    if(a.appear<1) a.appear=Math.min(1,a.appear+0.05);   // fade/scale in
+  }
+}
+
+function paintBrain(){
+  const svg=$("#graph-svg"); if(!svg) return;
+  svg.innerHTML="";
+  if(!brain.nodes.length){
+    const t=el("text",{x:CX,y:CY,fill:"#6a6a6a","font-size":14,"text-anchor":"middle"});
+    t.textContent="No memories yet — talk with your twin to grow its brain.";
+    svg.appendChild(t); return;
+  }
+  // synapses first (under the nodes)
+  brain.nodes.forEach(n=>{
+    svg.appendChild(el("line",{x1:CX,y1:CY,x2:n.x,y2:n.y,
+      stroke:"#2a2d36","stroke-width":1.4,"stroke-opacity":0.6*n.appear}));
+  });
+  // hub: a soft breathing glow + core
+  const glow=8*Math.sin(brain.t*0.05)+30;
+  svg.appendChild(el("circle",{cx:CX,cy:CY,r:glow,fill:"#2b59ff","fill-opacity":0.10}));
+  svg.appendChild(el("circle",{cx:CX,cy:CY,r:26,fill:"#2b59ff"}));
+  const me=el("text",{x:CX,y:CY+4,fill:"#fff","font-size":12,"text-anchor":"middle"});
+  me.textContent=(STATE.persona&&STATE.persona.name)||"you"; svg.appendChild(me);
+  // neurons
+  brain.nodes.forEach(n=>{
+    const r=n.r*n.appear;
+    svg.appendChild(el("circle",{cx:n.x,cy:n.y,r:r+4,fill:n.c,"fill-opacity":0.15*n.appear}));
+    svg.appendChild(el("circle",{cx:n.x,cy:n.y,r,fill:n.c,"fill-opacity":0.92*n.appear}));
+    const tx=el("text",{x:n.x,y:n.y+(n.y>CY?n.r+16:-n.r-9),fill:"#cfd3da",
+      "font-size":11,"text-anchor":"middle","fill-opacity":n.appear});
+    tx.textContent=n.label; svg.appendChild(tx);
+  });
+}
+
+function loopBrain(){ stepBrain(); paintBrain(); brain.raf=requestAnimationFrame(loopBrain); }
+
+function drawGraph(){
+  syncBrain();
+  if(!brain.raf) loopBrain();     // start the animation once; syncBrain feeds it live
 }
 
 // ---- inner state ----
