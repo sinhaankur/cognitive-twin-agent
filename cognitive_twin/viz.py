@@ -2,21 +2,25 @@
 Visualize Engine — *see how the twin thinks*, from real on-device data.
 
 Most assistants are a black box. This serves one local page (127.0.0.1, never
-exposed off the machine): **the Mind** — the whole app as a living galaxy,
-rendered from the active twin's REAL state. The visual language is adapted from
-the author's Universe Engine (sinhaankur.com — logarithmic spiral arms, orbit
-trails whose bodies provably ride them, meteor pools, nebula fog), rebuilt here
-in dependency-free 2D canvas so it needs no build step and works offline.
+exposed off the machine): **the Mind** — the twin's brain as a living particle
+nebula with its real knowledge constellated around it. Design references, per
+the owner: a central fluid particle "mind" (FluidX3D-style motion), labeled
+memory nodes radiating constellation-style with a terminal HUD (the Kronos
+brain look), and bbycroft.net/llm's idea that you should be able to WATCH a
+prompt flow through the architecture. Dependency-free 2D canvas — no build
+step, works offline.
 
-  - perceives — every memory is a star in a tilted spiral galaxy; each of the
-    four memory types is an arm (emotion/task/opinion/knowledge), colored as in
-    mem_types. Related memories are linked by faint filaments (landscape data).
+  - perceives — the central nebula is her memory mass: thousands of particles
+    tinted by the real mix of memory types, swirling with differential rotation
+    around a dark core. Every REAL memory is a labeled node around the cloud,
+    wired to it and to its related memories (landscape data). Hover to read.
   - how it works — the faculties (memory, persona, soul, mood, rhythms, shadow,
-    router, voice) are planets on orbit rings around the twin's glowing core,
-    each riding its own drawn trail, Kepler-style (closer = faster).
-  - thinks — type a prompt and a comet flies the actual thought-path: through
-    the memories it recalls for THAT prompt, then the faculties, into the model
-    the routing policy really picks. Nothing is faked; empty log = empty sky.
+    router, voice…) are labeled stations on an inner ring, joined by the app's
+    real wiring, with motes flowing along the conduits.
+  - thinks — type a prompt and watch the actual thought: a particle stream
+    enters the cloud, the memories recall() REALLY surfaces flash and pour in,
+    the faculties on the real path light in order, and the router shows the
+    model the policy actually picks. Nothing is faked; no memories = bare sky.
 
 All data comes from the same on-device modules the agent uses (memory, soul,
 mood, rhythms, brain, router) — nothing is fabricated, nothing leaves the machine.
@@ -99,7 +103,7 @@ def _route(query: str) -> dict[str, Any]:
 
 def _landscape() -> dict[str, Any]:
     """The typed memory landscape (points laid out by relatedness, coloured by
-    kind) — the data behind the universe view. Local only."""
+    kind) — the data behind the constellation. Local only."""
     try:
         from . import brain
         return brain.landscape()
@@ -117,7 +121,7 @@ def _brain() -> dict[str, Any]:
 
 
 def _thought(q: str) -> dict[str, Any]:
-    """Everything a real thought would touch, for the comet animation:
+    """Everything a real thought would touch, for the flow animation:
     the memories recall() actually surfaces for this prompt, the faculty path,
     and the model the policy really routes to. Honest — no invented steps."""
     out: dict[str, Any] = {"q": q}
@@ -127,7 +131,7 @@ def _thought(q: str) -> dict[str, Any]:
         out["recall"] = [
             {"prompt": (e.get("prompt") or "").strip(),
              # trimmed exactly like brain.landscape() labels, so the client can
-             # match a recalled memory to its star
+             # match a recalled memory to its node
              "label": ((p := (e.get("prompt") or "").strip())[:40] + "…")
                       if len((e.get("prompt") or "").strip()) > 41 else (e.get("prompt") or "").strip(),
              "ts": (e.get("ts") or "")[:10]}
@@ -164,7 +168,7 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self) -> None:
-        if self.path in ("/", "/index.html"):
+        if self.path.split("?")[0] in ("/", "/index.html"):
             self._send(200, _page(), "text/html; charset=utf-8")
         elif self.path == "/api/state":
             self._json(200, _state())
@@ -205,214 +209,329 @@ def serve(port: int = DEFAULT_PORT, *, open_browser: bool = True) -> None:
 
 
 # The Mind page — dependency-free HTML+canvas in one string (no build step,
-# works offline). Visual language adapted from the author's Universe Engine
-# (sinhaankur.com); all data from the local APIs above.
+# works offline). All data from the local APIs above.
 _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vera · The Mind</title>
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#05060c;color:#e6e6e6;
-    font-family:-apple-system,Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+  :root{ --mono: ui-monospace, "SF Mono", Menlo, monospace; }
+  html,body{margin:0;height:100%;overflow:hidden;background:#04050a;color:#dfe4ee;
+    font-family:var(--mono);-webkit-font-smoothing:antialiased}
   canvas{position:fixed;inset:0;display:block}
   .hud{position:fixed;pointer-events:none;z-index:2}
-  #title{top:18px;left:22px}
-  #title h1{margin:0;font-size:19px;font-weight:600;letter-spacing:.3px}
-  #title .sub{color:#8f96a6;font-size:12.5px;margin-top:3px}
-  #legend{bottom:18px;left:22px;display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:#aeb4c0}
-  #legend .chip{display:inline-flex;align-items:center;gap:6px;background:rgba(13,16,28,.55);
-    border:1px solid rgba(140,160,220,.12);border-radius:999px;padding:4px 10px;backdrop-filter:blur(6px)}
-  #legend .dot{width:8px;height:8px;border-radius:50%}
-  #askbar{bottom:18px;left:50%;transform:translateX(-50%);pointer-events:auto;display:flex;gap:8px}
-  #askbar input{width:340px;background:rgba(13,16,28,.72);border:1px solid rgba(140,160,220,.22);
-    color:#e6e6e6;border-radius:999px;padding:10px 16px;font-size:13px;outline:none;backdrop-filter:blur(8px)}
-  #askbar input:focus{border-color:rgba(126,200,255,.6)}
-  #askbar button{background:linear-gradient(135deg,#3b64ff,#7ec8ff);border:none;color:#fff;
-    border-radius:999px;padding:10px 18px;font-size:13px;cursor:pointer}
-  #hint{bottom:64px;left:50%;transform:translateX(-50%);color:#69708033;color:rgba(160,170,190,.45);font-size:11.5px}
-  #card{display:none;background:rgba(10,12,22,.9);border:1px solid rgba(140,160,220,.25);border-radius:10px;
-    padding:9px 12px;font-size:12.5px;max-width:300px;backdrop-filter:blur(8px);box-shadow:0 6px 24px rgba(0,0,0,.5)}
-  #card .t{font-weight:600;margin-bottom:2px}
-  #card .m{color:#8f96a6;font-size:11.5px}
-  #answer{display:none;top:18px;right:22px;background:rgba(10,12,22,.88);border:1px solid rgba(126,200,255,.3);
-    border-radius:12px;padding:12px 16px;font-size:12.5px;max-width:320px;backdrop-filter:blur(8px)}
-  #answer .t{font-weight:600;color:#7ec8ff;margin-bottom:4px}
-  #answer .row{color:#aeb4c0;margin-top:2px}
+  .box{background:rgba(7,9,16,.78);border:1px solid rgba(170,190,230,.22);
+    backdrop-filter:blur(6px);padding:6px 10px;font-size:10.5px;letter-spacing:.08em}
+  #topbar{top:14px;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center}
+  #topbar .live{color:#7fd1b9}
+  #topbar .box{text-transform:uppercase}
+  #who{top:14px;left:18px}
+  #who .name{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#eef2fa}
+  #who .sub{color:#77809466;color:rgba(150,160,180,.75);font-size:10px;margin-top:3px;letter-spacing:.06em}
+  #legend{bottom:16px;left:18px;display:flex;flex-direction:column;gap:6px;font-size:10px}
+  #legend .chip{display:inline-flex;align-items:center;gap:7px;background:rgba(7,9,16,.7);
+    border:1px solid rgba(170,190,230,.16);padding:3px 8px;letter-spacing:.08em;text-transform:uppercase}
+  #legend .dot{width:7px;height:7px;border-radius:50%}
+  #askbar{bottom:18px;left:50%;transform:translateX(-50%);pointer-events:auto;display:flex;gap:0}
+  #askbar input{width:380px;background:rgba(7,9,16,.85);border:1px solid rgba(170,190,230,.28);
+    color:#dfe4ee;padding:10px 14px;font-size:12px;outline:none;font-family:var(--mono)}
+  #askbar input:focus{border-color:rgba(126,200,255,.65)}
+  #askbar button{background:rgba(126,200,255,.16);border:1px solid rgba(126,200,255,.5);
+    color:#bfe3ff;padding:10px 16px;font-size:11px;cursor:pointer;letter-spacing:.12em;
+    text-transform:uppercase;font-family:var(--mono)}
+  #askbar button:hover{background:rgba(126,200,255,.3)}
+  #hint{bottom:64px;left:50%;transform:translateX(-50%);color:rgba(150,160,180,.4);font-size:10px;letter-spacing:.06em}
+  #card{display:none;background:rgba(7,9,16,.92);border:1px solid rgba(170,190,230,.3);
+    padding:9px 12px;font-size:11.5px;max-width:300px;box-shadow:0 6px 24px rgba(0,0,0,.5)}
+  #card .t{font-weight:600;margin-bottom:3px;letter-spacing:.1em;text-transform:uppercase;font-size:10px}
+  #card .m{color:#8f96a6;font-size:10.5px;margin-top:3px}
+  #answer{display:none;top:56px;right:18px;background:rgba(7,9,16,.92);border:1px solid rgba(126,200,255,.4);
+    padding:12px 14px;font-size:11.5px;max-width:300px}
+  #answer .t{font-weight:600;color:#7ec8ff;margin-bottom:6px;letter-spacing:.12em;text-transform:uppercase;font-size:10px}
+  #answer .row{color:#aeb4c0;margin-top:3px}
   #answer .kv{color:#7fd1b9}
 </style></head><body>
 <canvas id="sky"></canvas>
-<div class="hud" id="title"><h1 id="who">The Mind</h1><div class="sub" id="stats">reading her real state…</div></div>
+<div class="hud" id="who"><div class="name box" id="whoname">THE MIND</div><div class="sub" id="stats">reading her real state…</div></div>
+<div class="hud" id="topbar"><span class="box"><span class="live">●</span> LIVE <span id="clock"></span></span></div>
 <div class="hud" id="legend"></div>
-<div class="hud" id="hint">drag to pan · scroll to zoom · double-click to reset · hover anything · ask below and watch the thought travel</div>
-<div class="hud" id="askbar"><input id="q" placeholder="ask her something — watch how the thought forms…"><button id="go">think</button></div>
+<div class="hud" id="hint">drag to pan · scroll to zoom · double-click resets · hover any node</div>
+<div class="hud" id="askbar"><input id="q" placeholder="ask her something — watch the thought move…"><button id="go">think</button></div>
 <div class="hud" id="card"></div>
 <div class="hud" id="answer"></div>
 <script>
 "use strict";
-/* The Mind — the whole app as a living galaxy, in vanilla canvas.
-   Visual language adapted from the author's Universe Engine (sinhaankur.com):
-   logarithmic spiral arms (r = a·e^(bθ), b≈0.26), Kepler-ish orbit trails the
-   bodies provably ride, a meteor pool (delay/flight/cooldown), nebula fog.
-   Every star/planet is real local state — empty log means an empty sky. */
+/* The Mind — her brain as a living particle nebula + the real knowledge
+   constellated around it, with visible thought-flow. Design refs from the
+   owner: a central fluid particle mind (FluidX3D-style motion), labeled
+   memory nodes in a terminal HUD (the Kronos brain look), and bbycroft's
+   LLM viz idea — you should WATCH a prompt flow through the architecture.
+
+   Honesty rules: every LABELED thing is real local state — memory nodes are
+   real memories, station chips are the app's real faculties, the wiring is
+   brain.py's real wiring, the thought path/recall/route come from the real
+   modules. The nebula is her memory mass: its size and colour mix follow the
+   real count and type mix. No memories = a bare, quiet mind. */
 
 const cv = document.getElementById("sky"), ctx = cv.getContext("2d");
 let W = 0, H = 0, DPR = 1;
-function resize(){
-  DPR = window.devicePixelRatio || 1;
-  W = window.innerWidth; H = window.innerHeight;
-  cv.width = W * DPR; cv.height = H * DPR;
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-}
-window.addEventListener("resize", resize); resize();
 
 /* ---------- live data ------------------------------------------------------ */
 let STATE = {}, LAND = {points:[],links:[],types:{}}, BRAIN = {nodes:[],edges:[],state:{}};
-async function j(u){ return await (await fetch(u)).json(); }
-async function loadAll(){
-  try{ STATE = await j("/api/state"); }catch(_){}
-  try{ LAND = await j("/api/landscape"); }catch(_){}
-  try{ BRAIN = await j("/api/brain"); }catch(_){}
-  buildGalaxy(); buildPlanets(); hudRefresh();
-}
-setInterval(loadAll, 12000); loadAll();
+let nodes = [];                       // real memories — labeled constellation
+let chips = [];                       // the faculties — labeled stations
+let glow = {};                        // id → highlight intensity (decays)
+let streams = [];                     // flowing particles (thought + bursts)
+let ripples = [];
 
-/* ---------- deterministic jitter (stable across repolls) ------------------- */
+/* ---------- deterministic jitter (stable across repolls) -------------------- */
 function rnd(i){ let t = (i + 1) * 0x6D2B79F5;
   t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
 
-/* ---------- camera --------------------------------------------------------- */
+/* ---------- camera ----------------------------------------------------------- */
 const cam = { zoom: 1, ox: 0, oy: 0, drag: null };
-const TILT = 0.55;                    // the galaxy leans back — reads as 3D
-let OMEGA = 0;                        // slow global rotation of the disc
 function S(x, y){ return { X: W/2 + (x*cam.zoom) + cam.ox, Y: H/2 + (y*cam.zoom) + cam.oy }; }
+function toWorld(sx, sy){ return { x: (sx - W/2 - cam.ox)/cam.zoom, y: (sy - H/2 - cam.oy)/cam.zoom }; }
+function R0(){ return Math.min(W, H); }
 
-/* ---------- the memory galaxy (perceives) ---------------------------------- */
-/* Four logarithmic arms, one per memory type; a star's distance along its arm
-   is its age rank (older = nearer the core; new memories are born at the rim). */
-const ARMS = { emotion:0, task:1, opinion:2, knowledge:3 };
-const B = 0.26, SWEEP = 4.2;          // arm tightness + how far each arm winds
-let stars = [];                       // {r,a0,size,color,type,label,ts,heat,tw}
-function discR(){ return Math.min(W, H) * 0.40; }
-function buildGalaxy(){
-  const pts = LAND.points || [];
-  const byType = {};
-  pts.forEach((p, i) => { (byType[p.type] = byType[p.type] || []).push([p, i]); });
-  stars = [];
-  Object.keys(byType).forEach(type => {
-    const arm = (ARMS[type] !== undefined ? ARMS[type] : 3) * (Math.PI / 2);
-    const list = byType[type].sort((a, b) => (a[0].ts || "").localeCompare(b[0].ts || ""));
-    const R = discR(), R0 = R / Math.exp(B * SWEEP);
-    list.forEach(([p, i], k) => {
-      const t = list.length > 1 ? k / (list.length - 1) : 0.6;
-      const th = t * SWEEP;
-      let r = R0 * Math.exp(B * th);
-      r += (rnd(i * 3) - 0.5) * R * 0.13 * (0.5 + t * 0.5);      // arm dispersion
-      const a0 = th + arm + (rnd(i * 3 + 1) - 0.5) * 0.32;
-      stars.push({ idx: i, r, a0, type, label: p.label, ts: p.ts, heat: p.heat || 0,
-                   color: p.color, size: 1.7 + Math.min(3.4, (p.heat || 0) * 2.6),
-                   tw: rnd(i * 3 + 2) * 6.28 });
-    });
+function hexRgb(h){ if (!h || h[0] !== "#") return [160,180,255];
+  const v = parseInt(h.slice(1), 16); return [(v>>16)&255, (v>>8)&255, v&255]; }
+
+/* ---------- the nebula — her memory mass (perceives) ------------------------- */
+/* A cloud of particles with differential rotation (inner turns faster, like a
+   fluid vortex), a dark core, gentle vertical flattening, and a colour mix that
+   follows the REAL memory-type mix. Rendered additively with tiny rects (fast). */
+let cloud = [];
+// neutral sparkle palette — white, warm gold, ice blue, soft magenta, violet
+const NEUTRAL = [[236,240,250],[255,222,170],[170,200,255],[240,150,220],[190,150,255]];
+function buildCloud(){
+  const count = Math.min(5200, 1200 + (STATE.memory_count || 0) * 260 + ((LAND.points||[]).length ? 1800 : 0));
+  // colour pool weighted by the real type mix (plus neutral sparkle)
+  const pool = [];
+  const types = LAND.types || {};
+  Object.keys(types).forEach(t => {
+    const m = types[t]; if (!m || !m.count) return;
+    const c = hexRgb(m.color);
+    for (let k = 0; k < m.count; k++) pool.push(c);
+  });
+  if (!pool.length) pool.push([120,135,170]);   // no memories: dim, quiet blue
+  cloud = Array.from({length: count}, (_, i) => {
+    const band = rnd(i*11);
+    // dense inner band + long soft tail; hole in the very middle (dark core)
+    const r = 0.13 + (band < 0.72 ? Math.pow(rnd(i*11+1), 1.4) * 0.5
+                                  : 0.36 + Math.pow(rnd(i*11+1), 0.8) * 0.85);
+    const neutral = rnd(i*11+2) < 0.34;
+    const c = neutral ? NEUTRAL[(rnd(i*11+3)*NEUTRAL.length)|0] : pool[(rnd(i*11+3)*pool.length)|0];
+    const tier = rnd(i*11+7);
+    return {
+      r, a: rnd(i*11+4) * 6.2832,
+      y: (rnd(i*11+5) - 0.5) * (0.72 + r*0.5),         // a full, rounded mass
+      w: (0.16 / (0.25 + r)),                          // differential rotation
+      c, s: tier < 0.72 ? 1.2 : (tier < 0.95 ? 2 : 3),
+      spark: tier >= 0.985,                            // a few luminous grains
+      tw: rnd(i*11+8) * 6.2832,
+      al: 0.40 + rnd(i*11+9) * 0.55
+    };
   });
 }
-function starPos(s){                   // world position (rotates with the disc)
-  const a = s.a0 + OMEGA;
-  return { x: Math.cos(a) * s.r, y: Math.sin(a) * s.r * TILT, front: Math.sin(a) >= 0 };
+function cloudR(){ return R0() * 0.225; }
+function drawCloud(now, dt){
+  const Rc = cloudR();
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const heat = Math.min(1, streams.length / 120);      // thinking = the mind stirs
+  for (let i = 0; i < cloud.length; i++){
+    const p = cloud[i];
+    p.a += p.w * dt * (1 + heat * 1.6);
+    const wob = 1 + 0.05 * Math.sin(now * 0.0006 + p.tw);
+    const x = Math.cos(p.a) * p.r * Rc * wob;
+    const z = Math.sin(p.a) * p.r * Rc * wob;
+    const y = p.y * Rc * 0.6 + z * 0.30;               // tilt: depth leans into Y
+    const P = S(x, y);
+    const front = z >= 0;
+    const twk = 0.75 + 0.25 * Math.sin(now * 0.0016 + p.tw);
+    ctx.globalAlpha = p.al * twk * (front ? 1 : 0.45);
+    ctx.fillStyle = "rgb(" + p.c[0] + "," + p.c[1] + "," + p.c[2] + ")";
+    const sz = p.s * Math.max(0.7, Math.sqrt(cam.zoom));
+    ctx.fillRect(P.X - sz/2, P.Y - sz/2, sz, sz);
+    if (p.spark){                                     // luminous grains get a halo
+      ctx.globalAlpha = 0.18 * twk;
+      ctx.beginPath(); ctx.arc(P.X, P.Y, sz * 2.6, 0, 7); ctx.fill();
+    }
+  }
+  // a soft luminous heart behind the dark core (the dense unresolved middle)
+  const core = S(0, 0), CR = Rc * 0.34 * cam.zoom;
+  let g = ctx.createRadialGradient(core.X, core.Y, 0, core.X, core.Y, CR * 2.1);
+  g.addColorStop(0, "rgba(190,200,255,0.16)"); g.addColorStop(0.5, "rgba(230,180,240,0.07)");
+  g.addColorStop(1, "rgba(190,200,255,0)");
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(core.X, core.Y, CR * 2.1, 0, 7); ctx.fill();
+  ctx.restore();
+  // the dark core — a quiet centre the mind turns around
+  g = ctx.createRadialGradient(core.X, core.Y, 0, core.X, core.Y, CR);
+  g.addColorStop(0, "rgba(3,4,9,0.97)"); g.addColorStop(0.72, "rgba(3,4,9,0.6)");
+  g.addColorStop(1, "rgba(3,4,9,0)");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(core.X, core.Y, CR, 0, 7); ctx.fill();
+  // a bright swirl ring, slowly precessing (the awake mind)
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.translate(core.X, core.Y);
+  ctx.rotate(now * 0.00012);
+  ctx.shadowColor = "rgba(190,215,255,0.9)"; ctx.shadowBlur = 10;
+  ctx.strokeStyle = "rgba(210,228,255,0.75)"; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.ellipse(0, 0, CR * 0.66, CR * 0.26, 0.5, 0.5, 3.7); ctx.stroke();
+  ctx.shadowColor = "rgba(255,200,150,0.8)";
+  ctx.strokeStyle = "rgba(255,214,170,0.55)"; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.ellipse(0, 0, CR * 0.78, CR * 0.32, 0.5, 3.8, 6.5); ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.restore();
 }
 
-/* ---------- the faculties as planets (how it works) ------------------------- */
+/* ---------- real memories — the labeled constellation ------------------------ */
+function buildNodes(){
+  const pts = (LAND.points || []).slice();
+  // group by type so neighbours mean something, then spread around the circle
+  const order = ["emotion","task","opinion","knowledge"];
+  pts.sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type) || (a.ts||"").localeCompare(b.ts||""));
+  const N = pts.length;
+  // with a big log, only the most connected memories keep permanent labels —
+  // the rest stay quiet dots until hovered, so the constellation never clutters
+  const byHeat = pts.slice().sort((a, b) => (b.heat || 0) - (a.heat || 0));
+  const labeled = new Set(byHeat.slice(0, 26));
+  nodes = pts.map((p, k) => {
+    const i = (LAND.points || []).indexOf(p);
+    const a = -Math.PI/2 + ((k + 0.5) / Math.max(1, N)) * Math.PI * 2;
+    const band = (k % 2 === 0) ? 0.335 : 0.425;        // two rings → labels never collide
+    const r = R0() * (band + (rnd(i*5+2) - 0.5) * 0.018);
+    return { idx: i, a, r, x: Math.cos(a)*r, y: Math.sin(a)*r*0.86,
+             type: p.type, color: p.color, label: p.label, ts: p.ts,
+             heat: p.heat || 0, named: labeled.has(p), hit: null };
+  });
+}
+function nodeShort(n){ return n.label.length > 26 ? n.label.slice(0, 25) + "…" : n.label; }
+
+/* ---------- the faculties — labeled stations (how it works) ------------------ */
 const P_COLOR = { memory:"#7fd1b9", persona:"#ffd9a0", soul:"#c98bff", mood:"#ff7eb6",
   rhythms:"#8fb7ff", activity:"#9adf7c", shadow:"#f3c969", router:"#7ec8ff", voice:"#ff9e3d" };
-let planets = [];                      // {id,label,role,orbit,phase,omega,color}
-function buildPlanets(){
+function buildChips(){
   const cores = (BRAIN.nodes || []).filter(n => n.kind === "core");
-  const base = Math.min(W, H) * 0.085;
-  planets = cores.map((n, i) => {
-    const orbit = base + i * Math.min(W, H) * 0.033;
-    const old = planets.find(p => p.id === n.id);
-    return { id: n.id, label: n.label, role: n.role || "", orbit,
-             phase: old ? old.phase : rnd(i * 7) * 6.28,
-             omega: 0.0042 * Math.pow(base / orbit, 1.5),   // Kepler-ish: closer = faster
-             color: P_COLOR[n.id] || "#9fb4ff" };
+  const N = cores.length;
+  chips = cores.map((n, i) => {
+    const a = -Math.PI/2 + (i / Math.max(1, N)) * Math.PI * 2;
+    const r = R0() * 0.258;
+    return { id: n.id, label: n.label, role: n.role || "",
+             a, x: Math.cos(a)*r, y: Math.sin(a)*r*0.86,
+             color: P_COLOR[n.id] || "#9fb4ff", hit: null };
   });
 }
-function planetPos(p){
-  return { x: Math.cos(p.phase) * p.orbit, y: Math.sin(p.phase) * p.orbit * TILT,
-           front: Math.sin(p.phase) >= 0 };
-}
-function badge(p){
+function badge(id){
   const st = BRAIN.state || {};
-  if (p.id === "memory")  return (st.memory_count || 0) + " memories";
-  if (p.id === "shadow")  return (st.open_tasks || 0) + " open tasks";
-  if (p.id === "rhythms") return st.part_of_day || "";
-  if (p.id === "soul")    return (st.reflections || 0) + " thoughts waiting";
+  if (id === "memory")  return (st.memory_count || 0) + " memories";
+  if (id === "shadow")  return (st.open_tasks || 0) + " open tasks";
+  if (id === "rhythms") return st.part_of_day || "";
+  if (id === "soul")    return (st.reflections || 0) + " thoughts waiting";
   return "";
 }
 
-/* ---------- ambience: dust, meteors, nebula --------------------------------- */
-const dust = Array.from({length: 170}, (_, i) => ({
-  x: rnd(i*11)*1.6-0.8, y: rnd(i*11+1)*1.6-0.8, z: 0.15+rnd(i*11+2)*0.85, r: 0.3+rnd(i*11+3)*1.2 }));
-const meteors = Array.from({length: 4}, (_, i) => ({ t: -(i*3 + rnd(i)*5), dur: 0, cool: 0, a:{}, b:{} }));
-function resetMeteor(m){
-  const side = Math.random()*6.28, R = Math.max(W,H)*0.7;
-  m.a = { x: Math.cos(side)*R, y: Math.sin(side)*R };
-  m.b = { x: (Math.random()-0.5)*W*0.5, y: (Math.random()-0.5)*H*0.5 };
-  m.dur = 1.6 + Math.random()*1.6; m.cool = 5 + Math.random()*11; m.t = 0;
+/* ---------- flowing particles (FluidX3D feel) -------------------------------- */
+/* A stream particle rides a quadratic bezier with a little perpendicular
+   turbulence — dozens together read as fluid pouring between stations. */
+function spawnStream(from, to, opts){
+  const o = opts || {};
+  const n = o.n || 40;
+  for (let i = 0; i < n; i++){
+    const mid = { x: (from.x + to.x)/2 + (Math.random()-0.5) * (o.spread || 60),
+                  y: (from.y + to.y)/2 + (Math.random()-0.5) * (o.spread || 60) };
+    streams.push({ p0: {x:from.x, y:from.y}, p1: mid, p2: {x:to.x, y:to.y},
+                   t: -Math.random() * (o.stagger || 0.5),
+                   v: 0.55 + Math.random() * 0.5,
+                   c: o.color || [126,200,255],
+                   s: Math.random() < 0.85 ? 1.4 : 2.2 });
+  }
+}
+function stepStreams(dt){
+  streams = streams.filter(p => p.t < 1);
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  streams.forEach(p => {
+    p.t += dt * p.v;
+    if (p.t < 0) return;
+    const t = p.t, u = 1 - t;
+    const x = u*u*p.p0.x + 2*u*t*p.p1.x + t*t*p.p2.x;
+    const y = u*u*p.p0.y + 2*u*t*p.p1.y + t*t*p.p2.y;
+    const P = S(x, y);
+    const fade = Math.sin(Math.min(1, Math.max(0, t)) * Math.PI);
+    ctx.globalAlpha = 0.65 * fade;
+    ctx.fillStyle = "rgb(" + p.c[0] + "," + p.c[1] + "," + p.c[2] + ")";
+    ctx.fillRect(P.X - p.s/2, P.Y - p.s/2, p.s * cam.zoom, p.s * cam.zoom);
+  });
+  ctx.restore();
 }
 
-/* ---------- the thought comet (thinks) -------------------------------------- */
-let comet = null;                     // {legs, leg, t, pos, trail, route}
-let ripples = [], floats = [];
-function resolveLeg(l){
-  if (l.kind === "point")  return l;
-  if (l.kind === "star")   { const s = stars.find(s => s.idx === l.idx); if(!s) return {x:0,y:0};
-                             const w = starPos(s); return { x:w.x, y:w.y }; }
-  if (l.kind === "planet") { const p = planets.find(p => p.id === l.id); if(!p) return {x:0,y:0};
-                             const w = planetPos(p); return { x:w.x, y:w.y }; }
-  return { x: 0, y: 0 };
-}
+/* ---------- the thought (thinks) --------------------------------------------- */
+let thought = null;   // {t, recall:[node], path:[chipId], route, fired:{}}
 async function think(q){
   const A = document.getElementById("answer"); A.style.display = "none";
   let d; try{ d = await j("/api/thought?q=" + encodeURIComponent(q)); }catch(_){ return; }
-  const legs = [{ kind:"point", x: -W*0.62, y: -H*0.18 }];
+  const recall = [];
   (d.recall || []).forEach(r => {
-    const s = stars.find(s => s.label === r.label);
-    if (s) legs.push({ kind:"star", idx: s.idx, name: r.label });
+    const n = nodes.find(n => n.label === r.label);
+    if (n) recall.push(n);
   });
-  (d.path || []).forEach(id => {
-    if (planets.find(p => p.id === id)) legs.push({ kind:"planet", id, name: id });
-  });
-  legs.push({ kind:"point", x: 0, y: 0, name: "her answer forms" });
-  comet = { legs, leg: 0, t: 0, pos: resolveLeg(legs[0]), trail: [], route: d.route || {} };
+  const path = (d.path || []).filter(id => chips.find(c => c.id === id));
+  thought = { t: 0, recall, path, route: d.route || {}, fired: {} };
+  // the prompt enters: a stream from the ask bar up into the cloud
+  const start = toWorld(W/2, H - 84);
+  spawnStream(start, {x: 0, y: cloudR() * 0.4}, { n: 70, color: [126,200,255], spread: 90, stagger: 0.8 });
 }
 document.getElementById("go").onclick = () => { const q = document.getElementById("q").value.trim(); if (q) think(q); };
 document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter") document.getElementById("go").click(); });
-function cometStep(dt){
-  if (!comet) return;
-  const next = comet.legs[comet.leg + 1];
-  if (!next) {   // arrived — show the honest routing result
-    const A = document.getElementById("answer"), r = comet.route || {};
-    if (r.model){ A.innerHTML = '<div class="t">how she would answer</div>'
-      + '<div class="row">model: <span class="kv">' + r.model + '</span></div>'
-      + '<div class="row">rule: <span class="kv">' + (r.rule || "—") + '</span></div>'
+
+function stepThought(dt){
+  if (!thought) return;
+  thought.t += dt;
+  const T = thought;
+  // recalled memories flash + pour into the cloud, one by one — real recall()
+  T.recall.forEach((n, i) => {
+    const at = 0.6 + i * 0.35, key = "r" + i;
+    if (T.t >= at && !T.fired[key]){
+      T.fired[key] = true;
+      glow["node:" + n.idx] = 1;
+      ripples.push({ x: n.x, y: n.y, r: 6, a: 0.8 });
+      spawnStream(n, {x: 0, y: 0}, { n: 30, color: hexRgb(n.color), spread: 40, stagger: 0.4 });
+    }
+  });
+  // then the faculties light along the real path, motes rushing station→station
+  const base = 0.6 + T.recall.length * 0.35 + 0.3;
+  T.path.forEach((id, i) => {
+    const at = base + i * 0.4, key = "p" + i;
+    if (T.t >= at && !T.fired[key]){
+      T.fired[key] = true;
+      glow["chip:" + id] = 1;
+      const c = chips.find(c => c.id === id);
+      if (c){
+        ripples.push({ x: c.x, y: c.y, r: 6, a: 0.7 });
+        const prev = i > 0 ? chips.find(x => x.id === T.path[i-1]) : null;
+        spawnStream(prev || {x:0, y:0}, c, { n: 26, color: hexRgb(c.color), spread: 50, stagger: 0.3 });
+      }
+    }
+  });
+  // arrival: the honest routing result
+  const done = base + T.path.length * 0.4 + 0.5;
+  if (T.t >= done && !T.fired.end){
+    T.fired.end = true;
+    const A = document.getElementById("answer"), r = T.route || {};
+    if (r.model){ A.innerHTML = '<div class="t">how she answers</div>'
+      + '<div class="row">model <span class="kv">' + r.model + '</span></div>'
+      + '<div class="row">rule <span class="kv">' + (r.rule || "—") + '</span></div>'
       + '<div class="row">complexity ' + (r.complexity || "—") + ' · risk ' + (r.risk || "—") + '</div>'
-      + '<div class="row" style="margin-top:4px;color:#8f96a6">routed locally — nothing left this machine</div>';
+      + '<div class="row" style="margin-top:5px;color:#8f96a6">routed locally — nothing left this machine</div>';
       A.style.display = "block"; }
-    comet = null; return;
-  }
-  comet.t += dt / 0.85;
-  const from = comet.pos, to = resolveLeg(next);
-  const e = comet.t < 0.5 ? 2*comet.t*comet.t : 1 - Math.pow(-2*comet.t + 2, 2)/2;  // easeInOut
-  const x = from.x + (to.x - from.x) * e, y = from.y + (to.y - from.y) * e;
-  comet.trail.push({ x, y }); if (comet.trail.length > 26) comet.trail.shift();
-  comet.cur = { x, y };
-  if (comet.t >= 1){
-    comet.pos = to; comet.leg++; comet.t = 0;
-    ripples.push({ x: to.x, y: to.y, r: 4, a: 0.8 });
-    if (next.name) floats.push({ text: next.name, x: to.x, y: to.y, life: 1 });
+    thought = null;
   }
 }
 
-/* ---------- interaction ----------------------------------------------------- */
+/* ---------- interaction ------------------------------------------------------ */
 let mouse = { x: -1, y: -1 };
 const card = document.getElementById("card");
 cv.addEventListener("mousemove", e => {
@@ -428,13 +547,13 @@ cv.addEventListener("wheel", e => { e.preventDefault();
 cv.addEventListener("dblclick", () => { cam.zoom = 1; cam.ox = 0; cam.oy = 0; });
 cv.style.cursor = "grab";
 
-/* ---------- HUD -------------------------------------------------------------- */
+/* ---------- HUD --------------------------------------------------------------- */
 function hudRefresh(){
   const name = (STATE.persona && STATE.persona.name) || "your twin";
-  document.getElementById("who").textContent = "The Mind — " + name;
+  document.getElementById("whoname").textContent = "THE MIND — " + name.toUpperCase();
   const st = BRAIN.state || {};
   const bits = [(STATE.memory_count || 0) + " memories"];
-  if ((STATE.topics || []).length) bits.push("keeps returning to: " + STATE.topics.slice(0,3).join(", "));
+  if ((STATE.topics || []).length) bits.push("returns to: " + STATE.topics.slice(0,3).join(", "));
   if (st.open_tasks) bits.push(st.open_tasks + " open tasks");
   if (STATE.part_of_day) bits.push(STATE.part_of_day);
   document.getElementById("stats").textContent = bits.join(" · ");
@@ -447,212 +566,199 @@ function hudRefresh(){
     lg.appendChild(c);
   });
 }
+function clockTick(){
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  document.getElementById("clock").textContent =
+    pad(d.getMonth()+1) + "/" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+setInterval(clockTick, 5000); clockTick();
 
-/* ---------- render loop ------------------------------------------------------ */
+/* ---------- data load ---------------------------------------------------------- */
+async function j(u){ return await (await fetch(u)).json(); }
+async function loadAll(){
+  try{ STATE = await j("/api/state"); }catch(_){}
+  try{ LAND = await j("/api/landscape"); }catch(_){}
+  try{ BRAIN = await j("/api/brain"); }catch(_){}
+  buildCloud(); buildNodes(); buildChips(); hudRefresh();
+}
+function resize(){
+  DPR = window.devicePixelRatio || 1;
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  buildNodes(); buildChips();
+}
+window.addEventListener("resize", resize);
+resize();
+setInterval(loadAll, 12000);
+loadAll().then(() => {
+  // ?demo=1 — auto-run one visible thought (handy for demos + screenshots)
+  if (location.search.indexOf("demo") >= 0)
+    setTimeout(() => think("how is mom doing today"), 1200);
+});
+
+/* ---------- ambience ----------------------------------------------------------- */
+const BG_PAL = [[200,215,255],[236,240,250],[255,225,190]];
+const bgStars = Array.from({length: 260}, (_, i) => ({
+  x: rnd(i*13)*1.9-0.95, y: rnd(i*13+1)*1.9-0.95, z: 0.2+rnd(i*13+2)*0.8,
+  s: 0.35 + Math.pow(rnd(i*13+3), 2)*1.2, tw: rnd(i*13+4)*6.2832,
+  c: BG_PAL[(rnd(i*13+5)*3)|0] }));
+
+/* ---------- label pill (canvas) ------------------------------------------------- */
+function pill(P, text, color, hot, side, edged){
+  ctx.font = "10px ui-monospace, Menlo, monospace";
+  const w = ctx.measureText(text).width + (edged ? 16 : 12), h = 16;
+  const x = side < 0 ? P.X - 10 - w : P.X + 10;
+  const y = P.Y - h/2;
+  ctx.fillStyle = hot ? "rgba(14,20,34,0.95)" : "rgba(7,9,16,0.82)";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = hot ? color : "rgba(170,190,230,0.22)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  if (edged){                       // faculties carry their colour as an edge bar
+    ctx.fillStyle = color;
+    ctx.fillRect(side < 0 ? x + w - 3 : x, y, 3, h);
+  }
+  ctx.fillStyle = hot ? "#eef2fa" : "rgba(210,218,232,0.85)";
+  ctx.fillText(text, x + (edged && side >= 0 ? 9 : 6), y + 11.5);
+  return { x, y, w, h };
+}
+function inRect(r, mx, my){ return r && mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h; }
+
+/* ---------- render loop ---------------------------------------------------------- */
 let last = performance.now();
 function frame(now){
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  OMEGA += dt * 0.021;                      // one slow turn every ~5 minutes
-  planets.forEach(p => p.phase += p.omega * dt * 60);
-  cometStep(dt);
+  stepThought(dt);
+  Object.keys(glow).forEach(k => { glow[k] *= Math.pow(0.4, dt); if (glow[k] < 0.02) delete glow[k]; });
   ctx.clearRect(0, 0, W, H);
 
   // deep-space vignette
   const bg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.7);
-  bg.addColorStop(0, "#0a0e1d"); bg.addColorStop(1, "#04050a");
+  bg.addColorStop(0, "#080b16"); bg.addColorStop(1, "#03040a");
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
-  // parallax dust
-  dust.forEach(d => {
-    const px = W/2 + d.x*W*0.7 + cam.ox*d.z*0.35, py = H/2 + d.y*H*0.7 + cam.oy*d.z*0.35;
-    ctx.globalAlpha = 0.10 + d.z*0.30; ctx.fillStyle = "#9fb4ff";
-    ctx.beginPath(); ctx.arc(px, py, d.r, 0, 7); ctx.fill();
+  // faint stars
+  bgStars.forEach(d => {
+    const px = W/2 + d.x*W*0.75 + cam.ox*d.z*0.2, py = H/2 + d.y*H*0.75 + cam.oy*d.z*0.2;
+    ctx.globalAlpha = (0.12 + 0.3*d.z) * (0.8 + 0.2*Math.sin(now*0.0012 + d.tw));
+    ctx.fillStyle = "rgb(" + d.c[0] + "," + d.c[1] + "," + d.c[2] + ")";
+    ctx.beginPath(); ctx.arc(px, py, d.s, 0, 7); ctx.fill();
   });
   ctx.globalAlpha = 1;
 
-  // nebula fog along each arm (additive, type-colored)
-  ctx.globalCompositeOperation = "lighter";
-  Object.keys(ARMS).forEach(type => {
-    const meta = (LAND.types || {})[type]; if (!meta || !meta.count) return;
-    const arm = ARMS[type] * (Math.PI/2), R = discR(), R0 = R/Math.exp(B*SWEEP);
-    for (let k = 1; k <= 4; k++){
-      const th = (k/4) * SWEEP, r = R0 * Math.exp(B*th), a = th + arm + OMEGA;
-      const w = S(Math.cos(a)*r, Math.sin(a)*r*TILT);
-      const RR = (30 + k*16) * cam.zoom;
-      const g = ctx.createRadialGradient(w.X, w.Y, 0, w.X, w.Y, RR);
-      g.addColorStop(0, meta.color + "16"); g.addColorStop(1, meta.color + "00");
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(w.X, w.Y, RR, 0, 7); ctx.fill();
-    }
-  });
-  ctx.globalCompositeOperation = "source-over";
+  // her mind — the living cloud
+  drawCloud(now, dt);
 
-  // filaments between related memories
-  (LAND.links || []).forEach(l => {
-    const a = stars.find(s => s.idx === l.a), b = stars.find(s => s.idx === l.b);
-    if (!a || !b) return;
-    const wa = starPos(a), wb = starPos(b), A = S(wa.x, wa.y), Bp = S(wb.x, wb.y);
-    ctx.strokeStyle = "rgba(150,170,255," + (0.05 + (l.w || 0) * 0.16) + ")";
-    ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(A.X, A.Y); ctx.lineTo(Bp.X, Bp.Y); ctx.stroke();
-  });
-
-  // orbit trails (drawn ellipses the planets provably ride)
-  planets.forEach(p => {
-    ctx.strokeStyle = "rgba(126,200,255,0.10)"; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.ellipse(W/2 + cam.ox, H/2 + cam.oy, p.orbit*cam.zoom, p.orbit*TILT*cam.zoom, 0, 0, 7);
-    ctx.stroke();
-  });
-
-  // the flow diagram, always on: the app's real wiring between faculties,
-  // drawn as faint living conduits with a slow pulse travelling source→target
+  // wiring between faculties (the real flow diagram), motes drifting along
   (BRAIN.edges || []).forEach((e, i) => {
     if (e.kind !== "wired") return;
-    const a = planets.find(p => p.id === e.source), b = planets.find(p => p.id === e.target);
+    const a = chips.find(c => c.id === e.source), b = chips.find(c => c.id === e.target);
     if (!a || !b) return;
-    const wa = planetPos(a), wb = planetPos(b);
-    const A = S(wa.x, wa.y), Bp = S(wb.x, wb.y);
-    ctx.strokeStyle = "rgba(140,160,220,0.07)"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(A.X, A.Y); ctx.lineTo(Bp.X, Bp.Y); ctx.stroke();
-    const ph = ((now * 0.00022) + i * 0.13) % 1;          // a mote flowing along
-    const mx = A.X + (Bp.X - A.X) * ph, my = A.Y + (Bp.Y - A.Y) * ph;
-    ctx.fillStyle = "rgba(160,185,255,0.34)";
-    ctx.beginPath(); ctx.arc(mx, my, 1.3, 0, 7); ctx.fill();
+    const A = S(a.x, a.y), Bp = S(b.x, b.y);
+    // arc the conduit outward so it skirts the cloud instead of crossing it
+    const mx = (a.x + b.x)/2, my = (a.y + b.y)/2;
+    const mm = Math.hypot(mx, my) || 1;
+    const k = R0() * 0.30 / mm;
+    const C = S(mx * Math.max(1, k), my * Math.max(1, k));
+    const hot = (glow["chip:" + e.source] || 0) + (glow["chip:" + e.target] || 0);
+    ctx.strokeStyle = "rgba(140,160,220," + (0.06 + Math.min(0.3, hot * 0.3)) + ")";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(A.X, A.Y); ctx.quadraticCurveTo(C.X, C.Y, Bp.X, Bp.Y); ctx.stroke();
+    const ph = ((now * 0.00016) + i * 0.17) % 1, u = 1 - ph;
+    const qx = u*u*A.X + 2*u*ph*C.X + ph*ph*Bp.X, qy = u*u*A.Y + 2*u*ph*C.Y + ph*ph*Bp.Y;
+    ctx.fillStyle = "rgba(170,195,255,0.5)";
+    ctx.fillRect(qx - 1, qy - 1, 2, 2);
   });
 
-  // the core — her warm center, breathing
-  const pulse = 1 + 0.06 * Math.sin(now * 0.0016);
-  const core = S(0, 0), CR = Math.min(W,H) * 0.045 * cam.zoom * pulse;
-  ctx.globalCompositeOperation = "lighter";
-  for (const [rr, aa] of [[CR*3.4, 0.10], [CR*2.0, 0.22], [CR*1.1, 0.6]]){
-    const g = ctx.createRadialGradient(core.X, core.Y, 0, core.X, core.Y, rr);
-    g.addColorStop(0, "rgba(255,220,170," + aa + ")"); g.addColorStop(1, "rgba(255,220,170,0)");
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(core.X, core.Y, rr, 0, 7); ctx.fill();
-  }
-  ctx.globalCompositeOperation = "source-over";
-  ctx.fillStyle = "rgba(255,246,230,.95)";
-  ctx.beginPath(); ctx.arc(core.X, core.Y, CR*0.42, 0, 7); ctx.fill();
-  ctx.fillStyle = "rgba(230,235,245,.8)"; ctx.font = "12px -apple-system,sans-serif"; ctx.textAlign = "center";
-  ctx.fillText((STATE.persona && STATE.persona.name) || "her", core.X, core.Y + CR*3.4 + 14);
-  ctx.textAlign = "left";
-
-  // memory stars (back half first, then front, for depth)
-  let hoverStar = null, hoverPlanet = null, best = 15;
-  const drawStar = (s, front) => {
-    const w = starPos(s); if (w.front !== front) return;
-    const P = S(w.x, w.y);
-    const tw = 0.7 + 0.3 * Math.sin(now * 0.003 + s.tw);
-    const depth = front ? 1 : 0.55;
-    const r = s.size * Math.sqrt(cam.zoom) * (front ? 1 : 0.8);
-    const d = Math.hypot(P.X - mouse.x, P.Y - mouse.y);
-    if (d < best){ best = d; hoverStar = { s, P }; }
-    ctx.globalAlpha = depth;
-    ctx.fillStyle = s.color; ctx.shadowColor = s.color; ctx.shadowBlur = 8 * tw;
+  // memory constellation: line from each node toward the cloud + related links
+  let hoverNode = null, hoverChip = null;
+  (LAND.links || []).forEach(l => {
+    const a = nodes.find(n => n.idx === l.a), b = nodes.find(n => n.idx === l.b);
+    if (!a || !b) return;
+    const A = S(a.x, a.y), Bp = S(b.x, b.y);
+    ctx.strokeStyle = "rgba(150,170,255," + (0.05 + (l.w || 0) * 0.18) + ")";
+    ctx.lineWidth = 0.7; ctx.beginPath(); ctx.moveTo(A.X, A.Y); ctx.lineTo(Bp.X, Bp.Y); ctx.stroke();
+  });
+  nodes.forEach(n => {
+    const P = S(n.x, n.y);
+    const hot = glow["node:" + n.idx] || 0;
+    const near = Math.hypot(P.X-mouse.x, P.Y-mouse.y) < 10;
+    // tether to the cloud edge, with a tick where it meets the mass
+    const m = Math.hypot(n.x, n.y) || 1;
+    const E = S(n.x/m * cloudR() * 1.05, n.y/m * cloudR() * 1.05 * 0.86);
+    ctx.strokeStyle = "rgba(190,205,235," + (0.15 + hot * 0.5) + ")";
+    ctx.lineWidth = hot > 0.1 ? 1.2 : 0.7;
+    ctx.beginPath(); ctx.moveTo(P.X, P.Y); ctx.lineTo(E.X, E.Y); ctx.stroke();
+    ctx.fillStyle = "rgba(190,205,235,0.4)";
+    ctx.fillRect(E.X - 1, E.Y - 1, 2, 2);
+    // the node dot
+    const r = 2.2 + Math.min(2.2, (n.heat || 0) * 1.8) + hot * 2;
+    ctx.fillStyle = n.color; ctx.shadowColor = n.color; ctx.shadowBlur = 6 + hot * 14;
     ctx.beginPath(); ctx.arc(P.X, P.Y, r, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
-    ctx.fillStyle = "rgba(255,255,255," + (0.45 + 0.3*tw) + ")";
-    ctx.beginPath(); ctx.arc(P.X, P.Y, Math.max(0.5, r*0.38), 0, 7); ctx.fill();
-    ctx.globalAlpha = 1;
-  };
-  stars.forEach(s => drawStar(s, false));
-  stars.forEach(s => drawStar(s, true));
+    // the label pill (screen-side aware so text points away from the centre);
+    // unnamed nodes stay quiet dots until hovered
+    n.hit = (n.named || near || hot > 0.1)
+      ? pill(P, nodeShort(n), n.color, hot > 0.1, n.x < 0 ? -1 : 1)
+      : null;
+    if (inRect(n.hit, mouse.x, mouse.y) || near) hoverNode = { n, P };
+  });
 
-  // planets riding their trails, with labels + live badges
-  planets.forEach(p => {
-    const w = planetPos(p), P = S(w.x, w.y);
-    const r = (5.2 * (w.front ? 1 : 0.8)) * Math.sqrt(cam.zoom);
-    const d = Math.hypot(P.X - mouse.x, P.Y - mouse.y);
-    if (d < 16){ hoverPlanet = { p, P }; }
-    ctx.globalAlpha = w.front ? 1 : 0.6;
-    ctx.fillStyle = p.color; ctx.shadowColor = p.color; ctx.shadowBlur = 10;
+  // faculty stations — colour-edged pills, always named (they are the diagram)
+  chips.forEach(c => {
+    const P = S(c.x, c.y);
+    const hot = glow["chip:" + c.id] || 0;
+    const r = 3.4 + hot * 3;
+    ctx.fillStyle = c.color; ctx.shadowColor = c.color; ctx.shadowBlur = 8 + hot * 16;
     ctx.beginPath(); ctx.arc(P.X, P.Y, r, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
-    ctx.fillStyle = "rgba(220,226,240,.85)"; ctx.font = "11px -apple-system,sans-serif";
-    ctx.fillText(p.label, P.X + r + 5, P.Y + 3);
-    const b = badge(p);
-    if (b){ ctx.fillStyle = "rgba(150,158,175,.7)"; ctx.font = "10px -apple-system,sans-serif";
-            ctx.fillText(b, P.X + r + 5, P.Y + 15); }
-    ctx.globalAlpha = 1;
+    c.hit = pill(P, c.label.toUpperCase(), c.color, hot > 0.1, c.x < 0 ? -1 : 1, true);
+    if (inRect(c.hit, mouse.x, mouse.y) || Math.hypot(P.X-mouse.x, P.Y-mouse.y) < 12) hoverChip = { c, P };
   });
 
-  // hovered planet → light its wired edges (the app's real anatomy)
-  if (hoverPlanet){
-    (BRAIN.edges || []).forEach(e => {
-      if (e.kind !== "wired") return;
-      if (e.source !== hoverPlanet.p.id && e.target !== hoverPlanet.p.id) return;
-      const q = planets.find(x => x.id === (e.source === hoverPlanet.p.id ? e.target : e.source));
-      if (!q) return;
-      const wq = planetPos(q), Q = S(wq.x, wq.y);
-      ctx.strokeStyle = "rgba(200,215,255,.4)"; ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.moveTo(hoverPlanet.P.X, hoverPlanet.P.Y); ctx.lineTo(Q.X, Q.Y); ctx.stroke();
-    });
-  }
-
-  // meteors (pool: delay → flight → cooldown, like the engine's ShootingStars)
-  meteors.forEach(m => {
-    m.t += dt;
-    if (m.t < 0) return;
-    if (m.dur === 0 || m.t > m.dur + m.cool){ resetMeteor(m); return; }
-    if (m.t > m.dur) return;
-    const pr = m.t / m.dur;
-    const x = W/2 + m.a.x + (m.b.x - m.a.x) * pr, y = H/2 + m.a.y + (m.b.y - m.a.y) * pr;
-    const dx = (m.b.x - m.a.x), dy = (m.b.y - m.a.y), mg = Math.hypot(dx, dy) || 1;
-    const fade = Math.sin(pr * Math.PI);
-    const g = ctx.createLinearGradient(x, y, x - dx/mg*46, y - dy/mg*46);
-    g.addColorStop(0, "rgba(255,255,255," + 0.5*fade + ")"); g.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.strokeStyle = g; ctx.lineWidth = 1.4;
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - dx/mg*46, y - dy/mg*46); ctx.stroke();
-    ctx.fillStyle = "rgba(255,255,255," + 0.85*fade + ")";
-    ctx.beginPath(); ctx.arc(x, y, 1.5, 0, 7); ctx.fill();
-  });
-
-  // the thought comet + trail + ripples + floating labels
-  if (comet && comet.cur){
-    const P = S(comet.cur.x, comet.cur.y);
-    comet.trail.forEach((t, i) => {
-      const T = S(t.x, t.y), a = (i / comet.trail.length) * 0.5;
-      ctx.fillStyle = "rgba(126,200,255," + a + ")";
-      ctx.beginPath(); ctx.arc(T.X, T.Y, 1 + i*0.09, 0, 7); ctx.fill();
-    });
-    ctx.fillStyle = "#dff0ff"; ctx.shadowColor = "#7ec8ff"; ctx.shadowBlur = 18;
-    ctx.beginPath(); ctx.arc(P.X, P.Y, 3.6, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
-  }
+  // flowing thought particles + ripples
+  stepStreams(dt);
   ripples = ripples.filter(r => r.a > 0.02);
   ripples.forEach(r => {
     r.r += 60 * dt; r.a *= 0.93;
     const P = S(r.x, r.y);
-    ctx.strokeStyle = "rgba(126,200,255," + r.a + ")"; ctx.lineWidth = 1.4;
+    ctx.strokeStyle = "rgba(126,200,255," + r.a + ")"; ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.arc(P.X, P.Y, r.r * cam.zoom, 0, 7); ctx.stroke();
-  });
-  floats = floats.filter(f => f.life > 0);
-  floats.forEach(f => {
-    f.life -= dt * 0.55;
-    const P = S(f.x, f.y);
-    ctx.fillStyle = "rgba(223,240,255," + Math.max(0, f.life) + ")";
-    ctx.font = "11.5px -apple-system,sans-serif";
-    ctx.fillText(f.text, P.X + 10, P.Y - 10 - (1 - f.life) * 14);
   });
 
   // hover card
-  if (hoverStar || hoverPlanet){
-    const h = hoverStar || hoverPlanet;
+  if (hoverNode || hoverChip){
+    const h = hoverNode || hoverChip;
     card.style.display = "block";
     card.style.left = Math.min(W - 320, h.P.X + 16) + "px";
-    card.style.top  = Math.max(10, h.P.Y - 14) + "px";
-    if (hoverStar){
-      const s = hoverStar.s, meta = (LAND.types || {})[s.type] || {};
-      card.innerHTML = '<div class="t" style="color:' + s.color + '">' + (meta.label || s.type) + "</div>"
-        + '<div>' + s.label + "</div>" + '<div class="m">' + (s.ts || "") + "</div>";
+    card.style.top  = Math.max(10, h.P.Y + 14) + "px";
+    if (hoverNode){
+      const n = hoverNode.n, meta = (LAND.types || {})[n.type] || {};
+      card.innerHTML = '<div class="t" style="color:' + n.color + '">' + (meta.label || n.type) + "</div>"
+        + '<div>' + n.label + "</div>" + '<div class="m">' + (n.ts || "") + "</div>";
     } else {
-      card.innerHTML = '<div class="t" style="color:' + hoverPlanet.p.color + '">' + hoverPlanet.p.label + "</div>"
-        + '<div class="m">' + hoverPlanet.p.role + "</div>"
-        + (badge(hoverPlanet.p) ? '<div class="m" style="margin-top:3px">' + badge(hoverPlanet.p) + "</div>" : "");
+      const c = hoverChip.c;
+      card.innerHTML = '<div class="t" style="color:' + c.color + '">' + c.label + "</div>"
+        + '<div class="m">' + c.role + "</div>"
+        + (badge(c.id) ? '<div class="m" style="margin-top:3px">' + badge(c.id) + "</div>" : "");
     }
   } else card.style.display = "none";
 
-  // empty sky, honestly
-  if (!stars.length){
-    ctx.fillStyle = "rgba(160,170,190,.6)"; ctx.font = "14px -apple-system,sans-serif"; ctx.textAlign = "center";
-    ctx.fillText("No memories yet — talk with her, and stars will be born here.", W/2, H*0.32);
+  // honest empty state
+  if (!nodes.length){
+    ctx.fillStyle = "rgba(160,170,190,.6)"; ctx.font = "12px ui-monospace, Menlo, monospace"; ctx.textAlign = "center";
+    ctx.fillText("no memories yet — talk with her, and this mind will fill", W/2, H*0.24);
     ctx.textAlign = "left";
   }
+
+  // the instrument frame — corner ticks, like a well-made console
+  ctx.strokeStyle = "rgba(170,190,230,0.28)"; ctx.lineWidth = 1;
+  const M = 10, L = 16;
+  [[M,M,1,1],[W-M,M,-1,1],[M,H-M,1,-1],[W-M,H-M,-1,-1]].forEach(([x,y,sx,sy]) => {
+    ctx.beginPath();
+    ctx.moveTo(x + sx*L, y); ctx.lineTo(x, y); ctx.lineTo(x, y + sy*L);
+    ctx.stroke();
+  });
 
   requestAnimationFrame(frame);
 }
