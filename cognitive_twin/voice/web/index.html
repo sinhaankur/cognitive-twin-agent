@@ -69,7 +69,11 @@
   <div class="row">
     <button id="mic" class="primary"><span class="dot" id="micdot"></span> Speak</button>
     <button id="typeToggle">Type instead</button>
+    <button id="eye" title="Opt-in: she reads motion cues (calm/animated, nods) on-device. No frames are stored or sent anywhere."><span class="dot" id="eyedot"></span> See me</button>
   </div>
+  <canvas id="eyeview" width="192" height="144"
+    style="display:none;position:fixed;top:14px;right:14px;border-radius:12px;
+           border:1px solid #2a2e3c;background:#05060a"></canvas>
   <form id="typed">
     <input id="typedInput" placeholder="Ask the twin…" autocomplete="off" />
     <button type="submit" class="primary">Ask</button>
@@ -79,5 +83,28 @@
 
   <script src="/siriwave.js"></script>
   <script src="/app.js"></script>
+  <script src="/flow.js"></script>
+  <script>
+    // "See me" — the presence sense is strictly opt-in, preview always visible
+    (function(){
+      const btn = document.getElementById("eye"), dot = document.getElementById("eyedot");
+      const view = document.getElementById("eyeview"), status = document.getElementById("status");
+      btn.addEventListener("click", async () => {
+        if (Presence.active){
+          Presence.stop();
+          view.style.display = "none"; dot.classList.remove("on");
+          status.textContent = "she can no longer see you";
+          return;
+        }
+        try{
+          await Presence.start(view);
+          view.style.display = "block"; dot.classList.add("on");
+          status.textContent = "she can see you now — motion cues only, on-device";
+        }catch(e){
+          status.textContent = "camera unavailable (" + (e.name || "error") + ")";
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

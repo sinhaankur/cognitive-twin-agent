@@ -35,6 +35,11 @@ default**. Nothing leaves your device unless you explicitly turn it on.
 - **Voice in, voice out** — speak to her; she answers in a warm, human voice (not
   robotic), with tap-to-interrupt.
 - **Or just type** — a clean chat panel, like a modern assistant.
+- **She can see you — only if you ask** — a "See me" toggle runs an on-device
+  optical-flow eye (Shi-Tomasi + Lucas-Kanade in the page, no OpenCV, no cloud;
+  adapted from the author's [lab](https://sinhaankur.com/lab/optical-flow/)):
+  she notices motion cues — calm vs. animated, a nod, a lean — never stored,
+  never dressed up as "emotions", forgotten seconds after you turn it off.
 - **Always there** — a small floating orb on screen (no Dock clutter); click for
   the chat. Launches at login, stays running, restarts itself if needed.
 
