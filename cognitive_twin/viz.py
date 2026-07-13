@@ -89,6 +89,16 @@ def _route(query: str) -> dict[str, Any]:
         return {"error": str(e)}
 
 
+def _landscape() -> dict[str, Any]:
+    """The typed memory landscape (points laid out by relatedness, coloured by
+    kind) — the data behind the universe view. Local only."""
+    try:
+        from . import brain
+        return brain.landscape()
+    except Exception as e:
+        return {"points": [], "error": str(e)}
+
+
 # ---- page (self-contained: HTML+CSS+JS in one string) ------------------------
 def _page() -> bytes:
     return _PAGE.encode("utf-8")
@@ -117,6 +127,8 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import urlparse, parse_qs
             q = parse_qs(urlparse(self.path).query).get("q", [""])[0]
             self._json(200, _route(q or "what should I work on today?"))
+        elif self.path == "/api/landscape":
+            self._json(200, _landscape())
         else:
             self._json(404, {"error": "not found"})
 
@@ -169,6 +181,7 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   <div class="tabs">
     <div class="tab active" data-p="trace">Reasoning trace</div>
     <div class="tab" data-p="graph">Knowledge graph</div>
+    <div class="tab" data-p="landscape">Landscape</div>
     <div class="tab" data-p="soul">Inner state</div>
   </div>
 
@@ -186,6 +199,12 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
     <div class="cap">Topics you keep raising + thoughts saved while away — your twin's connected knowledge, from local memory.</div>
   </div></div>
 
+  <div class="panel" id="p-landscape"><div class="card">
+    <canvas id="land-canvas" width="760" height="380" style="width:100%;height:auto;display:block;border-radius:10px;background:radial-gradient(120% 90% at 50% 0%,#0e1424 0%,#070910 70%)"></canvas>
+    <div id="land-legend" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:#aeb4c0"></div>
+    <div class="cap">A landscape of your twin's memory — each star is something it remembers, placed near related memories and coloured by kind. It grows as you talk, learn, and reflect.</div>
+  </div></div>
+
   <div class="panel" id="p-soul"><div class="card">
     <svg viewBox="0 0 760 230" id="soul-svg"></svg>
     <div class="cap" id="soul-cap"></div>
@@ -201,8 +220,9 @@ function el(n,a){const e=document.createElementNS(SVGNS,n);for(const k in a)e.se
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
   document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
   t.classList.add("active");
-  ["trace","graph","soul"].forEach(p=>$("#p-"+p).classList.toggle("active",p===t.dataset.p));
+  ["trace","graph","landscape","soul"].forEach(p=>$("#p-"+p).classList.toggle("active",p===t.dataset.p));
   if(t.dataset.p==="graph")drawGraph();
+  if(t.dataset.p==="landscape")drawLandscape();
   if(t.dataset.p==="soul")drawSoul();
 });
 
@@ -342,6 +362,95 @@ function loopBrain(){ stepBrain(); paintBrain(); brain.raf=requestAnimationFrame
 function drawGraph(){
   syncBrain();
   if(!brain.raf) loopBrain();     // start the animation once; syncBrain feeds it live
+}
+
+// ---- landscape: a universe of typed memory nodes --------------------------
+// A canvas starfield where each memory is a glowing star, placed by relatedness
+// (from /api/landscape), coloured by kind, and haloed where memories cluster.
+// Depth + slow drift give it a universe feel; hover reveals the memory.
+let land={data:null, raf:0, t:0, stars:[], hover:-1, mx:0, my:0};
+
+function makeStars(W,H){
+  const s=[];
+  for(let i=0;i<90;i++) s.push({x:Math.random()*W,y:Math.random()*H,
+    z:Math.random()*0.8+0.2, r:Math.random()*1.2+0.3});
+  return s;
+}
+async function drawLandscape(){
+  const c=$("#land-canvas"); if(!c) return;
+  if(!land.stars.length) land.stars=makeStars(c.width,c.height);
+  if(!land.data){
+    try{ land.data=await (await fetch("/api/landscape")).json(); }
+    catch(_){ land.data={points:[],types:{}}; }
+    buildLegend(land.data.types||{});
+    c.onmousemove=(e)=>{ const b=c.getBoundingClientRect();
+      land.mx=(e.clientX-b.left)*(c.width/b.width);
+      land.my=(e.clientY-b.top)*(c.height/b.height); };
+    c.onmouseleave=()=>{ land.mx=-1; land.my=-1; };
+  }
+  if(!land.raf) loopLand();
+}
+function buildLegend(types){
+  const box=$("#land-legend"); if(!box) return; box.innerHTML="";
+  Object.keys(types).forEach(k=>{
+    const t=types[k]; if(!t) return;
+    const chip=document.createElement("span");
+    chip.style.cssText="display:inline-flex;align-items:center;gap:6px";
+    chip.innerHTML=`<span style="width:9px;height:9px;border-radius:50%;background:${t.color};display:inline-block;box-shadow:0 0 6px ${t.color}"></span>${t.label} · ${t.count}`;
+    box.appendChild(chip);
+  });
+}
+function loopLand(){
+  const c=$("#land-canvas"), g=c.getContext("2d"), W=c.width, H=c.height;
+  land.t++;
+  g.clearRect(0,0,W,H);
+  // drifting starfield (parallax by depth)
+  g.save();
+  land.stars.forEach(s=>{
+    s.x-=(0.06+s.z*0.10); if(s.x<0)s.x=W;
+    g.globalAlpha=0.25+s.z*0.4; g.fillStyle="#9fb4ff";
+    g.beginPath(); g.arc(s.x,s.y,s.r,0,7); g.fill();
+  });
+  g.restore();
+  const pts=(land.data&&land.data.points)||[];
+  const pad=46, iw=W-pad*2, ih=H-pad*2;
+  const pos=p=>({X:pad+p.x*iw, Y:pad+p.y*ih});
+  // soft cluster halos first (heat = how related to the rest)
+  pts.forEach(p=>{
+    const {X,Y}=pos(p), R=14+Math.min(28,p.heat*22);
+    const grad=g.createRadialGradient(X,Y,0,X,Y,R);
+    grad.addColorStop(0,p.color+"55"); grad.addColorStop(1,p.color+"00");
+    g.fillStyle=grad; g.beginPath(); g.arc(X,Y,R,0,7); g.fill();
+  });
+  // find hover (nearest point within 16px)
+  land.hover=-1; let best=16;
+  pts.forEach((p,i)=>{ const {X,Y}=pos(p);
+    const d=Math.hypot(X-land.mx,Y-land.my); if(d<best){best=d;land.hover=i;} });
+  // stars
+  pts.forEach((p,i)=>{
+    const {X,Y}=pos(p);
+    const tw=0.75+0.25*Math.sin(land.t*0.05+i);   // gentle twinkle
+    const r=(2.5+p.heat*3)*(land.hover===i?1.6:1);
+    g.globalAlpha=1; g.fillStyle=p.color; g.shadowColor=p.color;
+    g.shadowBlur=(land.hover===i?16:8)*tw;
+    g.beginPath(); g.arc(X,Y,r,0,7); g.fill(); g.shadowBlur=0;
+  });
+  // hover label
+  if(land.hover>=0){
+    const p=pts[land.hover], {X,Y}=pos(p);
+    const txt=p.label+(p.ts?"  ·  "+p.ts:"");
+    g.font="12px -apple-system,sans-serif";
+    const w=g.measureText(txt).width+14;
+    let lx=X+10, ly=Y-10; if(lx+w>W)lx=X-w-10;
+    g.fillStyle="rgba(10,12,20,.9)"; g.fillRect(lx,ly-16,w,22);
+    g.fillStyle=p.color; g.fillText(txt,lx+7,ly);
+  }
+  if(!pts.length){
+    g.fillStyle="#6a6a6a"; g.font="14px -apple-system,sans-serif"; g.textAlign="center";
+    g.fillText("No memories yet — talk with your twin to grow its universe.",W/2,H/2);
+    g.textAlign="left";
+  }
+  land.raf=requestAnimationFrame(loopLand);
 }
 
 // ---- inner state ----

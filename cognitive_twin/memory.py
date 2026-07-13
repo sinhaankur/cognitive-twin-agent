@@ -51,11 +51,19 @@ def _secure(path: Path) -> None:
 def record(prompt: str, answer: str, *, model: str | None = None,
            source: str = "cli") -> None:
     """Append one interaction to the local memory log (owner-only)."""
+    # type the memory (emotion / task / opinion / knowledge) from the prompt —
+    # cheap rule-based classifier, so the landscape can draw memory regions.
+    try:
+        from . import mem_types
+        mtype = mem_types.classify(prompt or "")
+    except Exception:
+        mtype = "knowledge"
     entry = {
         "ts": _dt.datetime.now().isoformat(timespec="seconds"),
         "prompt": (prompt or "").strip(),
         # store a gist, not the whole answer — keep the log small and less sensitive
         "gist": (answer or "").strip()[:240],
+        "type": mtype,
         "model": model,
         "source": source,
     }
