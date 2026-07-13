@@ -337,6 +337,18 @@ def _warm_voice_clone() -> None:
 
 
 def serve(port: int = DEFAULT_PORT, *, open_browser: bool = True, model: str | None = None) -> None:
+    # Speak as the ACTIVE twin: point every storage module (persona, memory,
+    # soul, voice, activity) at its folder, exactly like the CLI does. Without
+    # this, a directly-launched server (the macOS app's path) reads the legacy
+    # flat layout and becomes whoever is left in those files. An explicit
+    # CTWIN_MEMORY_DIR still wins (tests / power users pin their own layout).
+    import os as _os
+    if "CTWIN_MEMORY_DIR" not in _os.environ:
+        try:
+            from .. import twins
+            twins.activate()
+        except Exception:
+            pass
     httpd = make_server(port, model)
     url = f"http://{HOST}:{port}"
     print(f"Vera · Siri UI at {url}")
