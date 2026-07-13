@@ -143,7 +143,13 @@ class Agent:
                     parts.append(m)
             except Exception:
                 pass
-            ctx = _memory.summary_for_prompt()
+            # Recall memories relevant to *this* message (falls back to the
+            # standing habit summary when nothing specific matches). This is what
+            # makes the twin feel like it remembers you, not just your stats.
+            try:
+                ctx = _memory.context_for(user_input)
+            except Exception:
+                ctx = _memory.summary_for_prompt()
             if ctx:
                 parts.append(ctx)
         system_content = "\n\n".join(parts)
