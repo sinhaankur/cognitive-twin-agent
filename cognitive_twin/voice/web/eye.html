@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<!-- Vera's eye — loaded ONLY inside the app's small always-visible preview
+     window after the user explicitly turns "See me" on. Auto-starts because
+     the native click was the opt-in; closing the window stops and forgets. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>she can see you</title>
+  <style>
+    html,body{margin:0;height:100%;background:#05060a;overflow:hidden}
+    canvas{width:100vw;height:100vh;display:block}
+    #s{position:fixed;left:10px;bottom:8px;color:rgba(170,180,200,.75);
+       font:10px ui-monospace,Menlo,monospace;letter-spacing:.06em}
+  </style>
+</head>
+<body>
+  <canvas id="v" width="320" height="240"></canvas>
+  <div id="s">starting her eye…</div>
+  <script src="/flow.js"></script>
+  <script>
+    (async () => {
+      const s = document.getElementById("s");
+      try{
+        await Presence.start(document.getElementById("v"));
+        s.textContent = "motion cues only · on-device · close to stop";
+      }catch(e){
+        s.textContent = "camera unavailable (" + (e.name || "error") + ")";
+      }
+    })();
+    // closing the window must mean forgetting, even if fetch never fires
+    addEventListener("pagehide", () => {
+      try{ navigator.sendBeacon("/api/presence/stop", "{}"); }catch(_){}
+      try{ Presence.stop(); }catch(_){}
+    });
+  </script>
+</body>
+</html>

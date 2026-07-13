@@ -91,6 +91,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._serve_file("app.js", "application/javascript; charset=utf-8")
         elif self.path == "/flow.js":
             self._serve_file("flow.js", "application/javascript; charset=utf-8")
+        elif self.path == "/eye":
+            # the app's small preview window (see eye.html header note)
+            self._serve_file("eye.html", "text/html; charset=utf-8")
         elif self.path == "/api/health":
             agent = self.server.agent  # type: ignore[attr-defined]
             model = getattr(agent.client, "model", None) or getattr(agent, "configured_model", None)
