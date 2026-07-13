@@ -138,6 +138,13 @@ Want the native Mac app instead of the browser? Build it once:
 cd macos/Vera && ./build-app.sh && open "Vera.app"
 ```
 
+**She updates herself.** Her brain runs straight from this repo, so `git pull`
+*is* the update — nothing to download or reinstall. On every launch the app
+quietly runs `scripts/update-vera.sh`: a fast-forward-only pull (local edits
+are never touched), a restart of the agent server when the brain changed, and
+a rebuild + reinstall of the shell only when `macos/` changed. Run it by hand
+any time (`--check` to just look); set `CTWIN_NO_AUTOUPDATE=1` to opt out.
+
 Put a `tasks.md` in your workspace (`~/.cognitive-twin/workspace/`, override with
 `CTWIN_WORKSPACE`) and `daily_digest` folds it into the summary. Drop a `.ics`
 file there for today's calendar events (no OAuth needed).

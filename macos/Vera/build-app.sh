@@ -39,11 +39,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key>            <string>Anita</string>
-  <key>CFBundleDisplayName</key>     <string>Anita</string>
+  <key>CFBundleName</key>            <string>Vera</string>
+  <key>CFBundleDisplayName</key>     <string>Vera</string>
+  <!-- identifier kept as 'anita' on purpose: changing it would reset the
+       mic/speech/accessibility permissions the user already granted -->
   <key>CFBundleIdentifier</key>      <string>com.sinhaankur.anita</string>
-  <key>CFBundleVersion</key>         <string>0.1.0</string>
-  <key>CFBundleShortVersionString</key> <string>0.1.0</string>
+  <key>CFBundleVersion</key>         <string>0.2.0</string>
+  <key>CFBundleShortVersionString</key> <string>0.2.0</string>
   <key>CFBundlePackageType</key>     <string>APPL</string>
   <key>CFBundleExecutable</key>      <string>Vera</string>
   <key>CFBundleIconFile</key>        <string>AppIcon</string>

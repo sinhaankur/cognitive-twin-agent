@@ -356,8 +356,27 @@ final class AppModel: ObservableObject {
         voice.requestPermission()
         voice.onFinal = { [weak self] text in self?.handle(text) }
         enableLaunchAtLogin()      // so Anita is always there after a reboot
+        autoUpdate()               // she keeps herself current — nothing to download
         ensureServer()
         startWatchdog()            // keep her alive if the brain ever stops
+    }
+
+    /// She updates herself: her brain runs straight from the repo, so a
+    /// `git pull` there IS the update (the updater script restarts what
+    /// changed, and rebuilds this shell only when macos/ changed). Detached,
+    /// fast-forward-only, and it never touches local edits. Opt out with
+    /// CTWIN_NO_AUTOUPDATE=1.
+    private func autoUpdate() {
+        let env = ProcessInfo.processInfo.environment
+        guard env["CTWIN_NO_AUTOUPDATE"] == nil else { return }
+        let repo = env["CTWIN_REPO"]
+            ?? (NSHomeDirectory() + "/Documents/cognitive-twin-agent")
+        let script = repo + "/scripts/update-vera.sh"
+        guard FileManager.default.isExecutableFile(atPath: script) else { return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: script)
+        p.currentDirectoryURL = URL(fileURLWithPath: repo)
+        try? p.run()               // best-effort; she runs fine without it
     }
 
     /// Register Anita to launch automatically at login (macOS 13+ SMAppService),
@@ -441,9 +460,15 @@ final class AppModel: ObservableObject {
     }
 
     /// Auto-start the local Python agent server if it isn't already up, so the
-    /// user just launches the app — no terminal step.
+    /// user just launches the app — no terminal step. One attempt at a time:
+    /// the watchdog fires every 5s but the server takes longer to bind, so
+    /// without the guard she'd spawn a pile of duplicate brains.
+    private var ensuringServer = false
     private func ensureServer() {
+        guard !ensuringServer else { return }
+        ensuringServer = true
         Task {
+            defer { ensuringServer = false }
             if await agent.health() {
                 await MainActor.run { self.serverUp = true }
                 await greetOnLaunch()
@@ -486,14 +511,22 @@ final class AppModel: ObservableObject {
     }
 
     private func launchPythonServer() {
+        // a previous attempt still alive but unhealthy? replace it, don't stack
+        if let sp = serverProcess, sp.isRunning { sp.terminate() }
         // Look for the repo root relative to the app, or use CTWIN_REPO env.
         let env = ProcessInfo.processInfo.environment
         let repo = env["CTWIN_REPO"]
             ?? (NSHomeDirectory() + "/Documents/cognitive-twin-agent")
         let p = Process()
         p.currentDirectoryURL = URL(fileURLWithPath: repo)
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        p.arguments = ["python3", "-m", "cognitive_twin.voice.server", "--no-open"]
+        // Prefer a real installed python3: a GUI app's PATH is minimal, so
+        // `env python3` resolves to /usr/bin/python3 — Xcode's old 3.9.
+        let pythons = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3",
+                       "/usr/bin/python3"]
+        let python = pythons.first { FileManager.default.isExecutableFile(atPath: $0) }
+        p.executableURL = URL(fileURLWithPath: python ?? "/usr/bin/env")
+        p.arguments = (python != nil ? [] : ["python3"])
+            + ["-m", "cognitive_twin.voice.server", "--no-open"]
         // The app is an interactive assistant — give its agent internet (search,
         // weather) by default. The CLI stays local-first unless CTWIN_WEB is set.
         var childEnv = env
