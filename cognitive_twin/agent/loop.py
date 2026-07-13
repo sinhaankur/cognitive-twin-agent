@@ -163,6 +163,15 @@ class Agent:
                     parts.append(today)
             except Exception:
                 pass
+            # what she can see right now (opt-in camera → motion cues only;
+            # empty unless the user turned the eye on in the voice UI)
+            try:
+                from .. import presence as _presence
+                seen = _presence.context_for_prompt()
+                if seen:
+                    parts.append(seen)
+            except Exception:
+                pass
         system_content = "\n\n".join(parts)
 
         messages: list[ChatMessage] = [

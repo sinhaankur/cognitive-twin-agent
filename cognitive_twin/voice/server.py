@@ -89,6 +89,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._serve_file("siriwave.js", "application/javascript; charset=utf-8")
         elif self.path == "/app.js":
             self._serve_file("app.js", "application/javascript; charset=utf-8")
+        elif self.path == "/flow.js":
+            self._serve_file("flow.js", "application/javascript; charset=utf-8")
         elif self.path == "/api/health":
             agent = self.server.agent  # type: ignore[attr-defined]
             model = getattr(agent.client, "model", None) or getattr(agent, "configured_model", None)
@@ -271,6 +273,16 @@ class _Handler(BaseHTTPRequestHandler):
                 for t in result.takes
             ]
             self._json(200, {"question": result.question, "takes": takes})
+        elif self.path == "/api/presence":
+            # derived MOTION facts from the opt-in camera page (no frames,
+            # no images — see presence.py). Ephemeral: latest reading only.
+            from .. import presence
+            presence.update(self._read_json())
+            self._json(200, {"ok": True})
+        elif self.path == "/api/presence/stop":
+            from .. import presence
+            presence.stop()
+            self._json(200, {"ok": True})
         elif self.path == "/api/reflect":
             # Anita thinks about your projects (while you're away) and saves a
             # thought. Best-effort; needs project seeds in memory + a reachable model.
