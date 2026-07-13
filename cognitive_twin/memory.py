@@ -109,6 +109,9 @@ def recent_prompts(n: int = 8) -> list[str]:
 
 
 # ---- derive lightweight patterns (all local) ---------------------------------
+# Words of 3+ letters count as signal (not 4+): "mom", "dad", "tax" are exactly
+# the words a personal twin must never be blind to; the stopword list handles
+# the generic 3-letter noise (get/got/now/yes/…).
 # A broad stopword set so "learned topics" surface real subjects, not filler.
 # Covers articles/pronouns/aux verbs, common conversational verbs, and generic
 # words that dominate small logs ("thing", "kind", "someone", "want"…).
@@ -159,7 +162,7 @@ def patterns() -> dict[str, Any]:
         text = e.get("prompt", "").lower()
         for raw in text.replace("?", " ").replace("/", " ").split():
             w = "".join(c for c in raw if c.isalnum())
-            if len(w) > 3 and not w.isdigit() and w not in _STOP:
+            if len(w) >= 3 and not w.isdigit() and w not in _STOP:
                 words[w] += 1
         ts = e.get("ts", "")
         try:
@@ -203,7 +206,7 @@ def _terms(text: str) -> set[str]:
     out: set[str] = set()
     for raw in (text or "").lower().replace("?", " ").replace("/", " ").split():
         w = "".join(c for c in raw if c.isalnum())
-        if len(w) > 3 and not w.isdigit() and w not in _STOP:
+        if len(w) >= 3 and not w.isdigit() and w not in _STOP:
             out.add(w)
     return out
 

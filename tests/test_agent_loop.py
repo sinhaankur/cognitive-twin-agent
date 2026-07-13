@@ -124,6 +124,26 @@ def test_builtin_skills():
     print("✓ built-in skills (now, daily_digest, list_dir, read_file, sandbox)")
 
 
+def test_record_false_keeps_memory_clean():
+    """Scripted/internal prompts (record=False) must never become memories."""
+    import importlib
+    import os
+    import tempfile
+    os.environ["CTWIN_MEMORY_DIR"] = tempfile.mkdtemp()
+    from cognitive_twin import memory
+    importlib.reload(memory)
+    reg = SkillRegistry()
+    agent = Agent(client=ScriptedClient([ChatMessage(role="assistant", content="hi")]),
+                  registry=reg, persona="x", use_memory=True)
+    agent.run("While the user is away, think about their projects", record=False)
+    assert memory.entries() == []          # nothing learned from boilerplate
+    agent2 = Agent(client=ScriptedClient([ChatMessage(role="assistant", content="hello!")]),
+                   registry=reg, persona="x", use_memory=True)
+    agent2.run("good morning mom")         # a real user prompt IS learned
+    assert len(memory.entries()) == 1
+    print("✓ record=False keeps scripted prompts out of memory")
+
+
 if __name__ == "__main__":
     test_tool_calling_loop()
     test_arguments_as_json_string()
@@ -131,3 +151,4 @@ if __name__ == "__main__":
     test_step_bound()
     test_builtin_skills()
     print("\nALL TESTS PASSED")
+
