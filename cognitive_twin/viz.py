@@ -368,12 +368,14 @@ function drawGraph(){
 // A canvas starfield where each memory is a glowing star, placed by relatedness
 // (from /api/landscape), coloured by kind, and haloed where memories cluster.
 // Depth + slow drift give it a universe feel; hover reveals the memory.
-let land={data:null, raf:0, t:0, stars:[], hover:-1, mx:0, my:0};
+let land={data:null, raf:0, t:0, stars:[], hover:-1, mx:-1, my:-1,
+          zoom:1, ox:0, oy:0, drag:null};
 
 function makeStars(W,H){
   const s=[];
-  for(let i=0;i<90;i++) s.push({x:Math.random()*W,y:Math.random()*H,
-    z:Math.random()*0.8+0.2, r:Math.random()*1.2+0.3});
+  // three depth layers → parallax that reads as real distance
+  for(let i=0;i<140;i++) s.push({x:Math.random()*W,y:Math.random()*H,
+    z:Math.random()*0.85+0.15, r:Math.random()*1.3+0.25});
   return s;
 }
 async function drawLandscape(){
@@ -381,12 +383,24 @@ async function drawLandscape(){
   if(!land.stars.length) land.stars=makeStars(c.width,c.height);
   if(!land.data){
     try{ land.data=await (await fetch("/api/landscape")).json(); }
-    catch(_){ land.data={points:[],types:{}}; }
+    catch(_){ land.data={points:[],links:[],types:{}}; }
     buildLegend(land.data.types||{});
-    c.onmousemove=(e)=>{ const b=c.getBoundingClientRect();
-      land.mx=(e.clientX-b.left)*(c.width/b.width);
-      land.my=(e.clientY-b.top)*(c.height/b.height); };
+    const toCanvas=(e)=>{ const b=c.getBoundingClientRect();
+      return [(e.clientX-b.left)*(c.width/b.width),
+              (e.clientY-b.top)*(c.height/b.height)]; };
+    c.onmousemove=(e)=>{ [land.mx,land.my]=toCanvas(e);
+      if(land.drag){ land.ox+=land.mx-land.drag[0]; land.oy+=land.my-land.drag[1];
+                     land.drag=[land.mx,land.my]; } };
+    c.onmousedown=(e)=>{ land.drag=toCanvas(e); c.style.cursor="grabbing"; };
+    window.addEventListener("mouseup",()=>{ land.drag=null; c.style.cursor="grab"; });
     c.onmouseleave=()=>{ land.mx=-1; land.my=-1; };
+    c.style.cursor="grab";
+    // scroll to zoom, centred on the cursor
+    c.onwheel=(e)=>{ e.preventDefault();
+      const [cx,cy]=toCanvas(e), f=e.deltaY<0?1.1:1/1.1, nz=Math.max(0.6,Math.min(4,land.zoom*f));
+      land.ox=cx-(cx-land.ox)*(nz/land.zoom); land.oy=cy-(cy-land.oy)*(nz/land.zoom);
+      land.zoom=nz; };
+    c.ondblclick=()=>{ land.zoom=1; land.ox=0; land.oy=0; };   // reset view
   }
   if(!land.raf) loopLand();
 }
@@ -404,51 +418,84 @@ function loopLand(){
   const c=$("#land-canvas"), g=c.getContext("2d"), W=c.width, H=c.height;
   land.t++;
   g.clearRect(0,0,W,H);
-  // drifting starfield (parallax by depth)
-  g.save();
+
+  // 1. drifting starfield — parallax by depth (further stars pan less on zoom)
   land.stars.forEach(s=>{
-    s.x-=(0.06+s.z*0.10); if(s.x<0)s.x=W;
-    g.globalAlpha=0.25+s.z*0.4; g.fillStyle="#9fb4ff";
-    g.beginPath(); g.arc(s.x,s.y,s.r,0,7); g.fill();
+    s.x-=(0.05+s.z*0.10); if(s.x<0)s.x=W;
+    const px=s.x+land.ox*s.z*0.4, py=s.y+land.oy*s.z*0.4;
+    g.globalAlpha=0.18+s.z*0.42; g.fillStyle="#9fb4ff";
+    g.beginPath(); g.arc(((px%W)+W)%W, ((py%H)+H)%H, s.r,0,7); g.fill();
   });
-  g.restore();
+  g.globalAlpha=1;
+
   const pts=(land.data&&land.data.points)||[];
-  const pad=46, iw=W-pad*2, ih=H-pad*2;
-  const pos=p=>({X:pad+p.x*iw, Y:pad+p.y*ih});
-  // soft cluster halos first (heat = how related to the rest)
+  const links=(land.data&&land.data.links)||[];
+  // world→screen with pan+zoom; memory space is [0,1] padded into the canvas
+  const pad=52, iw=W-pad*2, ih=H-pad*2;
+  const pos=p=>({X:(pad+p.x*iw)*land.zoom+land.ox, Y:(pad+p.y*ih)*land.zoom+land.oy});
+
+  // 2. nebula — soft coloured clouds where memory clusters sit (the "terrain")
+  g.globalCompositeOperation="lighter";
   pts.forEach(p=>{
-    const {X,Y}=pos(p), R=14+Math.min(28,p.heat*22);
+    const {X,Y}=pos(p), R=(18+Math.min(34,p.heat*24))*land.zoom;
     const grad=g.createRadialGradient(X,Y,0,X,Y,R);
-    grad.addColorStop(0,p.color+"55"); grad.addColorStop(1,p.color+"00");
+    grad.addColorStop(0,p.color+"40"); grad.addColorStop(1,p.color+"00");
     g.fillStyle=grad; g.beginPath(); g.arc(X,Y,R,0,7); g.fill();
   });
-  // find hover (nearest point within 16px)
-  land.hover=-1; let best=16;
+  g.globalCompositeOperation="source-over";
+
+  // 3. filaments — how thoughts connect (related memories), brighter = stronger
+  links.forEach(l=>{
+    const a=pts[l.a], b=pts[l.b]; if(!a||!b) return;
+    const A=pos(a), B=pos(b);
+    const flow=0.5+0.5*Math.sin(land.t*0.03 + l.a + l.b); // gentle pulse along ties
+    g.strokeStyle="rgba(150,170,255,"+(0.06+l.w*0.28*flow)+")";
+    g.lineWidth=Math.max(0.5,l.w*2*land.zoom);
+    g.beginPath(); g.moveTo(A.X,A.Y); g.lineTo(B.X,B.Y); g.stroke();
+  });
+
+  // 4. hover pick (nearest star within a zoom-aware radius)
+  land.hover=-1; let best=18;
   pts.forEach((p,i)=>{ const {X,Y}=pos(p);
     const d=Math.hypot(X-land.mx,Y-land.my); if(d<best){best=d;land.hover=i;} });
-  // stars
+
+  // 5. stars — coloured by kind, sized by heat, gentle twinkle, glow on hover
   pts.forEach((p,i)=>{
     const {X,Y}=pos(p);
-    const tw=0.75+0.25*Math.sin(land.t*0.05+i);   // gentle twinkle
-    const r=(2.5+p.heat*3)*(land.hover===i?1.6:1);
-    g.globalAlpha=1; g.fillStyle=p.color; g.shadowColor=p.color;
-    g.shadowBlur=(land.hover===i?16:8)*tw;
+    const tw=0.75+0.25*Math.sin(land.t*0.05+i);
+    const r=(2.4+p.heat*3)*(land.hover===i?1.7:1)*Math.sqrt(land.zoom);
+    g.fillStyle=p.color; g.shadowColor=p.color;
+    g.shadowBlur=(land.hover===i?18:9)*tw;
     g.beginPath(); g.arc(X,Y,r,0,7); g.fill(); g.shadowBlur=0;
+    // bright core
+    g.fillStyle="rgba(255,255,255,"+(0.5+0.3*tw)+")";
+    g.beginPath(); g.arc(X,Y,Math.max(0.6,r*0.4),0,7); g.fill();
   });
-  // hover label
+
+  // 6. hover label + its immediate connections lit
   if(land.hover>=0){
     const p=pts[land.hover], {X,Y}=pos(p);
+    links.forEach(l=>{ if(l.a===land.hover||l.b===land.hover){
+      const a=pos(pts[l.a]), b=pos(pts[l.b]);
+      g.strokeStyle="rgba(200,215,255,.5)"; g.lineWidth=1.2*land.zoom;
+      g.beginPath(); g.moveTo(a.X,a.Y); g.lineTo(b.X,b.Y); g.stroke(); }});
     const txt=p.label+(p.ts?"  ·  "+p.ts:"");
     g.font="12px -apple-system,sans-serif";
-    const w=g.measureText(txt).width+14;
-    let lx=X+10, ly=Y-10; if(lx+w>W)lx=X-w-10;
-    g.fillStyle="rgba(10,12,20,.9)"; g.fillRect(lx,ly-16,w,22);
-    g.fillStyle=p.color; g.fillText(txt,lx+7,ly);
+    const w=g.measureText(txt).width+16;
+    let lx=X+12, ly=Y-12; if(lx+w>W)lx=X-w-12; if(ly<18)ly=Y+26;
+    g.fillStyle="rgba(8,10,18,.92)"; g.fillRect(lx,ly-16,w,23);
+    g.strokeStyle=p.color; g.lineWidth=1; g.strokeRect(lx,ly-16,w,23);
+    g.fillStyle=p.color; g.fillText(txt,lx+8,ly);
   }
+
+  // 7. hint + empty state
   if(!pts.length){
     g.fillStyle="#6a6a6a"; g.font="14px -apple-system,sans-serif"; g.textAlign="center";
     g.fillText("No memories yet — talk with your twin to grow its universe.",W/2,H/2);
     g.textAlign="left";
+  } else {
+    g.fillStyle="rgba(174,180,192,.5)"; g.font="11px -apple-system,sans-serif";
+    g.fillText("scroll to zoom · drag to pan · double-click to reset · hover a star",12,H-12);
   }
   land.raf=requestAnimationFrame(loopLand);
 }
