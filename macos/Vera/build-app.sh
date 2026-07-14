@@ -62,6 +62,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <string>Anita transcribes your speech on-device to understand you.</string>
   <key>NSCameraUsageDescription</key>
   <string>Only when you turn on "See me": she reads face cues on-device - present, calm vs animated, a nod, a smile, a knitted brow. No video is stored or sent anywhere.</string>
+  <key>NSPhotoLibraryUsageDescription</key>
+  <string>Only when you turn on "Read my Photos": she reads album names and dates - metadata only, never the photos themselves - to learn life events like birthdays and anniversaries. Nothing is uploaded or copied.</string>
 </dict>
 </plist>
 PLIST

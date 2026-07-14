@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var privacyItem: NSMenuItem?
     private var learnItem: NSMenuItem?
+    private var photosItem: NSMenuItem?  // the Read-my-Photos switch (opt-in)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // background app, NO Dock icon
@@ -38,6 +39,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.start()                            // ready + greets independently
         model.refreshActivity()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.syncMenuChecks() }
+        photosItem?.state = UserDefaults.standard.bool(forKey: "photosOn") ? .on : .off
+        if UserDefaults.standard.bool(forKey: "photosOn") {
+            // still ON from last time → refresh what she knows (new albums since),
+            // once the local server has had time to come up
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) {
+                PhotosReader.scanAndSend { note in NSLog("photos: \(note)") }
+            }
+        }
     }
 
     /// A menu-bar status icon (top-right) so you know Anita is running, with
@@ -75,6 +84,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         brain.target = self; menu.addItem(brain)
         let eye = NSMenuItem(title: "Let her see me (on/off)", action: #selector(menuEye), keyEquivalent: "")
         eye.target = self; menu.addItem(eye)
+        photosItem = NSMenuItem(title: "Let her read my Photos (on/off)",
+                                action: #selector(menuPhotos), keyEquivalent: "")
+        photosItem?.target = self; menu.addItem(photosItem!)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit \(model.assistantName)", action: #selector(menuQuit), keyEquivalent: "q")
         quit.target = self; menu.addItem(quit)
@@ -88,7 +100,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func menuVoice() { showVoiceLearn() }
     @objc private func menuBrain() { showBrain() }
     @objc private func menuEye() { toggleEye() }
+    @objc private func menuPhotos() { togglePhotos() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
+
+    /// The Read-my-Photos switch. Strictly opt-in: nothing touches the photo
+    /// library until the user flips this ON (macOS asks its own permission on
+    /// top). ON scans album titles + dates — metadata only, never pixels —
+    /// and rescans on each launch while it stays on. OFF stops all reading.
+    private func togglePhotos() {
+        let on = !UserDefaults.standard.bool(forKey: "photosOn")
+        UserDefaults.standard.set(on, forKey: "photosOn")
+        photosItem?.state = on ? .on : .off
+        guard on else { return }
+        PhotosReader.scanAndSend { note in
+            NSLog("photos: \(note)")
+        }
+    }
 
     /// The See-me switch. ON opens a small floating preview window (her eye is
     /// never on without a visible preview); OFF — or just closing the window —
