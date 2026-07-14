@@ -4,11 +4,13 @@ Visualize Engine — *see how the twin thinks*, from real on-device data.
 Most assistants are a black box. This serves one local page (127.0.0.1, never
 exposed off the machine): **the Mind** — the twin's brain as a living particle
 nebula with its real knowledge constellated around it. Design references, per
-the owner: a central fluid particle "mind" (FluidX3D-style motion), labeled
-memory nodes radiating constellation-style with a terminal HUD (the Kronos
-brain look), and bbycroft.net/llm's idea that you should be able to WATCH a
-prompt flow through the architecture. Dependency-free 2D canvas — no build
-step, works offline.
+the owner: a central fluid particle "mind" whose motion is a real D2Q9
+lattice-Boltzmann simulation — FluidX3D's method (github.com/ProjectPhysX/
+FluidX3D), ported by hand to plain JS, with its iron colorscale for velocity —
+labeled memory nodes radiating constellation-style with a terminal HUD (the
+Kronos brain look), and bbycroft.net/llm's idea that you should be able to
+WATCH a prompt flow through the architecture. Dependency-free 2D canvas — no
+build step, works offline.
 
   - perceives — the central nebula is her memory mass: thousands of particles
     tinted by the real mix of memory types, swirling with differential rotation
@@ -264,7 +266,8 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 "use strict";
 /* The Mind — her brain as a living particle nebula + the real knowledge
    constellated around it, with visible thought-flow. Design refs from the
-   owner: a central fluid particle mind (FluidX3D-style motion), labeled
+   owner: a central fluid particle mind moved by a real lattice-Boltzmann
+   simulation (FluidX3D's method, ported — see "the churn" below), labeled
    memory nodes in a terminal HUD (the Kronos brain look), and bbycroft's
    LLM viz idea — you should WATCH a prompt flow through the architecture.
 
@@ -324,7 +327,7 @@ let cloud = [];
 // neutral sparkle palette — white, warm gold, ice blue, soft magenta, violet
 const NEUTRAL = [[236,240,250],[255,222,170],[170,200,255],[240,150,220],[190,150,255]];
 function buildCloud(){
-  const count = Math.min(5200, 1200 + (STATE.memory_count || 0) * 260 + ((LAND.points||[]).length ? 1800 : 0));
+  const count = Math.min(6500, 1400 + (STATE.memory_count || 0) * 260 + ((LAND.points||[]).length ? 2200 : 0));
   // colour pool weighted by the real type mix (plus neutral sparkle)
   const pool = [];
   const types = LAND.types || {};
@@ -347,16 +350,118 @@ function buildCloud(){
     c = [ c[0]*(1-wm) + 255*wm, c[1]*(1-wm) + 212*wm, c[2]*(1-wm) + 158*wm ];
     c = [ (c[0]*(1-cm) + 140*cm)|0, (c[1]*(1-cm) + 180*cm)|0, (c[2]*(1-cm) + 255*cm)|0 ];
     const tier = rnd(i*11+7);
+    const a0 = rnd(i*11+4) * 6.2832;
     return {
-      r, a: rnd(i*11+4) * 6.2832,
+      u: Math.cos(a0) * r, v: Math.sin(a0) * r,        // in-plane position (disc units)
+      hr: r,                                           // home radius — the shape holds
       y: (rnd(i*11+5) - 0.5) * (0.72 + r*0.5),         // a full, rounded mass
-      w: (0.16 / (0.25 + r)),                          // differential rotation
       c, s: tier < 0.72 ? 1.2 : (tier < 0.95 ? 2 : 3),
       spark: tier >= 0.985,                            // a few luminous grains
       tw: rnd(i*11+8) * 6.2832,
       al: 0.40 + rnd(i*11+9) * 0.55
     };
   });
+}
+/* ---------- the churn — a real lattice-Boltzmann fluid (FluidX3D, ported) ----- */
+/* The owner's motion reference is FluidX3D (github.com/ProjectPhysX/FluidX3D),
+   a lattice-Boltzmann solver. So the mass is driven by that repo's actual
+   method, scaled to a mind: a D2Q9 lattice (same velocity set and weights —
+   4/9, 1/9, 1/36 — BGK collide + stream, half-way bounce-back walls,
+   velocity-shift forcing) stepped at a fixed 60 Hz in the disc plane. The
+   grains advect through the REAL simulated field and take FluidX3D's own iron
+   colorscale as they speed up. Slow stir-rods orbit inside the disc (its
+   moving-boundary demos) and the lattice does what fluids genuinely do —
+   sheds, folds, and carries vortices. Thinking stirs harder. */
+const FN = 96, FQ = 9;                        // grid side + D2Q9
+const F_EXT = 1.35;                           // grid spans [-F_EXT, F_EXT]² disc units
+const F_TAU = 0.56;                           // BGK relaxation → viscosity
+const F_CX = [0,1,-1,0,0,1,-1,1,-1], F_CY = [0,0,0,1,-1,1,-1,-1,1];
+const F_W  = [4/9,1/9,1/9,1/9,1/9,1/36,1/36,1/36,1/36];
+const F_OPP = [0,2,1,4,3,6,5,8,7];
+const CELL = (2*F_EXT)/FN, G2C = 1/CELL, LATV = CELL*60;  // lattice u ↔ disc-units/s
+let ffA = new Float32Array(FN*FN*FQ), ffB = new Float32Array(FN*FN*FQ);
+const fux = new Float32Array(FN*FN), fuy = new Float32Array(FN*FN),
+      fcw = new Float32Array(FN*FN);          // velocity + curl (vorticity)
+const fbx = new Float32Array(FN*FN), fby = new Float32Array(FN*FN);  // base swirl
+let rods = [], fAcc = 0;
+function buildFluid(){
+  rods = Array.from({length: 4}, (_, i) => ({
+    r: 0.24 + rnd(i*29) * 0.5, a: rnd(i*29+1) * 6.2832,
+    w: (rnd(i*29+2) < 0.5 ? -1 : 1) * (0.25 + rnd(i*29+3) * 0.3),
+    g: 0.020 + rnd(i*29+4) * 0.016 }));
+  for (let y = 0; y < FN; y++) for (let x = 0; x < FN; x++){
+    const n = y*FN + x;
+    const px = (x + 0.5)*CELL - F_EXT, py = (y + 0.5)*CELL - F_EXT;
+    const r = Math.hypot(px, py) || 0.001;
+    const w0 = (0.16 / (0.25 + r)) / LATV;    // the same differential rotation, lattice units
+    const fade = Math.max(0, 1 - Math.pow(r/F_EXT, 4));  // still near the walls
+    fbx[n] = -py * w0 * fade; fby[n] = px * w0 * fade;
+    const ux = fbx[n], uy = fby[n], uu = 1.5*(ux*ux + uy*uy);
+    for (let q = 0; q < FQ; q++){
+      const cu = 3*(F_CX[q]*ux + F_CY[q]*uy);
+      ffA[n*FQ + q] = F_W[q] * (1 + cu + 0.5*cu*cu - uu);
+    }
+  }
+}
+buildFluid();
+function stepFluid(heat){
+  rods.forEach(rd => { rd.a += rd.w * (1 + heat) / 60; });
+  const R = rods.map(rd => ({ x: Math.cos(rd.a)*rd.r, y: Math.sin(rd.a)*rd.r,
+                              g: rd.g * (1 + heat*2.2) }));
+  const K = 0.06, iT = 1/F_TAU, bs = 1 + heat*0.8;
+  for (let y = 0; y < FN; y++) for (let x = 0; x < FN; x++){
+    const n = y*FN + x, b = n*FQ;
+    let rho = 0, ux = 0, uy = 0;
+    for (let q = 0; q < FQ; q++){ const v = ffA[b+q]; rho += v; ux += v*F_CX[q]; uy += v*F_CY[q]; }
+    ux /= rho; uy /= rho;
+    // velocity-shift forcing: relax toward the base swirl + the rods' stir
+    const px = (x + 0.5)*CELL - F_EXT, py = (y + 0.5)*CELL - F_EXT;
+    let tx = fbx[n]*bs, ty = fby[n]*bs;
+    for (let j = 0; j < R.length; j++){
+      const dx = px - R[j].x, dy = py - R[j].y;
+      const k = R[j].g / ((dx*dx + dy*dy + 0.012) * LATV);
+      tx -= dy*k; ty += dx*k;
+    }
+    ux += (tx - ux)*K; uy += (ty - uy)*K;
+    const sp = Math.hypot(ux, uy);            // Mach guard — LBM wants u ≪ c
+    if (sp > 0.16){ ux *= 0.16/sp; uy *= 0.16/sp; }
+    fux[n] = ux; fuy[n] = uy;
+    // BGK collide + push-stream, bounce-back at the walls
+    const uu = 1.5*(ux*ux + uy*uy);
+    for (let q = 0; q < FQ; q++){
+      const cu = 3*(F_CX[q]*ux + F_CY[q]*uy);
+      const feq = F_W[q]*rho*(1 + cu + 0.5*cu*cu - uu);
+      const out = ffA[b+q] + (feq - ffA[b+q])*iT;
+      const nx = x + F_CX[q], ny = y + F_CY[q];
+      if (nx < 0 || nx >= FN || ny < 0 || ny >= FN) ffB[b + F_OPP[q]] = out;
+      else ffB[(ny*FN + nx)*FQ + q] = out;
+    }
+  }
+  const sw = ffA; ffA = ffB; ffB = sw;
+  // vorticity — FluidX3D paints the fluid's curl; we tint grains with it
+  for (let y = 1; y < FN-1; y++) for (let x = 1; x < FN-1; x++){
+    const n = y*FN + x;
+    fcw[n] = 0.5*((fuy[n+1] - fuy[n-1]) - (fux[n+FN] - fux[n-FN]));
+  }
+}
+function fieldAt(u, v){   // bilinear sample → [disc-units/s x, y, |curl|]
+  const gx = Math.max(0, Math.min(FN - 1.001, (u + F_EXT)*G2C - 0.5));
+  const gy = Math.max(0, Math.min(FN - 1.001, (v + F_EXT)*G2C - 0.5));
+  const x0 = gx|0, y0 = gy|0, fx = gx - x0, fy = gy - y0;
+  const n00 = y0*FN + x0, n10 = n00 + 1, n01 = n00 + FN, n11 = n01 + 1;
+  const ux = (fux[n00]*(1-fx) + fux[n10]*fx)*(1-fy) + (fux[n01]*(1-fx) + fux[n11]*fx)*fy;
+  const uy = (fuy[n00]*(1-fx) + fuy[n10]*fx)*(1-fy) + (fuy[n01]*(1-fx) + fuy[n11]*fx)*fy;
+  return [ux*LATV, uy*LATV, Math.abs(fcw[n00])];
+}
+/* FluidX3D's own colorscale_iron (kernel.cpp), ported: 0 → black … 1 → white heat */
+function ironColor(x){
+  x = Math.max(0, Math.min(4, 4 * (1 - x)));
+  let r = 1, g = 0, b = 0;
+  if (x < 0.66666667){ g = 1; b = 1 - x*1.5; }
+  else if (x < 2){ g = 1.5 - x*0.75; }
+  else if (x < 3){ r = 2 - x*0.5; b = x - 2; }
+  else { r = 2 - x*0.5; b = 4 - x; }
+  return [r*255, g*255, b*255];
 }
 function cloudR(){ return R0() * 0.225; }
 function drawCloud(now, dt){
@@ -368,20 +473,47 @@ function drawCloud(now, dt){
   const beatT = (now % 8000) / 8000;
   const waveR = 0.13 + beatT * 1.4;
   const beatGain = Math.sin(beatT * Math.PI) * 0.5;
+  // the lattice runs at a fixed 60 Hz whatever the display refreshes at
+  fAcc = Math.min(fAcc + dt, 3/60);
+  while (fAcc >= 1/60){ stepFluid(heat); fAcc -= 1/60; }
   for (let i = 0; i < cloud.length; i++){
     const p = cloud[i];
-    p.a += p.w * dt * (1 + heat * 1.6);
+    const r = Math.hypot(p.u, p.v) || 0.001;
+    // ride the simulated fluid, plus a weak spring back to the home radius so
+    // the mass churns without dissolving
+    const f = fieldAt(p.u, p.v);
+    const err = (p.hr - r) / r;
+    const du = f[0] + p.u * err * 0.5;
+    const dv = f[1] + p.v * err * 0.5;
+    p.u += du * dt; p.v += dv * dt;
     const wob = 1 + 0.05 * Math.sin(now * 0.0006 + p.tw);
-    const w = project(Math.cos(p.a) * p.r * Rc * wob, p.y * Rc * 0.55,
-                      Math.sin(p.a) * p.r * Rc * wob);
+    const w = project(p.u * Rc * wob, p.y * Rc * 0.55, p.v * Rc * wob);
     const P = S(w.x, w.y);
+    // the streak: project a step along the velocity too — grains in fast flow
+    // draw as short threads of light (the FluidX3D signature), slow ones as points
+    const w2 = project((p.u + du * 0.22) * Rc * wob, p.y * Rc * 0.55,
+                       (p.v + dv * 0.22) * Rc * wob);
+    const P2 = S(w2.x, w2.y);
+    const run = Math.hypot(P2.X - P.X, P2.Y - P.Y);
     const front = w.z >= 0;
     const twk = 0.75 + 0.25 * Math.sin(now * 0.0016 + p.tw);
-    const pulse = Math.max(0, 1 - Math.abs(p.r - waveR) * 5) * beatGain;
-    cctx.globalAlpha = Math.min(1, (p.al * twk + pulse * 0.55)) * (front ? 1 : 0.45);
-    cctx.fillStyle = "rgb(" + p.c[0] + "," + p.c[1] + "," + p.c[2] + ")";
+    const pulse = Math.max(0, 1 - Math.abs(r - waveR) * 5) * beatGain;
+    // velocity + curl colouring, exactly FluidX3D's habit: speed rides the iron
+    // scale toward white heat; strong vorticity shimmers even when slow
+    const s = Math.min(1, Math.hypot(f[0], f[1]) * 3.4 + f[2] * 6);
+    cctx.globalAlpha = Math.min(1, (p.al * twk + pulse * 0.55 + s * 0.3)) * (front ? 1 : 0.45);
+    const IC = ironColor(0.35 + s * 0.6), wI = s * 0.62;
+    cctx.fillStyle = "rgb(" + ((p.c[0]*(1-wI) + IC[0]*wI)|0) + ","
+                            + ((p.c[1]*(1-wI) + IC[1]*wI)|0) + ","
+                            + ((p.c[2]*(1-wI) + IC[2]*wI)|0) + ")";
     const sz = p.s * Math.max(0.7, Math.sqrt(cam.zoom));
-    cctx.fillRect(P.X - sz/2, P.Y - sz/2, sz, sz);
+    if (run > 1.6){
+      cctx.strokeStyle = cctx.fillStyle;
+      cctx.lineWidth = sz * 0.8;
+      cctx.beginPath(); cctx.moveTo(P.X, P.Y); cctx.lineTo(P2.X, P2.Y); cctx.stroke();
+    } else {
+      cctx.fillRect(P.X - sz/2, P.Y - sz/2, sz, sz);
+    }
     if (p.spark){                                     // luminous grains get a halo
       cctx.globalAlpha = 0.18 * twk;
       cctx.beginPath(); cctx.arc(P.X, P.Y, sz * 2.6, 0, 7); cctx.fill();
@@ -651,8 +783,10 @@ function resize(){
   W = window.innerWidth; H = window.innerHeight;
   cv.width = W * DPR; cv.height = H * DPR;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  CLOUD_CV.width = W; CLOUD_CV.height = H;                       // 1× is enough —
-  BLOOM_CV.width = Math.ceil(W/5); BLOOM_CV.height = Math.ceil(H/5); // bloom hides it
+  // grains render at native resolution — on retina every 1px thread resolves
+  CLOUD_CV.width = W * DPR; CLOUD_CV.height = H * DPR;
+  cctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  BLOOM_CV.width = Math.ceil(W/5); BLOOM_CV.height = Math.ceil(H/5);
   buildNodes(); buildChips();
 }
 window.addEventListener("resize", resize);
@@ -674,9 +808,10 @@ const bgStars = Array.from({length: 260}, (_, i) => ({
 /* ---------- label pill (canvas) ------------------------------------------------- */
 function pill(P, text, color, hot, side, edged){
   ctx.font = "10px ui-monospace, Menlo, monospace";
-  const w = ctx.measureText(text).width + (edged ? 16 : 12), h = 16;
-  const x = side < 0 ? P.X - 10 - w : P.X + 10;
-  const y = P.Y - h/2;
+  // snapped to whole pixels: a 1px border on a fractional coordinate blurs
+  const w = Math.ceil(ctx.measureText(text).width + (edged ? 16 : 12)), h = 16;
+  const x = Math.round(side < 0 ? P.X - 10 - w : P.X + 10);
+  const y = Math.round(P.Y - h/2);
   ctx.fillStyle = hot ? "rgba(14,20,34,0.95)" : "rgba(7,9,16,0.82)";
   ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = hot ? color : "rgba(170,190,230,0.22)";
@@ -792,6 +927,9 @@ function frame(now){
     ctx.globalAlpha = depth;
     ctx.fillStyle = n.color; ctx.shadowColor = n.color; ctx.shadowBlur = 6 + hot * 14;
     ctx.beginPath(); ctx.arc(P.X, P.Y, r, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    // a crisp white heart in every dot — reads as a point of light, not a blob
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.beginPath(); ctx.arc(P.X, P.Y, Math.max(0.6, r * 0.34), 0, 7); ctx.fill();
     // the label pill (screen-side aware so text points away from the centre);
     // unnamed nodes stay quiet dots until hovered
     n.hit = (n.named || near || hot > 0.1)
@@ -808,6 +946,8 @@ function frame(now){
     const r = 3.4 + hot * 3;
     ctx.fillStyle = c.color; ctx.shadowColor = c.color; ctx.shadowBlur = 8 + hot * 16;
     ctx.beginPath(); ctx.arc(P.X, P.Y, r, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.beginPath(); ctx.arc(P.X, P.Y, r * 0.34, 0, 7); ctx.fill();
     c.hit = pill(P, c.label.toUpperCase(), c.color, hot > 0.1, c.x < 0 ? -1 : 1, true);
     if (inRect(c.hit, mouse.x, mouse.y) || Math.hypot(P.X-mouse.x, P.Y-mouse.y) < 12) hoverChip = { c, P };
   });
