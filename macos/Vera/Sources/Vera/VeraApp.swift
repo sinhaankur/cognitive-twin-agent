@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import ServiceManagement
 
@@ -26,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var privacyItem: NSMenuItem?
     private var learnItem: NSMenuItem?
+    private var hotKey: HotKey?          // summon her from anywhere (⌥Space)
     private var eyeItem: NSMenuItem?     // the See-me switch — checkmark shows state
     private var earItem: NSMenuItem?     // the Hear-the-room switch (opt-in)
     private var photosItem: NSMenuItem?  // the Read-my-Photos switch (opt-in)
@@ -88,9 +90,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                               action: #selector(menuShowOrb), keyEquivalent: "")
         show.image = symbol("circle.hexagongrid.fill")
         show.target = self; menu.addItem(show)
-        let chat = NSMenuItem(title: "Chat…", action: #selector(menuChat), keyEquivalent: "")
+        let chat = NSMenuItem(title: "Chat…", action: #selector(menuChat), keyEquivalent: " ")
+        chat.keyEquivalentModifierMask = [.option]     // shows ⌥Space in the menu
         chat.image = symbol("bubble.left.and.bubble.right")
         chat.target = self; menu.addItem(chat)
+        // the hotkey layer, system-wide: ⌥Space summons her from any app; if
+        // another assistant already owns it (Raycast, ChatGPT…), fall back to
+        // ⌃⌥Space and let the menu tell the truth about which one is live
+        hotKey = HotKey(keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(optionKey)) { [weak self] in
+            self?.toggleChat()
+        }
+        if hotKey == nil {
+            hotKey = HotKey(keyCode: UInt32(kVK_Space),
+                            carbonModifiers: UInt32(optionKey | controlKey)) { [weak self] in
+                self?.toggleChat()
+            }
+            if hotKey != nil { chat.keyEquivalentModifierMask = [.option, .control] }
+            else { chat.keyEquivalent = "" }
+        }
         menu.addItem(.separator())
         // Privacy controls — front and centre.
         privacyItem = NSMenuItem(title: "Private mode (pause learning)",
