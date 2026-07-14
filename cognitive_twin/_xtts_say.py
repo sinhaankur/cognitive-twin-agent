@@ -63,7 +63,15 @@ def _load():
     return TTS("tts_models/multilingual/multi-dataset/xtts_v2")
 
 
+def _refs(speaker_wav):
+    """One path, or several comma-joined: XTTS averages multiple references
+    into a steadier speaker embedding — clean short clips add up."""
+    parts = [p for p in str(speaker_wav).split(",") if p.strip()]
+    return parts if len(parts) > 1 else (parts[0] if parts else speaker_wav)
+
+
 def _render(tts, text, speaker_wav, out_wav, lang=None):
+    speaker_wav = _refs(speaker_wav)
     language = lang or _detect_language(text)
     tts.tts_to_file(text=text, speaker_wav=speaker_wav, file_path=out_wav,
                     language=language, **GEN_KWARGS)

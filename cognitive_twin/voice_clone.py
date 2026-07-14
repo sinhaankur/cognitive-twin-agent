@@ -105,6 +105,43 @@ def reference_path() -> Path | None:
     return None
 
 
+def add_reference(path: str) -> dict[str, Any]:
+    """ADD a clip alongside the primary sample. XTTS averages every reference
+    into one steadier voice — two or three clean short clips beat one."""
+    src = Path(path).expanduser()
+    if not src.is_file():
+        return {"ok": False, "error": f"file not found: {path}"}
+    if reference_path() is None:
+        return set_reference(path)          # first clip becomes the primary
+    refs = _voice_dir() / "refs"
+    refs.mkdir(exist_ok=True)
+    n = 1
+    while (refs / f"ref-{n}.wav").exists():
+        n += 1
+    dst = refs / f"ref-{n}.wav"
+    try:
+        if shutil.which("ffmpeg"):
+            subprocess.run(["ffmpeg", "-y", "-i", str(src), "-ar", "24000",
+                            "-ac", "1", str(dst)], capture_output=True, timeout=120)
+        else:
+            shutil.copy2(src, dst)
+        os.chmod(dst, stat.S_IRUSR | stat.S_IWUSR)
+    except (OSError, subprocess.SubprocessError) as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "references": len(reference_paths())}
+
+
+def reference_paths() -> list[Path]:
+    """Every reference: the primary sample plus any added clips."""
+    out = []
+    if (p := reference_path()) is not None:
+        out.append(p)
+    refs = _voice_dir() / "refs"
+    if refs.is_dir():
+        out.extend(sorted(refs.glob("ref-*.wav")))
+    return out
+
+
 def has_reference() -> bool:
     return reference_path() is not None
 
@@ -166,12 +203,14 @@ def synthesize(text: str) -> Path | None:
     py = _engine_python()
     if py is None or ref is None:
         return None
+    # every clip counts: XTTS averages all references into a steadier voice
+    ref_arg = ",".join(str(p) for p in reference_paths()) or str(ref)
 
     if engine == "xtts":
         # Use the tuned synthesis worker (steadier, warmer clone). Ship the script
         # next to this module so the venv python can run it.
         worker = Path(__file__).resolve().parent / "_xtts_say.py"
-        cmd = [py, str(worker), text, str(ref), str(out)]
+        cmd = [py, str(worker), text, ref_arg, str(out)]
     else:  # f5
         code = (
             "import sys;from f5_tts.api import F5TTS;"
@@ -209,7 +248,8 @@ def _ensure_worker():
     try:
         env = dict(os.environ, COQUI_TOS_AGREED="1")
         _worker = subprocess.Popen(
-            [py, str(worker_script), "--serve", str(ref)],
+            [py, str(worker_script), "--serve",
+             ",".join(str(p) for p in reference_paths()) or str(ref)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, text=True, env=env)
         # wait for the "ready" line (model loaded)
@@ -329,6 +369,9 @@ if __name__ == "__main__":
     if len(sys.argv) > 2 and sys.argv[1] == "set":
         print(json.dumps(set_reference(sys.argv[2],
                                        person=sys.argv[3] if len(sys.argv) > 3 else ""), indent=2))
+    elif len(sys.argv) > 2 and sys.argv[1] == "add":
+        # first clip becomes the primary; every further clip steadies the voice
+        print(json.dumps(add_reference(sys.argv[2]), indent=2))
     elif len(sys.argv) > 2 and sys.argv[1] == "say":
         print("played" if speak(sys.argv[2]) else "not ready (no engine/sample) — fall back")
     elif len(sys.argv) > 1 and sys.argv[1] == "clear":

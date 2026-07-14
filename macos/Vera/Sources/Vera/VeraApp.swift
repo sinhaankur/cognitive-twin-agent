@@ -62,6 +62,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.model.shutdownSpawnedServer() }
         }
+        // first run: one card — name her, see the brain come up, learn the
+        // three things that matter. never shown again after Start.
+        if !UserDefaults.standard.bool(forKey: "didOnboard") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { self.showOnboarding() }
+        }
         if UserDefaults.standard.bool(forKey: "photosOn") {
             // still ON from last time → refresh what she knows (new albums since),
             // once the local server has had time to come up
@@ -226,6 +231,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         eyeWindow = w
         model.eyeOn = true
         eyeItem?.state = .on
+    }
+
+    private var onboardWindow: NSWindow?
+    private func showOnboarding() {
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 430, height: 330),
+                         styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        w.title = "Vera"
+        w.isReleasedWhenClosed = false
+        w.contentView = NSHostingView(rootView: OnboardingView(model: model) { [weak self] in
+            UserDefaults.standard.set(true, forKey: "didOnboard")
+            self?.onboardWindow?.close()
+            self?.onboardWindow = nil
+        })
+        w.center(); w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        onboardWindow = w
     }
 
     /// Belt-and-braces forget: the page's pagehide beacon usually fires first,
