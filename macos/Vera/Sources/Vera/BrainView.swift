@@ -16,7 +16,8 @@ struct BrainView: View {
     @State private var serverUp = false
     @State private var checking = true
 
-    private let mindURL = URL(string: "http://127.0.0.1:7879/")!
+    // the app always opens the HUMAN view; "details" stays one click away
+    private let mindURL = URL(string: "http://127.0.0.1:7879/?mode=simple")!
 
     var body: some View {
         ZStack {
@@ -73,11 +74,15 @@ private struct MindWebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let web = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
         web.setValue(false, forKey: "drawsBackground")   // let the page's space show
+        // a magnified webview crops the canvas and throws the heart off-centre
+        // ("unable to zoom and center it") — the page owns zoom, not the view
+        web.allowsMagnification = false
         web.load(URLRequest(url: url))
         return web
     }
 
     func updateNSView(_ web: WKWebView, context: Context) {
+        if web.magnification != 1 { web.magnification = 1 }
         if web.url == nil { web.load(URLRequest(url: url)) }
     }
 }

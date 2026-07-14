@@ -304,6 +304,9 @@ let ripples = [];
 
 /* ---------- view mode: simple (the graph anyone reads) vs details ------------ */
 let MODE = localStorage.getItem("mindMode") || "simple";
+// ?mode= wins (the app pins its Brain window to the human view)
+{ const m = new URLSearchParams(location.search).get("mode");
+  if (m === "simple" || m === "expert"){ MODE = m; localStorage.setItem("mindMode", m); } }
 document.getElementById("mode").textContent = MODE === "simple" ? "details" : "simple view";
 document.getElementById("mode").onclick = () => {
   MODE = MODE === "simple" ? "expert" : "simple";
@@ -1104,6 +1107,9 @@ function inRect(r, mx, my){ return r && mx >= r.x && mx <= r.x + r.w && my >= r.
 let last = performance.now(), hoverHold = false;
 function frame(now){
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  // self-healing frame: if the viewport changed and the resize event was
+  // missed (webview quirks), notice and re-measure — the heart stays centred
+  if (window.innerWidth !== W || window.innerHeight !== H) resize();
   // she is never frozen — but in the simple view the CAMERA is: a graph that
   // drifts forever reads as "why is it circling", not as alive. life comes
   // from the heart and the threads, not from spinning the room.
