@@ -286,6 +286,14 @@ class _Handler(BaseHTTPRequestHandler):
             from .. import presence
             presence.stop()
             self._json(200, {"ok": True})
+        elif self.path == "/api/photos/events":
+            # life events derived from Photos METADATA (album titles + dates,
+            # never pixels) — sent only while the opt-in "Read my Photos"
+            # switch is on. Stored as ordinary memories, dedup-safe.
+            from .. import photos
+            data = self._read_json()
+            result = photos.learn(data.get("events") or [])
+            self._json(200, {"ok": True, **result})
         elif self.path == "/api/reflect":
             # Anita thinks about your projects (while you're away) and saves a
             # thought. Best-effort; needs project seeds in memory + a reachable model.
