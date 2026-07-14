@@ -115,9 +115,11 @@ class _Handler(BaseHTTPRequestHandler):
                 models = []
             self._json(200, {"models": models})
         elif self.path == "/api/reflections":
-            # thoughts Anita had about your projects while you were away
+            # thoughts Anita had about your projects while you were away —
+            # served ONCE (cleared on delivery): a thought shared twice is a
+            # rerun, and reruns are why the default conversation felt old
             from .. import soul
-            items = soul.pending_reflections(clear=False)
+            items = soul.pending_reflections(clear=True)
             self._json(200, {"items": items, "soul": soul.status()})
         elif self.path == "/api/brain" or self.path.startswith("/api/brain?"):
             # A graph snapshot of how the twin thinks + learns (local state only).
