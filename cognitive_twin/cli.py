@@ -287,6 +287,49 @@ def _viz_command(rest: list[str]) -> int:
     return 0
 
 
+def _vault_command(rest: list[str]) -> int:
+    """`ctwin vault` — her memory's encryption. status | encrypt | export | import.
+    At rest the memory is sealed with a device+account key (macOS Keychain);
+    export writes ONE passphrase-encrypted bundle you can move to another
+    device and `vault import` there."""
+    from pathlib import Path
+    from . import vault
+    sub = rest[0] if rest else "status"
+    if sub == "status":
+        print("  " + vault.status())
+        return 0
+    if sub == "encrypt":
+        from . import memory
+        n = vault.migrate_jsonl(memory._file())
+        print(f"  sealed {n} plaintext line(s)." if n else "  nothing to seal — already encrypted.")
+        return 0
+    if sub == "export" and len(rest) > 1:
+        import getpass as gp
+        p1 = gp.getpass("  passphrase for the bundle: ")
+        if p1 != gp.getpass("  again: "):
+            print("  passphrases don't match."); return 1
+        try:
+            r = vault.export_bundle(Path(rest[1]), p1)
+        except ValueError as e:
+            print(f"  ⚠ {e}"); return 1
+        print(f"  exported {r['files']} file(s) → {r['path']}")
+        print("  move it to the new device and run: ctwin vault import <file>")
+        return 0
+    if sub == "import" and len(rest) > 1:
+        import getpass as gp
+        try:
+            r = vault.import_bundle(Path(rest[1]), gp.getpass("  bundle passphrase: "),
+                                    force="--force" in rest)
+        except FileExistsError as e:
+            print(f"  ⚠ {e} (add --force)"); return 1
+        except ValueError as e:
+            print(f"  ⚠ {e}"); return 1
+        print(f"  imported {r['files']} file(s) → {r['path']} (re-sealed for this device)")
+        return 0
+    print("  usage: ctwin vault [status|encrypt|export <file>|import <file> [--force]]")
+    return 1
+
+
 def _voice_command(rest: list[str]) -> int:
     """`ctwin voice` — launch the Siri-style voice UI. Default: native menubar
     (needs rumps); --web runs the browser version (no extra deps)."""
@@ -648,6 +691,8 @@ def main(argv: list[str] | None = None) -> int:
         return _reflect_command(raw[1:])
     if raw and raw[0] == "viz":
         return _viz_command(raw[1:])
+    if raw and raw[0] == "vault":
+        return _vault_command(raw[1:])
 
     ap = argparse.ArgumentParser(prog="ctwin", description="Local-first personal AI agent.")
     ap.add_argument("prompt", nargs="*", help="one-shot prompt; omit for an interactive REPL")

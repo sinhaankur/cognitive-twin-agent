@@ -6,6 +6,12 @@ struct SettingsView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
+    // export-for-another-device sheet (the memory vault)
+    @State private var exporting = false
+    @State private var exportPass = ""
+    @State private var exportPass2 = ""
+    @State private var exportNote = ""
+
     /// Friendly label for a (possibly provider-tagged) model id.
     static func displayName(_ id: String) -> String {
         if id == AppModel.appleModelID { return id }
@@ -147,13 +153,18 @@ struct SettingsView: View {
                 }
 
                 Section("Privacy") {
-                    LabeledContent("Conversation memory", value: "stored on this Mac only")
+                    LabeledContent("Conversation memory", value: "encrypted on this Mac")
+                    Button {
+                        exporting = true
+                    } label: {
+                        Label("Export for another device…", systemImage: "arrow.down.doc")
+                    }
                     Button(role: .destructive) {
                         model.clearMemory()
                     } label: {
                         Label("Clear local memory", systemImage: "trash")
                     }
-                    Text("Everything stays on-device. Nothing is sent to the cloud.")
+                    Text("Sealed with a key held by this Mac and your account (Keychain) — files copied off this machine read as noise. Export writes one passphrase-encrypted bundle you can import on another device. Nothing is sent to the cloud.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -171,5 +182,50 @@ struct SettingsView: View {
         .padding(22)
         .frame(width: 420, height: 480)
         .onAppear { model.refreshModels() }
+        .sheet(isPresented: $exporting) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Export her memory").font(.headline)
+                Text("One encrypted file, locked by a passphrase you choose. On the new device: ctwin vault import <file> — it re-seals for that device.")
+                    .font(.caption).foregroundStyle(.secondary)
+                SecureField("Passphrase (6+ characters)", text: $exportPass)
+                SecureField("Repeat passphrase", text: $exportPass2)
+                if !exportNote.isEmpty {
+                    Text(exportNote).font(.caption).foregroundStyle(.secondary)
+                }
+                HStack {
+                    Spacer()
+                    Button("Cancel") { exporting = false; exportPass = ""; exportPass2 = "" }
+                    Button("Export…") { runExport() }
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(exportPass.count < 6 || exportPass != exportPass2)
+                }
+            }
+            .padding(18)
+            .frame(width: 360)
+        }
+    }
+
+    /// Ask where to save, then let the local server write the encrypted bundle.
+    private func runExport() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "her-memory.ctwin-vault"
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let dest = panel.url else { return }
+        guard let url = URL(string: "http://127.0.0.1:7878/api/vault/export"),
+              let body = try? JSONSerialization.data(withJSONObject:
+                    ["path": dest.path, "passphrase": exportPass]) else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = body
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            let ok = (try? JSONSerialization.jsonObject(with: data ?? Data()) as? [String: Any])
+                .flatMap { $0?["ok"] as? Bool } ?? false
+            DispatchQueue.main.async {
+                exportNote = ok ? "exported → \(dest.lastPathComponent)"
+                               : "export failed — is the agent running?"
+                exportPass = ""; exportPass2 = ""
+            }
+        }.resume()
     }
 }
