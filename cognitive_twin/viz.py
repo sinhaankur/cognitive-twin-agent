@@ -259,9 +259,18 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <div class="hud" id="legend"></div>
 <div class="hud" id="hint">drag to orbit her mind · scroll to zoom · double-click resets · hover any node</div>
 <div class="hud box" id="axes">ANGLE · what &nbsp;&nbsp;RADIUS · strength &nbsp;&nbsp;HEIGHT · when</div>
+<div class="hud" id="state" style="top:auto;bottom:96px;left:50%;transform:translateX(-50%);
+  font-size:15px;letter-spacing:.04em;color:#dfe4ee;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.8)"></div>
+<div class="hud" id="stages" style="top:50%;left:26px;transform:translateY(-50%);
+  font-size:11px;line-height:2.1;color:rgba(200,210,230,.9);display:none"></div>
 <div class="hud" id="askbar"><input id="q" placeholder="ask her something — watch the thought move…"><button id="go">think</button></div>
 <div class="hud" id="card"></div>
 <div class="hud" id="answer"></div>
+<div class="hud" id="modebtn" style="bottom:16px;right:18px;pointer-events:auto">
+  <button id="mode" style="background:rgba(7,9,16,.7);border:1px solid rgba(170,190,230,.25);
+    color:rgba(200,210,230,.8);padding:6px 12px;font:10px ui-monospace,Menlo,monospace;
+    letter-spacing:.1em;cursor:pointer;text-transform:uppercase">details</button>
+</div>
 <script>
 "use strict";
 /* The Mind — her brain as a living particle nebula + the real knowledge
@@ -292,6 +301,16 @@ let chips = [];                       // the faculties — labeled stations
 let glow = {};                        // id → highlight intensity (decays)
 let streams = [];                     // flowing particles (thought + bursts)
 let ripples = [];
+
+/* ---------- view mode: simple (the graph anyone reads) vs details ------------ */
+let MODE = localStorage.getItem("mindMode") || "simple";
+document.getElementById("mode").textContent = MODE === "simple" ? "details" : "simple view";
+document.getElementById("mode").onclick = () => {
+  MODE = MODE === "simple" ? "expert" : "simple";
+  localStorage.setItem("mindMode", MODE);
+  document.getElementById("mode").textContent = MODE === "simple" ? "details" : "simple view";
+  hudRefresh();
+};
 
 /* ---------- deterministic jitter (stable across repolls) -------------------- */
 function rnd(i){ let t = (i + 1) * 0x6D2B79F5;
@@ -464,8 +483,8 @@ function ironColor(x){
   return [r*255, g*255, b*255];
 }
 function cloudR(){ return R0() * 0.225; }
-function drawCloud(now, dt){
-  const Rc = cloudR();
+function drawCloud(now, dt, scale){
+  const Rc = cloudR() * (scale || 1);
   cctx.clearRect(0, 0, W, H);
   cctx.globalCompositeOperation = "lighter";
   const heat = Math.min(1, streams.length / 120);      // thinking = the mind stirs
@@ -559,11 +578,137 @@ function drawCloud(now, dt){
   ctx.restore();
 }
 
-/* ---------- real memories — the constellation, placed on 3 real axes --------- */
+/* ---------- the simple view: her memory as a LIVING GRAPH -------------------- */
+/* The Obsidian idea, made hers: every memory is a node, every real relation an
+   edge (brain.landscape's links — nothing invented). A force layout lets the
+   clusters emerge on their own. Life shows as events anyone reads:
+     - node CREATION: she learns something → a spark is born from her heart
+     - node CONNECTION: she remembers → the path lights from memory to heart
+   Idle she breathes; working she stirs. Plain words underneath say which. */
+let gnodes = [], gedges = [], gindex = {};
+let lastMemCount = -1, statusLine = "", statusUntil = 0;
+function setStatus(text, holdMs){
+  statusLine = text;
+  statusUntil = holdMs ? performance.now() + holdMs : 0;
+}
+function buildGraph(){
+  const pts = LAND.points || [];
+  const old = gindex; gindex = {};
+  gedges = (LAND.links || []).slice();
+  const deg = {};
+  gedges.forEach(l => { deg[l.a] = (deg[l.a]||0) + 1; deg[l.b] = (deg[l.b]||0) + 1; });
+  const born = lastMemCount >= 0 && pts.length > lastMemCount;
+  gnodes = pts.map((p, i) => {
+    const prev = old["n" + i];
+    const seed = rnd(i * 31) * 6.2832, rr = R0() * (0.18 + rnd(i * 31 + 1) * 0.22);
+    const n = prev || {
+      // newborns start at her heart and fly out — visibly LEARNED
+      x: born && i >= lastMemCount ? 0 : Math.cos(seed) * rr,
+      y: born && i >= lastMemCount ? 0 : Math.sin(seed) * rr * 0.8,
+      vx: 0, vy: 0
+    };
+    n.idx = i; n.label = p.label; n.type = p.type; n.color = p.color;
+    n.ts = p.ts; n.deg = deg[i] || 0; n.heat = p.heat || 0; n.hit = null;
+    gindex["n" + i] = n;
+    return n;
+  });
+  if (born){
+    setStatus("she just learned something new", 4000);
+    ripples.push({ x: 0, y: 0, r: 8, a: 0.9 });
+  }
+  lastMemCount = pts.length;
+}
+function stepGraph(dt){
+  // small-n force layout: repulsion + springs on real links + a soft centre pull
+  const N = gnodes.length;
+  const REP = R0() * R0() * 0.0016, SPRING = 2.2, LEN = R0() * 0.085;
+  for (let i = 0; i < N; i++){
+    const a = gnodes[i];
+    let fx = -a.x * 0.35, fy = -a.y * 0.35;         // gravity toward her heart
+    for (let j = 0; j < N; j++){
+      if (i === j) continue;
+      const b = gnodes[j];
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const d2 = dx*dx + dy*dy + 60;
+      fx += dx / d2 * REP; fy += dy / d2 * REP;
+    }
+    a.fx = fx; a.fy = fy;
+  }
+  gedges.forEach(l => {
+    const a = gindex["n" + l.a], b = gindex["n" + l.b];
+    if (!a || !b) return;
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const f = (d - LEN) * SPRING / d;
+    a.fx += dx * f; a.fy += dy * f;
+    b.fx -= dx * f; b.fy -= dy * f;
+  });
+  // keep clear of the heart itself
+  const CORE = cloudR() * 0.62;
+  gnodes.forEach(n => {
+    const d = Math.hypot(n.x, n.y) || 1;
+    if (d < CORE){ n.fx += n.x / d * (CORE - d) * 8; n.fy += n.y / d * (CORE - d) * 8; }
+    n.vx = (n.vx + n.fx * dt) * 0.86;
+    n.vy = (n.vy + n.fy * dt) * 0.86;
+    n.x += n.vx * dt; n.y += n.vy * dt;
+  });
+}
+function drawGraph(now){
+  let hover = null;
+  // edges first — the connections ARE the point. Gentle bowed threads (the
+  // look the owner chose), not ruler lines; recall sets them alight.
+  ctx.save();
+  gedges.forEach((l, ei) => {
+    const a = gindex["n" + l.a], b = gindex["n" + l.b];
+    if (!a || !b) return;
+    const A = S(a.x, a.y), B = S(b.x, b.y);
+    const hot = (glow["node:" + l.a] || 0) + (glow["node:" + l.b] || 0);
+    const mx = (A.X + B.X) / 2, my = (A.Y + B.Y) / 2;
+    const dx = B.X - A.X, dy = B.Y - A.Y;
+    const bow = (rnd(ei * 17) - 0.5) * 0.35;         // each thread keeps its own arc
+    const cx = mx - dy * bow, cy = my + dx * bow;
+    ctx.strokeStyle = "rgba(160,180,235," + Math.min(0.65, 0.10 + (l.w || 0) * 0.2 + hot * 0.5) + ")";
+    ctx.lineWidth = hot > 0.1 ? 1.6 : 0.8;
+    ctx.beginPath(); ctx.moveTo(A.X, A.Y); ctx.quadraticCurveTo(cx, cy, B.X, B.Y); ctx.stroke();
+  });
+  ctx.restore();
+  // radial filaments: every memory held to her heart by a fine thread — the
+  // mind reads as one organism, not floating dots (the big-data reference)
+  ctx.save();
+  gnodes.forEach(n => {
+    const d = Math.hypot(n.x, n.y) || 1;
+    const E = S(n.x / d * cloudR() * 0.56, n.y / d * cloudR() * 0.56);
+    const P = S(n.x, n.y);
+    const hot = glow["node:" + n.idx] || 0;
+    ctx.strokeStyle = "rgba(200,212,240," + (0.06 + hot * 0.5) + ")";
+    ctx.lineWidth = hot > 0.1 ? 1.2 : 0.55;
+    ctx.beginPath(); ctx.moveTo(E.X, E.Y); ctx.lineTo(P.X, P.Y); ctx.stroke();
+  });
+  ctx.restore();
+  // nodes: sized by how connected they are (an Obsidian instinct), lit by recall
+  const byHeat = gnodes.slice().sort((a, b) => b.deg - a.deg);
+  const named = new Set(byHeat.slice(0, 10));
+  gnodes.forEach(n => {
+    const P = S(n.x, n.y);
+    const hot = glow["node:" + n.idx] || 0;
+    const r = 2.6 + Math.min(4, n.deg * 0.7) + hot * 3;
+    ctx.fillStyle = n.color; ctx.shadowColor = n.color; ctx.shadowBlur = 8 + hot * 16;
+    ctx.beginPath(); ctx.arc(P.X, P.Y, r, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.beginPath(); ctx.arc(P.X, P.Y, Math.max(0.7, r * 0.32), 0, 7); ctx.fill();
+    const near = Math.hypot(P.X - mouse.x, P.Y - mouse.y) < r + 6;
+    n.hit = (named.has(n) || near || hot > 0.1)
+      ? pill(P, nodeShort(n), n.color, hot > 0.1, n.x < 0 ? -1 : 1)
+      : null;
+    if (near || inRect(n.hit, mouse.x, mouse.y)) hover = { n, P };
+  });
+  return hover;
+}
 /* docs/memory-ia.md: ANGLE = what it is (type sector, related pulled together),
    RADIUS = how strong (heat: the connected sit near her core, strays drift out),
    HEIGHT = when (new memories float above the plane, settling as they age). */
 const SECTOR = { emotion:0, task:1, opinion:2, knowledge:3 };
+let SECTOR_LAYOUT = {};   // type → {start, arc}; captions read this too
 function buildNodes(){
   const pts = (LAND.points || []).slice();
   const maxHeat = Math.max(0.001, ...pts.map(p => p.heat || 0));
@@ -576,16 +721,34 @@ function buildNodes(){
   const groups = {};
   pts.forEach(p => { (groups[p.type] = groups[p.type] || []).push(p); });
   Object.values(groups).forEach(g => g.sort((a, b) => (a.x || 0) - (b.x || 0)));
+  // ANGLE arcs sized by how much of her lives in each type — fixed 90° sectors
+  // stacked every label into one cramped column once one type dominated
+  const present = Object.keys(SECTOR).filter(t => (groups[t] || []).length);
+  const total = present.reduce((s, t) => s + groups[t].length, 0) || 1;
+  SECTOR_LAYOUT = {};
+  let sum = 0;
+  present.forEach(t => {
+    const a = Math.max(0.55, (groups[t].length / total) * Math.PI * 2);
+    SECTOR_LAYOUT[t] = { arc: a };  sum += a;
+  });
+  let start = -Math.PI / 2;
+  present.forEach(t => {
+    SECTOR_LAYOUT[t].arc *= (Math.PI * 2) / sum;   // renormalize to a full turn
+    SECTOR_LAYOUT[t].start = start;
+    start += SECTOR_LAYOUT[t].arc;
+  });
   nodes = pts.map(p => {
     const i = (LAND.points || []).indexOf(p);
     const g = groups[p.type], gi = g.indexOf(p);
-    const sect = (SECTOR[p.type] !== undefined ? SECTOR[p.type] : 3);
-    // ANGLE — a 90° sector per type, 12° margins, related neighbours adjacent
-    const a = -Math.PI/2 + sect * (Math.PI/2) + 0.21
-            + ((gi + 0.5) / Math.max(1, g.length)) * (Math.PI/2 - 0.42);
-    // RADIUS — strength: heat 1 → hugging the mass, heat 0 → far periphery
+    const lay = SECTOR_LAYOUT[p.type] || { start: -Math.PI/2, arc: Math.PI/2 };
+    const margin = Math.min(0.21, lay.arc * 0.12);
+    const a = lay.start + margin
+            + ((gi + 0.5) / Math.max(1, g.length)) * (lay.arc - margin * 2);
+    // RADIUS — strength: heat 1 → hugging the mass, heat 0 → far periphery;
+    // neighbours alternate slightly in and out so their pills never stack
     const strength = (p.heat || 0) / maxHeat;
-    const r = cloudR() * 1.3 + (R0() * 0.44 - cloudR() * 1.3) * (1 - strength);
+    const r = cloudR() * 1.3 + (R0() * 0.44 - cloudR() * 1.3) * (1 - strength)
+            + (gi % 2 ? R0() * 0.035 : 0);
     // HEIGHT — age: newest floats highest, settling toward the plane
     const ageRank = byAge.indexOf(p) / Math.max(1, byAge.length - 1);  // 0 old → 1 new
     const h = R0() * (-0.04 + ageRank * 0.20);
@@ -675,7 +838,17 @@ async function think(q){
     if (n) recall.push(n);
   });
   const path = (d.path || []).filter(id => chips.find(c => c.id === id));
-  thought = { t: 0, recall, path, route: d.route || {}, fired: {} };
+  // the plain-words stages (the isometric-pipeline idea, told in captions):
+  // timed to the REAL events — recall flashes, then the answer forms
+  const stages = [
+    { at: 0.0, label: "heard you" },
+    { at: 0.55, label: recall.length
+        ? "remembering — " + recall.length + (recall.length === 1 ? " memory" : " memories")
+        : "nothing familiar — thinking fresh" },
+    { at: 0.6 + recall.length * 0.35 + 0.3, label: "connecting" },
+    { at: 0.6 + recall.length * 0.35 + 0.3 + path.length * 0.4, label: "choosing words" },
+  ];
+  thought = { t: 0, recall, path, route: d.route || {}, fired: {}, stages };
   // the prompt enters: a stream from the ask bar up into the cloud
   const start = toWorld(W/2, H - 84);
   spawnStream(start, {x: 0, y: cloudR() * 0.4}, { n: 70, color: [126,200,255], spread: 90, stagger: 0.8 });
@@ -687,19 +860,28 @@ function stepThought(dt){
   if (!thought) return;
   thought.t += dt;
   const T = thought;
-  // recalled memories flash + pour into the cloud, one by one — real recall()
+  // recalled memories flash + pour into her heart, one by one — real recall().
+  // in the simple view the streams rise from the GRAPH nodes as wide soft
+  // threads converging on the centre (the flow the owner chose)
   T.recall.forEach((n, i) => {
     const at = 0.6 + i * 0.35, key = "r" + i;
     if (T.t >= at && !T.fired[key]){
       T.fired[key] = true;
       glow["node:" + n.idx] = 1;
-      ripples.push({ x: n.px, y: n.py, r: 6, a: 0.8 });
-      spawnStream({x: n.px, y: n.py}, {x: 0, y: 0}, { n: 30, color: hexRgb(n.color), spread: 40, stagger: 0.4 });
+      const g = gindex["n" + n.idx];
+      const sx = (MODE === "simple" && g) ? g.x : n.px;
+      const sy = (MODE === "simple" && g) ? g.y : n.py;
+      ripples.push({ x: sx, y: sy, r: 6, a: 0.8 });
+      spawnStream({x: sx, y: sy}, {x: 0, y: 0},
+        MODE === "simple"
+          ? { n: 48, color: hexRgb(n.color), spread: 26, stagger: 0.55 }
+          : { n: 30, color: hexRgb(n.color), spread: 40, stagger: 0.4 });
     }
   });
-  // then the faculties light along the real path, motes rushing station→station
+  // then the faculties light along the real path (details view only —
+  // the simple view says the same thing in words, stage by stage)
   const base = 0.6 + T.recall.length * 0.35 + 0.3;
-  T.path.forEach((id, i) => {
+  if (MODE !== "simple") T.path.forEach((id, i) => {
     const at = base + i * 0.4, key = "p" + i;
     if (T.t >= at && !T.fired[key]){
       T.fired[key] = true;
@@ -712,10 +894,23 @@ function stepThought(dt){
       }
     }
   });
+  // the staged story, plain words lighting as each REAL step fires
+  if (MODE === "simple" && T.stages){
+    const el = document.getElementById("stages");
+    el.style.display = "block";
+    el.innerHTML = T.stages.map(s =>
+      '<div style="opacity:' + (T.t >= s.at ? 1 : 0.25) + '">'
+      + (T.t >= s.at ? "● " : "○ ") + s.label + "</div>").join("");
+  }
   // arrival: the honest routing result
   const done = base + T.path.length * 0.4 + 0.5;
   if (T.t >= done && !T.fired.end){
     T.fired.end = true;
+    if (MODE === "simple"){
+      setStatus("answered — she drew on " + T.recall.length +
+                (T.recall.length === 1 ? " memory" : " memories"), 6000);
+      setTimeout(() => { document.getElementById("stages").style.display = "none"; }, 2500);
+    }
     const A = document.getElementById("answer"), r = T.route || {};
     if (r.model){ A.innerHTML = '<div class="t">how she answers</div>'
       + '<div class="row">model <span class="kv">' + r.model + '</span></div>'
@@ -750,6 +945,16 @@ cv.style.cursor = "grab";
 function hudRefresh(){
   const name = (STATE.persona && STATE.persona.name) || "your twin";
   document.getElementById("whoname").textContent = "THE MIND — " + name.toUpperCase();
+  // the simple view speaks human: hide the instrument HUD, warm placeholder
+  const simple = MODE === "simple";
+  document.getElementById("axes").style.display = simple ? "none" : "block";
+  document.getElementById("hint").style.display = simple ? "none" : "block";
+  document.getElementById("legend").style.display = simple ? "none" : "flex";
+  document.getElementById("state").style.display = simple ? "block" : "none";
+  if (!simple) document.getElementById("stages").style.display = "none";
+  document.getElementById("q").placeholder = simple
+    ? "ask her anything — watch her think…"
+    : "ask her something — watch the thought move…";
   const st = BRAIN.state || {};
   const bits = [(STATE.memory_count || 0) + " memories"];
   if ((STATE.topics || []).length) bits.push("returns to: " + STATE.topics.slice(0,3).join(", "));
@@ -784,7 +989,7 @@ async function loadAll(){
   const key = (STATE.memory_count || 0) + "|" +
     Object.entries(LAND.types || {}).map(([k, t]) => k + ":" + (t.count || 0)).join(",");
   if (key !== CLOUD_KEY){ CLOUD_KEY = key; buildCloud(); }
-  buildNodes(); buildChips(); hudRefresh();
+  buildNodes(); buildChips(); buildGraph(); hudRefresh();
 }
 function resize(){
   DPR = window.devicePixelRatio || 1;
@@ -875,7 +1080,22 @@ function frame(now){
   });
   ctx.globalAlpha = 1;
 
-  // her mind — the living cloud
+  // her mind — the living cloud (in the simple view it is the HEART the
+  // memory graph converges on, half-size, with the graph carrying the story)
+  let hoverNode = null, hoverChip = null;
+  if (MODE === "simple"){
+    drawCloud(now, dt, 0.5);
+    stepGraph(dt);
+    const h = drawGraph(now);
+    if (h) hoverNode = h;
+    // plain words for the state — working vs resting, no jargon
+    const st = document.getElementById("state");
+    const idle = "resting — " + gnodes.length + " memories, "
+               + gedges.length + " connections"
+               + (STATE.part_of_day ? " · " + STATE.part_of_day : "");
+    st.textContent = (statusUntil && now < statusUntil) ? statusLine
+                   : (thought ? "thinking…" : idle);
+  } else {
   drawCloud(now, dt);
 
   // wiring between faculties (the real flow diagram), motes drifting along
@@ -902,7 +1122,8 @@ function frame(now){
   // sector captions — the WHAT axis, whispered at the rim
   Object.keys(SECTOR).forEach(t => {
     const meta = (LAND.types || {})[t]; if (!meta || !meta.count) return;
-    const mid = -Math.PI/2 + SECTOR[t] * (Math.PI/2) + Math.PI/4;
+    const lay = SECTOR_LAYOUT[t]; if (!lay) return;
+    const mid = lay.start + lay.arc / 2;
     const RR = R0() * 0.47;
     const w = project(Math.cos(mid)*RR, -R0()*0.015, Math.sin(mid)*RR);
     const P = S(w.x, w.y);
@@ -914,7 +1135,6 @@ function frame(now){
   });
 
   // memory constellation on its 3 axes — project, then draw far-to-near
-  let hoverNode = null, hoverChip = null;
   nodes.forEach(n => {
     const w = project(n.x3, n.h, n.z3);
     n.px = w.x; n.py = w.y; n.pz = w.z;
@@ -969,6 +1189,7 @@ function frame(now){
     c.hit = pill(P, c.label.toUpperCase(), c.color, hot > 0.1, c.x < 0 ? -1 : 1, true);
     if (inRect(c.hit, mouse.x, mouse.y) || Math.hypot(P.X-mouse.x, P.Y-mouse.y) < 12) hoverChip = { c, P };
   });
+  }   // end expert-only drawing
 
   // flowing thought particles + ripples
   stepStreams(dt);
