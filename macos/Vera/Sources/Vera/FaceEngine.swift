@@ -21,6 +21,8 @@ final class FaceEngine: NSObject, ObservableObject {
         let id: Int
         let x: CGFloat, y: CGFloat        // normalized view coords (mirrored, y down)
         let color: Color, alpha: Double, r: CGFloat
+        let group: Int                    // same group = one feature; -1 = loose dots
+        let closes: Bool                  // group draws as a closed loop (lips, eyes)
     }
     struct Caption: Identifiable {
         let id: String
@@ -52,6 +54,10 @@ final class FaceEngine: NSObject, ObservableObject {
     private var lastSeen: Date?
     private var smile = 0.0, browKnit = 0.0, energy = 0.0
     private var attending = true
+    // auto-framing: the face fills the little window (Face ID-style) and the
+    // frame glides after you rather than jumping — smoothed centre + span
+    private var frameC = CGPoint(x: 0.5, y: 0.5)
+    private var frameS: CGFloat = 1.0
 
     // ---- lifecycle (main thread) --------------------------------------------
 
@@ -234,30 +240,52 @@ final class FaceEngine: NSObject, ObservableObject {
         let gold = Color(red: 1, green: 0.85, blue: 0.45)
         let pink = Color(red: 0.94, green: 0.5, blue: 0.8)
         let blink = eyesClosed
+
+        // glide the frame: the face owns ~62% of the window, wherever you sit
+        let all = rim + lEye + rEye + lBrow + rBrow + lips + nose
+        let xs = all.map(\.x), ys = all.map(\.y)
+        if let x0 = xs.min(), let x1 = xs.max(), let y0 = ys.min(), let y1 = ys.max() {
+            let c = CGPoint(x: (x0 + x1) / 2, y: (y0 + y1) / 2)
+            let span = max(0.05, max(x1 - x0, y1 - y0)) / 0.62
+            frameC.x += (c.x - frameC.x) * 0.15
+            frameC.y += (c.y - frameC.y) * 0.15
+            frameS += (span - frameS) * 0.12
+        }
+        func map(_ p: CGPoint) -> (CGFloat, CGFloat) {
+            // mirror + flip into view space, then centre inside the glided frame
+            (0.5 + ((1 - p.x) - (1 - frameC.x)) / frameS,
+             0.5 + ((1 - p.y) - (1 - frameC.y)) / frameS)
+        }
+
         var out: [Dot] = []
         var id = 0
-        func add(_ pts: [CGPoint], _ c: Color, _ a: Double, _ r: CGFloat) {
-            for p in pts {                       // mirror x, flip y → view space
-                out.append(Dot(id: id, x: 1 - p.x, y: 1 - p.y, color: c, alpha: a, r: r))
+        func add(_ pts: [CGPoint], _ c: Color, _ a: Double, _ r: CGFloat,
+                 group: Int, closes: Bool = false) {
+            for p in pts {
+                let (x, y) = map(p)
+                out.append(Dot(id: id, x: x, y: y, color: c, alpha: a, r: r,
+                               group: group, closes: closes))
                 id += 1
             }
         }
-        add(rim, cyan, 0.35, 1.2)
-        add(nose, cyan, 0.5, 1.2)
-        add(lEye, blink ? .white : cyan, blink ? 1 : 0.8, 1.5)
-        add(rEye, blink ? .white : cyan, blink ? 1 : 0.8, 1.5)
-        add(lBrow, browKnit > 0.5 ? pink : cyan, 0.5 + browKnit * 0.5, 1.5)
-        add(rBrow, browKnit > 0.5 ? pink : cyan, 0.5 + browKnit * 0.5, 1.5)
-        add(lips, smile > 0.5 ? gold : cyan, 0.5 + smile * 0.5, 1.5)
+        add(rim, cyan, 0.35, 1.2, group: 0)                       // jawline arc
+        add(nose, cyan, 0.5, 1.2, group: -1)                      // loose points
+        add(lEye, blink ? .white : cyan, blink ? 1 : 0.8, 1.5, group: 2, closes: true)
+        add(rEye, blink ? .white : cyan, blink ? 1 : 0.8, 1.5, group: 3, closes: true)
+        add(lBrow, browKnit > 0.5 ? pink : cyan, 0.5 + browKnit * 0.5, 1.5, group: 4)
+        add(rBrow, browKnit > 0.5 ? pink : cyan, 0.5 + browKnit * 0.5, 1.5, group: 5)
+        add(lips, smile > 0.5 ? gold : cyan, 0.5 + smile * 0.5, 1.5, group: 6, closes: true)
 
         var caps: [Caption] = []
         if smile > 0.5 {
-            let c = Self.centroid(lips)
-            caps.append(Caption(id: "smile", text: "smile", x: 1 - c.x, y: 1 - c.y + 0.09, color: gold))
+            let (x, y) = map(Self.centroid(lips))
+            caps.append(Caption(id: "smile", text: "smile",
+                                x: x, y: min(0.85, y + 0.11), color: gold))
         }
         if browKnit > 0.5 {
-            let c = Self.centroid(lBrow + rBrow)
-            caps.append(Caption(id: "brow", text: "brow · knit", x: 1 - c.x, y: 1 - c.y - 0.08, color: pink))
+            let (x, y) = map(Self.centroid(lBrow + rBrow))
+            caps.append(Caption(id: "brow", text: "brow · knit",
+                                x: x, y: max(0.08, y - 0.10), color: pink))
         }
 
         var bits: [String] = []

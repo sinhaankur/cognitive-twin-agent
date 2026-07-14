@@ -25,7 +25,8 @@ struct ChatPanel: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            SiriOrb(amplitude: model.amplitude, phase: phase, tint: model.tint)
+            SiriOrb(amplitude: model.amplitude, phase: phase, tint: model.tint,
+                    brightness: model.brightness)
                 .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
@@ -50,8 +51,8 @@ struct ChatPanel: View {
             }
             .buttonStyle(.plain)
             .help(model.eyeOn
-                  ? "She can see you — motion cues only, on-device. Click to stop."
-                  : "Let her see you (opt-in): motion cues only, on-device, nothing stored.")
+                  ? "She can see you — face cues only (a smile, a nod), on-device. Click to stop."
+                  : "Let her see you (opt-in): face cues only, on-device, nothing stored.")
             Button { model.openSettings?() } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 15, weight: .medium))
@@ -72,7 +73,10 @@ struct ChatPanel: View {
                             .id(turn.id)
                     }
                     if model.phase == .thinking {
-                        Text("thinking…")
+                        // breathing ellipsis — riding the same 60 fps phase the
+                        // orb uses, so "alive" reads consistently everywhere
+                        Text("thinking" + String(repeating: ".",
+                             count: 1 + Int(phase * 0.8) % 3))
                             .font(.caption).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 12)
