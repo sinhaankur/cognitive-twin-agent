@@ -498,11 +498,14 @@ function drawCloud(now, dt){
     const front = w.z >= 0;
     const twk = 0.75 + 0.25 * Math.sin(now * 0.0016 + p.tw);
     const pulse = Math.max(0, 1 - Math.abs(r - waveR) * 5) * beatGain;
-    // velocity + curl colouring, exactly FluidX3D's habit: speed rides the iron
-    // scale toward white heat; strong vorticity shimmers even when slow
-    const s = Math.min(1, Math.hypot(f[0], f[1]) * 3.4 + f[2] * 6);
-    cctx.globalAlpha = Math.min(1, (p.al * twk + pulse * 0.55 + s * 0.3)) * (front ? 1 : 0.45);
-    const IC = ironColor(0.35 + s * 0.6), wI = s * 0.62;
+    // velocity + curl colouring, FluidX3D's habit — but calibrated so the iron
+    // scale ignites only ABOVE the bulk rotation (subtract the floor): the
+    // nebula keeps her memory-type palette, and just the genuinely fast flow
+    // and vortex edges burn gold. (Uncalibrated, everything saturated yellow.)
+    const spd = Math.hypot(f[0], f[1]);
+    const s = Math.min(1, Math.max(0, (spd - 0.13) * 5) + f[2] * 3.5);
+    cctx.globalAlpha = Math.min(1, (p.al * twk + pulse * 0.55 + s * 0.2)) * (front ? 1 : 0.45);
+    const IC = ironColor(0.45 + s * 0.5), wI = s * 0.5;
     cctx.fillStyle = "rgb(" + ((p.c[0]*(1-wI) + IC[0]*wI)|0) + ","
                             + ((p.c[1]*(1-wI) + IC[1]*wI)|0) + ","
                             + ((p.c[2]*(1-wI) + IC[2]*wI)|0) + ")";
