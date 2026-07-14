@@ -37,9 +37,11 @@ final class FaceEngine: NSObject, ObservableObject {
     // live meters for the instrument row (what the dots are reading, as numbers)
     @Published var readSmile = 0.0
     @Published var readBrow = 0.0
+    @Published var readFrown = 0.0              // mouth downturned (measured, not "sad")
     @Published var readBlink = 0.0              // blinks per minute
     @Published var readAttending = true
     @Published var facePresent = false
+    @Published var lowLight = false             // dim room: reads steadier, says so
 
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "vera.eye", qos: .userInitiated)
@@ -58,8 +60,9 @@ final class FaceEngine: NSObject, ObservableObject {
     private var blinkTimes: [Date] = []
     private var eyesClosed = false
     private var lastSeen: Date?
-    private var smile = 0.0, browKnit = 0.0, energy = 0.0
+    private var smile = 0.0, browKnit = 0.0, frown = 0.0, energy = 0.0
     private var attending = true
+    private var dimRoom = false
     // auto-framing: the face fills the little window (Face ID-style) and the
     // frame glides after you rather than jumping — smoothed centre + span
     private var frameC = CGPoint(x: 0.5, y: 0.5)
@@ -189,6 +192,10 @@ final class FaceEngine: NSObject, ObservableObject {
             smile = smile * 0.7 + rawSmile * 0.3
             let rawKnit = b.brow > 0 ? min(1, max(0, (b.brow - browDist) / (b.brow * 0.18))) : 0
             browKnit = browKnit * 0.7 + rawKnit * 0.3
+            // the smile's mirror: corners sinking below this face's own neutral
+            // — a measured mouth shape, reported as such, never as a feeling
+            let rawFrown = min(1, max(0, (b.curve - curve) * 12 - rawSmile))
+            frown = frown * 0.7 + rawFrown * 0.3
             let closed = eyeOpen < b.eye * 0.55
             if eyesClosed && !closed { blinkTimes.append(Date()) }
             eyesClosed = closed
@@ -252,7 +259,10 @@ final class FaceEngine: NSObject, ObservableObject {
         let cyan = Color(red: 0.49, green: 0.78, blue: 1)
         let gold = Color(red: 1, green: 0.85, blue: 0.45)
         let pink = Color(red: 0.94, green: 0.5, blue: 0.8)
+        let violet = Color(red: 0.7, green: 0.55, blue: 1)
         let blink = eyesClosed
+        let lipTint = smile > 0.5 ? gold : (frown > 0.5 ? violet : cyan)
+        let lipHot = max(smile, frown)
 
         // glide the frame: the face owns ~62% of the window, wherever you sit
         let all = rim + lEye + rEye + lBrow + rBrow + lips + nose
@@ -274,13 +284,15 @@ final class FaceEngine: NSObject, ObservableObject {
         var id = 0
         func add(_ pts: [CGPoint], _ c: Color, _ a: Double, _ r: CGFloat,
                  group: Int, closes: Bool = false) {
+            // in a dim room the landmarks shake more — steady them harder
+            let ease: CGFloat = dimRoom ? 0.24 : 0.45
             for (i, raw) in pts.enumerated() {
                 // temporal smoothing per landmark: ease toward the fresh
                 // position so the face glides instead of jittering
                 let key = group &* 1000 &+ i
                 let prev = smoothPts[key] ?? raw
-                let p = CGPoint(x: prev.x + (raw.x - prev.x) * 0.45,
-                                y: prev.y + (raw.y - prev.y) * 0.45)
+                let p = CGPoint(x: prev.x + (raw.x - prev.x) * ease,
+                                y: prev.y + (raw.y - prev.y) * ease)
                 smoothPts[key] = p
                 let (x, y) = map(p)
                 out.append(Dot(id: id, x: x, y: y, color: c, alpha: a, r: r,
@@ -294,8 +306,8 @@ final class FaceEngine: NSObject, ObservableObject {
         add(rEye, blink ? .white : cyan, blink ? 1 : 0.8, 1.5, group: 3, closes: true)
         add(lBrow, browKnit > 0.5 ? pink : cyan, 0.5 + browKnit * 0.5, 1.5, group: 4)
         add(rBrow, browKnit > 0.5 ? pink : cyan, 0.5 + browKnit * 0.5, 1.5, group: 5)
-        add(lips, smile > 0.5 ? gold : cyan, 0.5 + smile * 0.5, 1.5, group: 6, closes: true)
-        add(inner, smile > 0.5 ? gold : cyan, 0.35 + smile * 0.4, 1.2, group: 7, closes: true)
+        add(lips, lipTint, 0.5 + lipHot * 0.5, 1.5, group: 6, closes: true)
+        add(inner, lipTint, 0.35 + lipHot * 0.4, 1.2, group: 7, closes: true)
 
         var caps: [Caption] = []
         if smile > 0.5 {
@@ -308,25 +320,33 @@ final class FaceEngine: NSObject, ObservableObject {
             caps.append(Caption(id: "brow", text: "brow · knit",
                                 x: x, y: max(0.08, y - 0.10), color: pink))
         }
+        if frown > 0.5 && smile <= 0.5 {
+            let (x, y) = map(Self.centroid(lips))
+            caps.append(Caption(id: "down", text: "mouth · down",
+                                x: x, y: min(0.85, y + 0.11), color: violet))
+        }
 
         var bits: [String] = []
         if smile > 0.5 { bits.append("smiling") }
         if browKnit > 0.5 { bits.append("brow knitted") }
+        if frown > 0.5 && smile <= 0.5 { bits.append("mouth downturned") }
         if blinkRate > 28 { bits.append("blinking fast") }
         bits.append(attending ? "attentive" : "looking away")
         bits.append(energy < 0.08 ? "very still" : energy < 0.28 ? "calm"
                     : energy < 0.6 ? "animated" : "very animated")
         let line = "reading: " + bits.joined(separator: " · ")
 
-        let m = (smile, browKnit, blinkRate, attending)
+        let m = (smile, browKnit, frown, blinkRate, attending, dimRoom)
         DispatchQueue.main.async {
             self.dots = out
             self.captions = caps
             self.reading = line
-            self.readSmile = m.0; self.readBrow = m.1
-            self.readBlink = m.2; self.readAttending = m.3
+            self.readSmile = m.0; self.readBrow = m.1; self.readFrown = m.2
+            self.readBlink = m.3; self.readAttending = m.4
+            self.lowLight = m.5
             self.facePresent = true
-            self.status = "face landmarks · on-device · close to stop"
+            self.status = m.5 ? "low light — steadying the read · on-device"
+                              : "face landmarks · on-device · close to stop"
         }
     }
 
@@ -340,6 +360,7 @@ final class FaceEngine: NSObject, ObservableObject {
             if base != nil {
                 body["smile"] = (smile * 100).rounded() / 100
                 body["brow"] = (browKnit * 100).rounded() / 100
+                body["frown"] = (frown * 100).rounded() / 100
                 body["blink_rate"] = blinkRate
             }
             body["attending"] = attending
@@ -363,9 +384,35 @@ extension FaceEngine: AVCaptureVideoDataOutputSampleBufferDelegate {
                        didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
         guard let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        dimRoom = Self.isDim(pixels)
         let request = VNDetectFaceLandmarksRequest()
         try? sequence.perform([request], on: pixels)
         let face = (request.results ?? []).max { $0.boundingBox.width < $1.boundingBox.width }
         ingest(face)          // delegate already runs on `queue`
+    }
+
+    /// Mean luma of a sparse sample of the frame — a dim room makes Vision's
+    /// landmarks jitter more, so the engine steadies harder and says so.
+    private static func isDim(_ buffer: CVPixelBuffer) -> Bool {
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        // plane 0 is luma for the common 420 formats macOS cameras deliver
+        guard CVPixelBufferGetPlaneCount(buffer) > 0,
+              let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 0) else { return false }
+        let w = CVPixelBufferGetWidthOfPlane(buffer, 0)
+        let h = CVPixelBufferGetHeightOfPlane(buffer, 0)
+        let stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
+        let p = base.assumingMemoryBound(to: UInt8.self)
+        var sum = 0, n = 0
+        var y = 0
+        while y < h {
+            var x = 0
+            while x < w {
+                sum += Int(p[y * stride + x]); n += 1
+                x += 16
+            }
+            y += 16
+        }
+        return n > 0 && (sum / n) < 60      // of 255: a genuinely dim room
     }
 }

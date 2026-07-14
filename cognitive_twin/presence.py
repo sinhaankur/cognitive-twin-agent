@@ -49,6 +49,7 @@ def update(sig: dict[str, Any]) -> None:
         # eye measures motion alone, so they stay None there (honest absence)
         "smile": _unit(sig.get("smile")),
         "brow": _unit(sig.get("brow")),
+        "frown": _unit(sig.get("frown")),
         "blink_rate": (float(sig["blink_rate"]) if isinstance(sig.get("blink_rate"), (int, float)) else None),
         "attending": (bool(sig["attending"]) if sig.get("attending") is not None else None),
         "source": sig.get("source") if sig.get("source") in ("face", "flow") else "flow",
@@ -147,6 +148,8 @@ def _face_context() -> str:
         bits.append("smiling")
     if (c.get("brow") or 0) >= 0.55:
         bits.append("brow knitted")
+    if (c.get("frown") or 0) >= 0.55 and (c.get("smile") or 0) < 0.55:
+        bits.append("mouth downturned")
     if (c.get("blink_rate") or 0) >= 28:
         bits.append("blinking fast")
     if c.get("attending") is False:
