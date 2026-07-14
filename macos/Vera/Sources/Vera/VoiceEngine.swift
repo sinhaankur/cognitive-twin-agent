@@ -62,6 +62,13 @@ final class VoiceEngine: ObservableObject {
     /// Called when a final transcript is ready (user stopped talking).
     var onFinal: ((String) -> Void)?
 
+    /// Voice isolation, only when needed: the ear (EarEngine) flips this while
+    /// the room is noisy, and the NEXT listening session runs Apple's voice
+    /// processing on the input — your voice lifted out of the bed before
+    /// recognition. Quiet rooms keep the raw path (it's truer to the mic).
+    var isolateVoice = false
+    private var isolationApplied = false
+
     init() {
         let delegate = SpeechDelegate(
             onChange: { [weak self] speaking in
@@ -117,7 +124,12 @@ final class VoiceEngine: ObservableObject {
         request = req
 
         let input = engine.inputNode
-        let format = input.outputFormat(forBus: 0)
+        // apply (or drop) voice isolation between sessions, never mid-flight
+        if !engine.isRunning && isolationApplied != isolateVoice {
+            try? input.setVoiceProcessingEnabled(isolateVoice)
+            isolationApplied = isolateVoice
+        }
+        let format = input.outputFormat(forBus: 0)   // after any isolation change
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             req.append(buffer)

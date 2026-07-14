@@ -62,6 +62,48 @@ def stop() -> None:
     _last = None
 
 
+# ---- the ear: ambient sound (opt-in, on-device, never recorded) ---------------
+_AMBIENT_STALE_S = 20.0
+_ambient: dict[str, Any] | None = None
+
+
+def update_ambient(sig: dict[str, Any]) -> None:
+    """Latest ambient reading from the app's opt-in ear: sound TYPES with
+    confidence (Apple's on-device classifier) + room loudness. No audio."""
+    global _ambient
+    sounds: list[dict[str, Any]] = []
+    for s in (sig.get("sounds") or [])[:3]:
+        label = str((s or {}).get("label") or "").strip()
+        conf = _unit((s or {}).get("conf")) or 0.0
+        if label and conf >= 0.45:
+            sounds.append({"label": label, "conf": conf})
+    _ambient = {
+        "sounds": sounds,
+        "loud": _unit(sig.get("loud")) or 0.0,
+        "ts": time.time(),
+    }
+
+
+def stop_ambient() -> None:
+    """The user turned the ear off — forget the room immediately."""
+    global _ambient
+    _ambient = None
+
+
+def ambient_current() -> dict[str, Any] | None:
+    if _ambient is None or (time.time() - _ambient["ts"]) > _AMBIENT_STALE_S:
+        return None
+    return dict(_ambient)
+
+
+def _loud_word(l: float) -> str:
+    if l < 0.12:
+        return "quiet"
+    if l < 0.4:
+        return "lively"
+    return "loud"
+
+
 def current() -> dict[str, Any] | None:
     """The latest reading, or None when off/stale (presence never lingers)."""
     if _last is None or (time.time() - _last["ts"]) > _STALE_S:
@@ -80,7 +122,23 @@ def _energy_word(e: float) -> str:
 
 
 def context_for_prompt() -> str:
-    """One honest line for the system prompt — empty when she can't see you."""
+    """Honest lines for the system prompt — empty when she can't sense you.
+    Composes whichever opt-in senses are live: the eye (face cues) and the
+    ear (ambient sound types)."""
+    parts = []
+    face = _face_context()
+    if face:
+        parts.append(face)
+    amb = ambient_current()
+    if amb and (amb["sounds"] or amb["loud"] >= 0.12):
+        names = ", ".join(s["label"] for s in amb["sounds"]) or "unclassified sound"
+        parts.append("Around them (ambient sound, opt-in, on-device): "
+                     f"{names} — a {_loud_word(amb['loud'])} room. Sound types "
+                     "only, never recordings.")
+    return " ".join(parts)
+
+
+def _face_context() -> str:
     c = current()
     if not c or not c.get("present"):
         return ""

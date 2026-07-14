@@ -64,7 +64,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSUIElement</key>            <true/>
   <!-- Permission prompts (required or the app crashes on first use) -->
   <key>NSMicrophoneUsageDescription</key>
-  <string>Anita listens to your voice so you can talk with her - audio stays on this machine.</string>
+  <string>Anita listens to your voice so you can talk with her - and, only when you turn on "Hear the room", reads ambient sound types (music, typing) on-device. Audio stays on this machine and is never recorded.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
   <string>Anita transcribes your speech on-device to understand you.</string>
   <key>NSCameraUsageDescription</key>

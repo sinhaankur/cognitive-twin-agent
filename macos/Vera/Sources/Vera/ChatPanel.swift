@@ -53,6 +53,15 @@ struct ChatPanel: View {
             .help(model.eyeOn
                   ? "She can see you — face cues only (a smile, a nod), on-device. Click to stop."
                   : "Let her see you (opt-in): face cues only, on-device, nothing stored.")
+            Button { model.ear.toggle() } label: {
+                Image(systemName: "ear")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(model.ear.on ? Color.cyan : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(model.ear.on
+                  ? "She hears the room — sound types only (music, typing), never recorded. Click to stop."
+                  : "Let her hear the room (opt-in): sound types only, on-device, never recorded.")
             Button { model.openSettings?() } label: {
                 Image(systemName: "gearshape")
                     .font(.system(size: 15, weight: .medium))

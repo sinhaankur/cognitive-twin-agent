@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var privacyItem: NSMenuItem?
     private var learnItem: NSMenuItem?
     private var eyeItem: NSMenuItem?     // the See-me switch — checkmark shows state
+    private var earItem: NSMenuItem?     // the Hear-the-room switch (opt-in)
     private var photosItem: NSMenuItem?  // the Read-my-Photos switch (opt-in)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -52,6 +53,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.refreshActivity()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.syncMenuChecks() }
         photosItem?.state = UserDefaults.standard.bool(forKey: "photosOn") ? .on : .off
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.model.shutdownSpawnedServer() }
+        }
         if UserDefaults.standard.bool(forKey: "photosOn") {
             // still ON from last time → refresh what she knows (new albums since),
             // once the local server has had time to come up
@@ -110,6 +116,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         eyeItem = NSMenuItem(title: "Let her see me (on/off)", action: #selector(menuEye), keyEquivalent: "")
         eyeItem?.image = symbol("eye")
         eyeItem?.target = self; menu.addItem(eyeItem!)
+        earItem = NSMenuItem(title: "Let her hear the room (on/off)",
+                             action: #selector(menuEar), keyEquivalent: "")
+        earItem?.image = symbol("ear")
+        earItem?.target = self; menu.addItem(earItem!)
         photosItem = NSMenuItem(title: "Let her read my Photos (on/off)",
                                 action: #selector(menuPhotos), keyEquivalent: "")
         photosItem?.image = symbol("photo.on.rectangle")
@@ -128,6 +138,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func menuVoice() { showVoiceLearn() }
     @objc private func menuBrain() { showBrain() }
     @objc private func menuEye() { toggleEye() }
+    @objc private func menuEar() {
+        model.ear.toggle()
+        // permission is async — reflect the real state once it settles
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.earItem?.state = self.model.ear.on ? .on : .off
+        }
+    }
     @objc private func menuPhotos() { togglePhotos() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
 
@@ -457,6 +474,7 @@ final class AppModel: ObservableObject {
     }
 
     let voice = VoiceEngine()
+    let ear = EarEngine()          // her opt-in ear on the room (ambient sound)
     private let agent = AgentClient()
     private let appleAI = AppleIntelligence()
     private var serverProcess: Process?
@@ -470,6 +488,8 @@ final class AppModel: ObservableObject {
     func start() {
         voice.requestPermission()
         voice.onFinal = { [weak self] text in self?.handle(text) }
+        // the ear tells the voice when the room needs isolation ("if needed")
+        ear.onNoise = { [weak self] noisy in self?.voice.isolateVoice = noisy }
         enableLaunchAtLogin()      // so Anita is always there after a reboot
         autoUpdate()               // she keeps herself current — nothing to download
         ensureServer()
@@ -707,6 +727,12 @@ final class AppModel: ObservableObject {
     /// Wipe the local conversation memory (privacy control).
     func clearMemory() {
         Task { await agent.clearMemory() }
+    }
+
+    /// Quit takes the brain down too: a server we spawned must not outlive the
+    /// app (stale code keeps serving, and every update needed a manual kill).
+    func shutdownSpawnedServer() {
+        if let sp = serverProcess, sp.isRunning { sp.terminate() }
     }
 
     func micTapped() {

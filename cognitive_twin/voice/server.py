@@ -299,6 +299,16 @@ class _Handler(BaseHTTPRequestHandler):
             from .. import presence
             presence.stop()
             self._json(200, {"ok": True})
+        elif self.path == "/api/presence/ambient":
+            # ambient sound TYPES from the opt-in ear (no audio, no recordings
+            # — see presence.py). Ephemeral: latest reading only.
+            from .. import presence
+            presence.update_ambient(self._read_json())
+            self._json(200, {"ok": True})
+        elif self.path == "/api/presence/ambient/stop":
+            from .. import presence
+            presence.stop_ambient()
+            self._json(200, {"ok": True})
         elif self.path == "/api/vault/export":
             # Settings' "Export for another device": one passphrase-encrypted
             # bundle of the memory folder, written where the user chose.

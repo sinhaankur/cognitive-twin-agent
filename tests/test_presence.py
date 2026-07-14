@@ -57,6 +57,49 @@ def test_stop_forgets_immediately():
     assert presence.current() is None
 
 
+
+
+
+# ---- the ear: ambient sound (opt-in, ephemeral, honest) -----------------------
+
+def test_ambient_reports_sound_types():
+    presence.update_ambient({"sounds": [{"label": "music", "conf": 0.8},
+                                        {"label": "typing", "conf": 0.5}],
+                             "loud": 0.3})
+    ctx = presence.context_for_prompt()
+    assert "music" in ctx and "typing" in ctx
+    assert "lively" in ctx
+    assert "never recordings" in ctx
+    presence.stop_ambient()
+
+
+def test_ambient_drops_low_confidence_and_junk():
+    presence.update_ambient({"sounds": [{"label": "dog", "conf": 0.2},
+                                        {"label": "", "conf": 0.9}],
+                             "loud": 0.05})
+    amb = presence.ambient_current()
+    assert amb is not None and amb["sounds"] == []
+    assert presence.context_for_prompt() == ""     # quiet + nothing confident
+    presence.stop_ambient()
+
+
+def test_ambient_stale_and_stop_forget():
+    presence.update_ambient({"sounds": [{"label": "music", "conf": 0.9}], "loud": 0.5})
+    presence._ambient["ts"] = time.time() - 60
+    assert presence.ambient_current() is None
+    presence.update_ambient({"sounds": [{"label": "music", "conf": 0.9}], "loud": 0.5})
+    presence.stop_ambient()
+    assert presence.ambient_current() is None
+
+
+def test_face_and_ear_compose():
+    presence.update({"present": True, "energy": 0.2})
+    presence.update_ambient({"sounds": [{"label": "music", "conf": 0.9}], "loud": 0.5})
+    ctx = presence.context_for_prompt()
+    assert "calm" in ctx and "music" in ctx
+    presence.stop(); presence.stop_ambient()
+
+
 if __name__ == "__main__":
     fns = [g for n, g in sorted(globals().items())
            if n.startswith("test_") and callable(g)]
