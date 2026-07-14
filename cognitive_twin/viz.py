@@ -601,11 +601,13 @@ function buildGraph(){
   gnodes = pts.map((p, i) => {
     const prev = old["n" + i];
     const seed = rnd(i * 31) * 6.2832, rr = R0() * (0.18 + rnd(i * 31 + 1) * 0.22);
+    const isNew = born && i >= lastMemCount;
     const n = prev || {
       // newborns start at her heart and fly out — visibly LEARNED
-      x: born && i >= lastMemCount ? 0 : Math.cos(seed) * rr,
-      y: born && i >= lastMemCount ? 0 : Math.sin(seed) * rr * 0.8,
-      vx: 0, vy: 0
+      x: isNew ? 0 : Math.cos(seed) * rr,
+      y: isNew ? 0 : Math.sin(seed) * rr * 0.8,
+      z: isNew ? 0 : (rnd(i * 31 + 2) - 0.5) * rr * 1.4,
+      vx: 0, vy: 0, vz: 0
     };
     n.idx = i; n.label = p.label; n.type = p.type; n.color = p.color;
     n.ts = p.ts; n.deg = deg[i] || 0; n.heat = p.heat || 0; n.hit = null;
@@ -619,87 +621,102 @@ function buildGraph(){
   lastMemCount = pts.length;
 }
 function stepGraph(dt){
-  // small-n force layout: repulsion + springs on real links + a soft centre pull
+  // small-n force layout in TRUE 3D — the same space the heart lives in, so
+  // orbit and zoom (your hand) are the depth cues. springs on real links,
+  // a firm centre pull, and a hard spherical rim: always framed, always whole
   const N = gnodes.length;
-  const REP = R0() * R0() * 0.0016, SPRING = 2.2, LEN = R0() * 0.085;
+  const REP = R0() * R0() * 0.0022, SPRING = 2.2, LEN = R0() * 0.11;
+  const RIM = R0() * 0.34;
   for (let i = 0; i < N; i++){
     const a = gnodes[i];
-    let fx = -a.x * 0.35, fy = -a.y * 0.35;         // gravity toward her heart
+    let fx = -a.x * 0.9, fy = -a.y * 0.9, fz = -a.z * 0.9;   // toward her heart
     for (let j = 0; j < N; j++){
       if (i === j) continue;
       const b = gnodes[j];
-      const dx = a.x - b.x, dy = a.y - b.y;
-      const d2 = dx*dx + dy*dy + 60;
-      fx += dx / d2 * REP; fy += dy / d2 * REP;
+      const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+      const d2 = dx*dx + dy*dy + dz*dz + 60;
+      fx += dx / d2 * REP; fy += dy / d2 * REP; fz += dz / d2 * REP;
     }
-    a.fx = fx; a.fy = fy;
+    a.fx = fx; a.fy = fy; a.fz = fz;
   }
   gedges.forEach(l => {
     const a = gindex["n" + l.a], b = gindex["n" + l.b];
     if (!a || !b) return;
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const d = Math.hypot(dx, dy) || 1;
+    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+    const d = Math.hypot(dx, dy, dz) || 1;
     const f = (d - LEN) * SPRING / d;
-    a.fx += dx * f; a.fy += dy * f;
-    b.fx -= dx * f; b.fy -= dy * f;
+    a.fx += dx * f; a.fy += dy * f; a.fz += dz * f;
+    b.fx -= dx * f; b.fy -= dy * f; b.fz -= dz * f;
   });
-  // keep clear of the heart itself
+  // keep clear of the heart, and inside the rim (both spheres)
   const CORE = cloudR() * 0.62;
   gnodes.forEach(n => {
-    const d = Math.hypot(n.x, n.y) || 1;
-    if (d < CORE){ n.fx += n.x / d * (CORE - d) * 8; n.fy += n.y / d * (CORE - d) * 8; }
+    const d = Math.hypot(n.x, n.y, n.z) || 1;
+    if (d < CORE){
+      n.fx += n.x / d * (CORE - d) * 8;
+      n.fy += n.y / d * (CORE - d) * 8;
+      n.fz += n.z / d * (CORE - d) * 8;
+    }
     n.vx = (n.vx + n.fx * dt) * 0.86;
     n.vy = (n.vy + n.fy * dt) * 0.86;
-    n.x += n.vx * dt; n.y += n.vy * dt;
+    n.vz = (n.vz + n.fz * dt) * 0.86;
+    n.x += n.vx * dt; n.y += n.vy * dt; n.z += n.vz * dt;
+    const dd = Math.hypot(n.x, n.y, n.z);
+    if (dd > RIM){ n.x *= RIM / dd; n.y *= RIM / dd; n.z *= RIM / dd; }
   });
 }
 function drawGraph(now){
   let hover = null;
-  // edges first — the connections ARE the point. Gentle bowed threads (the
-  // look the owner chose), not ruler lines; recall sets them alight.
+  // project every node through the SAME camera the heart uses (orbit with a
+  // drag, zoom with a scroll, double-click resets — your hand is the depth cue)
+  gnodes.forEach(n => {
+    const w = project(n.x, -n.y, n.z);
+    n.px = w.x; n.py = w.y; n.pz = w.z;
+  });
+  const maxZ = R0() * 0.34;
+  const depthOf = n => 0.45 + 0.55 * ((n.pz / maxZ) + 1) / 2;   // far dim, near bright
+  // edges — the connections ARE the point; recall sets them alight
   ctx.save();
-  gedges.forEach((l, ei) => {
+  gedges.forEach(l => {
     const a = gindex["n" + l.a], b = gindex["n" + l.b];
     if (!a || !b) return;
-    const A = S(a.x, a.y), B = S(b.x, b.y);
+    const A = S(a.px, a.py), B = S(b.px, b.py);
     const hot = (glow["node:" + l.a] || 0) + (glow["node:" + l.b] || 0);
-    const mx = (A.X + B.X) / 2, my = (A.Y + B.Y) / 2;
-    const dx = B.X - A.X, dy = B.Y - A.Y;
-    const bow = (rnd(ei * 17) - 0.5) * 0.35;         // each thread keeps its own arc
-    const cx = mx - dy * bow, cy = my + dx * bow;
-    ctx.strokeStyle = "rgba(160,180,235," + Math.min(0.65, 0.10 + (l.w || 0) * 0.2 + hot * 0.5) + ")";
+    const dp = (depthOf(a) + depthOf(b)) / 2;
+    ctx.strokeStyle = "rgba(160,180,235," + Math.min(0.65, (0.10 + (l.w || 0) * 0.2 + hot * 0.5) * dp) + ")";
     ctx.lineWidth = hot > 0.1 ? 1.6 : 0.8;
-    ctx.beginPath(); ctx.moveTo(A.X, A.Y); ctx.quadraticCurveTo(cx, cy, B.X, B.Y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(A.X, A.Y); ctx.lineTo(B.X, B.Y); ctx.stroke();
   });
-  ctx.restore();
-  // radial filaments: every memory held to her heart by a fine thread — the
-  // mind reads as one organism, not floating dots (the big-data reference)
-  ctx.save();
+  // radial filaments: every memory held to her heart by a fine thread — one
+  // organism, not floating dots
   gnodes.forEach(n => {
-    const d = Math.hypot(n.x, n.y) || 1;
-    const E = S(n.x / d * cloudR() * 0.56, n.y / d * cloudR() * 0.56);
-    const P = S(n.x, n.y);
+    const P = S(n.px, n.py);
+    const m = Math.hypot(n.px, n.py) || 1;
+    const E = S(n.px / m * cloudR() * 0.5, n.py / m * cloudR() * 0.5);
     const hot = glow["node:" + n.idx] || 0;
-    ctx.strokeStyle = "rgba(200,212,240," + (0.06 + hot * 0.5) + ")";
+    ctx.strokeStyle = "rgba(200,212,240," + ((0.06 + hot * 0.5) * depthOf(n)) + ")";
     ctx.lineWidth = hot > 0.1 ? 1.2 : 0.55;
     ctx.beginPath(); ctx.moveTo(E.X, E.Y); ctx.lineTo(P.X, P.Y); ctx.stroke();
   });
   ctx.restore();
-  // nodes: sized by how connected they are (an Obsidian instinct), lit by recall
-  const byHeat = gnodes.slice().sort((a, b) => b.deg - a.deg);
-  const named = new Set(byHeat.slice(0, 10));
-  gnodes.forEach(n => {
-    const P = S(n.x, n.y);
+  // nodes far-to-near: sized by connectedness (an Obsidian instinct), depth-lit,
+  // labels by level of detail — the strongest few, whatever glows, and the cursor
+  const named = new Set(gnodes.slice().sort((a, b) => b.deg - a.deg).slice(0, 10));
+  gnodes.slice().sort((a, b) => a.pz - b.pz).forEach(n => {
+    const P = S(n.px, n.py);
+    const dp = depthOf(n);
     const hot = glow["node:" + n.idx] || 0;
-    const r = 2.6 + Math.min(4, n.deg * 0.7) + hot * 3;
+    const r = (2.6 + Math.min(4, n.deg * 0.7) + hot * 3) * dp;
+    ctx.globalAlpha = dp;
     ctx.fillStyle = n.color; ctx.shadowColor = n.color; ctx.shadowBlur = 8 + hot * 16;
     ctx.beginPath(); ctx.arc(P.X, P.Y, r, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
     ctx.fillStyle = "rgba(255,255,255,0.9)";
     ctx.beginPath(); ctx.arc(P.X, P.Y, Math.max(0.7, r * 0.32), 0, 7); ctx.fill();
     const near = Math.hypot(P.X - mouse.x, P.Y - mouse.y) < r + 6;
-    n.hit = (named.has(n) || near || hot > 0.1)
-      ? pill(P, nodeShort(n), n.color, hot > 0.1, n.x < 0 ? -1 : 1)
+    n.hit = ((named.has(n) && dp > 0.72) || near || hot > 0.1)
+      ? pill(P, nodeShort(n), n.color, hot > 0.1, n.px < 0 ? -1 : 1)
       : null;
+    ctx.globalAlpha = 1;
     if (near || inRect(n.hit, mouse.x, mouse.y)) hover = { n, P };
   });
   return hover;
@@ -869,8 +886,8 @@ function stepThought(dt){
       T.fired[key] = true;
       glow["node:" + n.idx] = 1;
       const g = gindex["n" + n.idx];
-      const sx = (MODE === "simple" && g) ? g.x : n.px;
-      const sy = (MODE === "simple" && g) ? g.y : n.py;
+      const sx = (MODE === "simple" && g) ? (g.px || 0) : n.px;
+      const sy = (MODE === "simple" && g) ? (g.py || 0) : n.py;
       ripples.push({ x: sx, y: sy, r: 6, a: 0.8 });
       spawnStream({x: sx, y: sy}, {x: 0, y: 0},
         MODE === "simple"
@@ -1044,8 +1061,10 @@ function inRect(r, mx, my){ return r && mx >= r.x && mx <= r.x + r.w && my >= r.
 let last = performance.now(), hoverHold = false;
 function frame(now){
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  // she is never frozen: a slow idle orbit, pausing while you read or drag
-  if (!cam.drag && !hoverHold) cam.yaw += dt * 0.012;
+  // she is never frozen — but in the simple view the CAMERA is: a graph that
+  // drifts forever reads as "why is it circling", not as alive. life comes
+  // from the heart and the threads, not from spinning the room.
+  if (MODE !== "simple" && !cam.drag && !hoverHold) cam.yaw += dt * 0.012;
   stepThought(dt);
   Object.keys(glow).forEach(k => { glow[k] *= Math.pow(0.4, dt); if (glow[k] < 0.02) delete glow[k]; });
   ctx.clearRect(0, 0, W, H);
