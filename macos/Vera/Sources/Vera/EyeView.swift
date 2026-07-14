@@ -85,7 +85,7 @@ struct EyeView: View {
             g.stroke(path, with: .color(color.opacity(0.28)),
                      style: StrokeStyle(lineWidth: 0.8, lineJoin: .round))
             // expression glow: features re-stroke brighter as their reading rises
-            let hot: Double = group >= 6 ? engine.readSmile
+            let hot: Double = group >= 6 ? max(engine.readSmile, engine.readFrown)
                             : (group == 4 || group == 5) ? engine.readBrow : 0
             if hot > 0.25 {
                 g.stroke(path, with: .color(color.opacity(hot * 0.7)),
