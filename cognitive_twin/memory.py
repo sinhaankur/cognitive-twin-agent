@@ -452,6 +452,44 @@ def context_for(query: str, k: int = 3) -> str:
 
 
 # ---- clear --------------------------------------------------------------------
+def prune(substring: str) -> int:
+    """Surgical forget: drop every memory whose text contains `substring`
+    (case-insensitive). For cleaning out junk — e.g. hallucination-era chatter
+    — without touching the rest. A sealed backup (.bak) is kept beside the
+    log. Returns how many were removed."""
+    global _entries_cache
+    path = _file()
+    if not path.is_file() or not substring.strip():
+        return 0
+    needle = substring.lower()
+    keep, dropped = [], 0
+    for e in entries():
+        text = ((e.get("prompt") or "") + " " + (e.get("gist") or "")).lower()
+        if needle in text:
+            dropped += 1
+        else:
+            keep.append(e)
+    if not dropped:
+        return 0
+    import shutil as _sh
+    _sh.copy2(path, path.with_suffix(".jsonl.bak"))     # still sealed at rest
+    lines = []
+    for e in keep:
+        line = json.dumps(e, ensure_ascii=False)
+        try:
+            from . import vault
+            line = vault.seal_line(line)
+        except Exception:
+            pass
+        lines.append(line)
+    tmp = path.with_suffix(".jsonl.tmp")
+    tmp.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    _secure(tmp)
+    tmp.replace(path)
+    _entries_cache = None
+    return dropped
+
+
 def clear() -> bool:
     """Delete all stored memory (and its strength sidecar). True if removed."""
     global _entries_cache

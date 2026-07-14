@@ -357,6 +357,10 @@ def _memory_command(rest: list[str]) -> int:
     from . import memory
     if rest and rest[0] == "clear":
         print("cleared local memory." if memory.clear() else "nothing to clear.")
+    elif rest and rest[0] == "prune" and len(rest) > 1:
+        n = memory.prune(" ".join(rest[1:]))
+        print(f"  forgot {n} memor{'y' if n == 1 else 'ies'} matching that."
+              if n else "  nothing matched.")
     elif rest and rest[0] == "export-md" and len(rest) > 1:
         from pathlib import Path
         n = _export_memory_md(Path(rest[1]).expanduser())
