@@ -57,6 +57,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIconName</key>        <string>AppIcon</string>
   <key>LSMinimumSystemVersion</key>  <string>13.0</string>
   <key>NSHighResolutionCapable</key> <true/>
+  <!-- one of her per device: never two instances of the same bundle -->
+  <key>LSMultipleInstancesProhibited</key> <true/>
   <key>LSApplicationCategoryType</key> <string>public.app-category.productivity</string>
   <!-- Menu-bar / floating app: no Dock icon -->
   <key>LSUIElement</key>            <true/>
@@ -73,10 +75,17 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-echo "[4/4] Code-signing (ad-hoc)..."
+echo "[4/5] Code-signing (ad-hoc)..."
 codesign --force --deep --sign - "$APP" 2>/dev/null || echo "  (codesign skipped -- app still runs locally)"
 
+# ONE install per device: the app lives in /Applications and nowhere else.
+# The staging bundle is removed so Spotlight/Launchpad never see two copies.
+echo "[5/5] Installing to /Applications..."
+rm -rf "/Applications/$APP"
+cp -R "$APP" "/Applications/$APP"
+rm -rf "$APP"
+
 echo ""
-echo "Built: $(pwd)/$APP"
-echo "  Launch it:   open \"$APP\""
+echo "Installed: /Applications/$APP"
+echo "  Launch it:   open \"/Applications/$APP\""
 echo "  First launch asks for Microphone + Speech Recognition -- allow both."
