@@ -842,15 +842,25 @@ function frame(now){
   Object.keys(glow).forEach(k => { glow[k] *= Math.pow(0.4, dt); if (glow[k] < 0.02) delete glow[k]; });
   ctx.clearRect(0, 0, W, H);
 
-  // deep-space vignette + two faint colour washes (violet / teal) for depth
+  // deep-space vignette + two faint colour washes for depth. The washes know
+  // what time it is where the owner sits (rhythms.part_of_day): dawn gold in
+  // the morning, clear blue by day, ember violet at evening, deep at night.
   const bg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.7);
   bg.addColorStop(0, "#080b16"); bg.addColorStop(1, "#03040a");
   ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  const DAYWASH = {
+    morning:   ["234,170,80,0.06",  "120,140,220,0.045"],
+    afternoon: ["70,140,220,0.055", "40,150,140,0.05"],
+    evening:   ["200,110,70,0.055", "110,70,190,0.055"],
+    night:     ["98,70,180,0.055",  "40,130,150,0.05"],
+  };
+  DAYWASH["late night"] = DAYWASH.night;
+  const wcol = DAYWASH[STATE.part_of_day] || DAYWASH.night;
   let wash = ctx.createRadialGradient(W*0.2, H*0.15, 0, W*0.2, H*0.15, W*0.55);
-  wash.addColorStop(0, "rgba(98,70,180,0.055)"); wash.addColorStop(1, "rgba(98,70,180,0)");
+  wash.addColorStop(0, "rgba(" + wcol[0] + ")"); wash.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = wash; ctx.fillRect(0, 0, W, H);
   wash = ctx.createRadialGradient(W*0.85, H*0.85, 0, W*0.85, H*0.85, W*0.5);
-  wash.addColorStop(0, "rgba(40,130,150,0.05)"); wash.addColorStop(1, "rgba(40,130,150,0)");
+  wash.addColorStop(0, "rgba(" + wcol[1] + ")"); wash.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = wash; ctx.fillRect(0, 0, W, H);
 
   // faint stars
