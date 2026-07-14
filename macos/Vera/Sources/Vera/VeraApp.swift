@@ -586,7 +586,14 @@ final class AppModel: ObservableObject {
         guard !didGreet else { return }
         didGreet = true
         do {
-            let reply = try await agent.ask("Greet me for the day using your greeting tool. One or two warm sentences.", internal: true)
+            let reply = try await agent.ask(
+                "Greet me for the day using your greeting tool. Then add ONE "
+                + "specific, intelligent line grounded in what's actually current "
+                + "— an open task from today, or the most recent thing we were "
+                + "talking about — a real thought about it, not a platitude, and "
+                + "never something you've already told me. If nothing is current, "
+                + "the greeting alone is enough. Three sentences maximum.",
+                internal: true)
             await MainActor.run {
                 self.answer = reply.answer
                 if let m = reply.model { self.modelName = m }

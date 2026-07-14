@@ -125,29 +125,67 @@ def personality_prompt() -> str:
 # --- 2) Background reflection (while you're away) ------------------------------
 
 def project_seeds() -> list[str]:
-    """The ideas/projects the user keeps mentioning — what she'll mull over."""
-    return memory.patterns().get("topics", [])[:5]
+    """What the user has been on about LATELY — reflections must live in the
+    present, not orbit whatever dominated the log weeks ago. Terms from the
+    last 7 days of memory, falling back to all-time only when recent life is
+    too thin to read."""
+    cutoff = _dt.datetime.now() - _dt.timedelta(days=7)
+    counts: dict[str, int] = {}
+    for e in memory.entries(limit=120):
+        ts = e.get("ts") or ""
+        try:
+            if _dt.datetime.fromisoformat(ts) < cutoff:
+                continue
+        except ValueError:
+            continue
+        for t in memory._terms(e.get("prompt") or ""):
+            counts[t] = counts.get(t, 0) + 1
+    recent = [t for t, _ in sorted(counts.items(), key=lambda kv: -kv[1])[:5]]
+    return recent if len(recent) >= 2 else memory.patterns().get("topics", [])[:5]
+
+
+_REFLECTION_FRESH_H = 48.0
 
 
 def add_reflection(text: str) -> None:
-    """Store a thought Anita had while you were away (most recent first, capped)."""
+    """Store a thought Anita had while you were away (most recent first,
+    capped, dedup-safe — thinking the same thought twice isn't thinking)."""
+    text = text.strip()
     data = _read("reflections.json")
     items = data.get("items", [])
+    def _same(a: str, b: str) -> bool:
+        a, b = a.strip().lower(), b.strip().lower()
+        head = min(len(a), len(b), 40)
+        return head >= 20 and a[:head] == b[:head]
+    if any(_same(i.get("thought") or "", text) for i in items):
+        return
     items.insert(0, {
         "ts": _dt.datetime.now().isoformat(timespec="seconds"),
-        "thought": text.strip(),
+        "thought": text,
     })
     data["items"] = items[:20]
     _write("reflections.json", data)
 
 
 def pending_reflections(clear: bool = False) -> list[dict[str, Any]]:
-    """Thoughts she saved while you were away. Optionally clear after reading."""
+    """Thoughts she saved while you were away. Present tense by contract: a
+    thought older than ~2 days is no longer "while you were away" — it's a
+    nag, and it expires quietly. Optionally clear after reading."""
     data = _read("reflections.json")
     items = data.get("items", [])
-    if clear and items:
+    cutoff = _dt.datetime.now() - _dt.timedelta(hours=_REFLECTION_FRESH_H)
+    fresh = []
+    for i in items:
+        try:
+            if _dt.datetime.fromisoformat(i.get("ts") or "") >= cutoff:
+                fresh.append(i)
+        except ValueError:
+            continue
+    if len(fresh) != len(items):
+        _write("reflections.json", {"items": fresh})
+    if clear and fresh:
         _write("reflections.json", {"items": []})
-    return items
+    return fresh
 
 
 def reflection_prompt() -> str:
@@ -167,6 +205,8 @@ def reflection_prompt() -> str:
         + ", ".join(seeds)
         + ". Offer ONE single-sentence thought or idea about one of these — the "
         "kind of thing someone who cares about their work would bring up later. "
+        "It must be specific and NEW — an angle, a question, a connection — "
+        "never a platitude and never a repeat of something already said. "
         "One line only, personal and specific, no preamble." + style
     )
 
