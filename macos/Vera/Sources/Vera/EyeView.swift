@@ -1,33 +1,45 @@
 import SwiftUI
-import WebKit
 
-/// Her eye — hosts the local /eye page (the owner's optical-flow engine,
-/// Shi-Tomasi + Lucas-Kanade running entirely in the page) inside the small
-/// always-visible preview window. The webview grants media capture ONLY to
-/// 127.0.0.1 and ONLY for the camera — same opt-in, on-device contract as
-/// the browser version. macOS still asks the user once (TCC), as it should.
-struct EyeView: NSViewRepresentable {
-    func makeCoordinator() -> Coordinator { Coordinator() }
+/// Her eye — the small always-visible preview window. Native now: Apple's
+/// Vision face landmarks (FaceEngine) instead of the /eye page's optical flow.
+/// The preview shows no video, only the dots — and the dots speak: the mouth
+/// lights up captioned "smile", the brows when they knit, the eyes on a blink.
+/// Same opt-in, on-device contract: camera only while this window exists;
+/// closing it stops the camera and forgets (FaceEngine.stop + the native
+/// /api/presence/stop in VeraApp).
+struct EyeView: View {
+    @StateObject private var engine = FaceEngine()
 
-    func makeNSView(context: Context) -> WKWebView {
-        let web = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
-        web.uiDelegate = context.coordinator
-        web.setValue(false, forKey: "drawsBackground")
-        if let url = URL(string: "http://127.0.0.1:7878/eye") {
-            web.load(URLRequest(url: url))
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            Color(red: 0.02, green: 0.024, blue: 0.04)
+            Canvas { g, size in
+                for d in engine.dots {
+                    let x = d.x * size.width, y = d.y * size.height
+                    let rect = CGRect(x: x - d.r, y: y - d.r, width: d.r * 2, height: d.r * 2)
+                    g.fill(Path(ellipseIn: rect), with: .color(d.color.opacity(d.alpha)))
+                }
+                for c in engine.captions {
+                    g.draw(Text(c.text)
+                             .font(.system(size: 9, design: .monospaced))
+                             .foregroundColor(c.color),
+                           at: CGPoint(x: c.x * size.width, y: c.y * size.height))
+                }
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                if !engine.reading.isEmpty {
+                    Text(engine.reading)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(Color(red: 0.75, green: 0.8, blue: 0.9))
+                }
+                Text(engine.status)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(Color(red: 0.55, green: 0.6, blue: 0.7).opacity(0.75))
+            }
+            .padding(.leading, 10)
+            .padding(.bottom, 8)
         }
-        return web
-    }
-
-    func updateNSView(_ view: WKWebView, context: Context) {}
-
-    final class Coordinator: NSObject, WKUIDelegate {
-        func webView(_ webView: WKWebView,
-                     requestMediaCapturePermissionFor origin: WKSecurityOrigin,
-                     initiatedByFrame frame: WKFrameInfo,
-                     type: WKMediaCaptureType,
-                     decisionHandler: @escaping (WKPermissionDecision) -> Void) {
-            decisionHandler(origin.host == "127.0.0.1" && type == .camera ? .grant : .deny)
-        }
+        .onAppear { engine.start() }
+        .onDisappear { engine.stop() }
     }
 }
