@@ -26,7 +26,8 @@ struct ContentView: View {
             .padding(.horizontal, 16)
 
             // --- the Siri orb ---
-            SiriOrb(amplitude: model.amplitude, phase: phase, tint: model.tint)
+            SiriOrb(amplitude: model.amplitude, phase: phase, tint: model.tint,
+                    brightness: model.brightness)
                 .frame(width: 220, height: 220)
                 .onTapGesture { model.micTapped() }
 

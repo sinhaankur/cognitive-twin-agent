@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var privacyItem: NSMenuItem?
     private var learnItem: NSMenuItem?
+    private var eyeItem: NSMenuItem?     // the See-me switch — checkmark shows state
     private var photosItem: NSMenuItem?  // the Read-my-Photos switch (opt-in)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -82,8 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         voice.target = self; menu.addItem(voice)
         let brain = NSMenuItem(title: "See how she thinks…", action: #selector(menuBrain), keyEquivalent: "b")
         brain.target = self; menu.addItem(brain)
-        let eye = NSMenuItem(title: "Let her see me (on/off)", action: #selector(menuEye), keyEquivalent: "")
-        eye.target = self; menu.addItem(eye)
+        eyeItem = NSMenuItem(title: "Let her see me (on/off)", action: #selector(menuEye), keyEquivalent: "")
+        eyeItem?.target = self; menu.addItem(eyeItem!)
         photosItem = NSMenuItem(title: "Let her read my Photos (on/off)",
                                 action: #selector(menuPhotos), keyEquivalent: "")
         photosItem?.target = self; menu.addItem(photosItem!)
@@ -127,10 +128,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let w = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 288, height: 216),
-            styleMask: [.titled, .closable], backing: .buffered, defer: false)
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered, defer: false)
         w.title = "she can see you"
         w.level = .floating
         w.isReleasedWhenClosed = false
+        // the window is a dark instrument, chrome included — no white bar over
+        // a black canvas
+        w.titlebarAppearsTransparent = true
+        w.appearance = NSAppearance(named: .darkAqua)
+        w.backgroundColor = NSColor(red: 0.02, green: 0.024, blue: 0.04, alpha: 1)
+        w.isMovableByWindowBackground = true
         w.contentView = NSHostingView(rootView: EyeView())
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: w, queue: .main
@@ -139,12 +147,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.eyeWindow = nil
                 self.model.eyeOn = false
+                self.eyeItem?.state = .off
                 self.postPresenceStop()
             }
         }
         w.center(); w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
         eyeWindow = w
         model.eyeOn = true
+        eyeItem?.state = .on
     }
 
     /// Belt-and-braces forget: the page's pagehide beacon usually fires first,
