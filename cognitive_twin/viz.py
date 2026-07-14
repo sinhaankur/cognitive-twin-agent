@@ -611,6 +611,10 @@ function buildGraph(){
     };
     n.idx = i; n.label = p.label; n.type = p.type; n.color = p.color;
     n.ts = p.ts; n.deg = deg[i] || 0; n.heat = p.heat || 0; n.hit = null;
+    // freshness: memories from the last two days carry a visible warmth,
+    // fading over a week — "what's new in her mind", readable at a glance
+    const age = (Date.now() - Date.parse(p.ts || 0)) / 86400000;
+    n.fresh = isFinite(age) ? Math.max(0, 1 - age / 7) : 0;
     gindex["n" + i] = n;
     return n;
   });
@@ -625,11 +629,11 @@ function stepGraph(dt){
   // orbit and zoom (your hand) are the depth cues. springs on real links,
   // a firm centre pull, and a hard spherical rim: always framed, always whole
   const N = gnodes.length;
-  const REP = R0() * R0() * 0.0022, SPRING = 2.2, LEN = R0() * 0.11;
-  const RIM = R0() * 0.34;
+  const REP = R0() * R0() * 0.0022, SPRING = 2.2, LEN = R0() * 0.13;
+  const RIM = R0() * 0.40;
   for (let i = 0; i < N; i++){
     const a = gnodes[i];
-    let fx = -a.x * 0.9, fy = -a.y * 0.9, fz = -a.z * 0.9;   // toward her heart
+    let fx = -a.x * 0.55, fy = -a.y * 0.55, fz = -a.z * 0.55; // toward her heart
     for (let j = 0; j < N; j++){
       if (i === j) continue;
       const b = gnodes[j];
@@ -665,6 +669,7 @@ function stepGraph(dt){
     if (dd > RIM){ n.x *= RIM / dd; n.y *= RIM / dd; n.z *= RIM / dd; }
   });
 }
+let focusIdx = null;   // hovered memory (last frame): its neighbourhood lights
 function drawGraph(now){
   let hover = null;
   // project every node through the SAME camera the heart uses (orbit with a
@@ -673,52 +678,77 @@ function drawGraph(now){
     const w = project(n.x, -n.y, n.z);
     n.px = w.x; n.py = w.y; n.pz = w.z;
   });
-  const maxZ = R0() * 0.34;
+  const maxZ = R0() * 0.40;
   const depthOf = n => 0.45 + 0.55 * ((n.pz / maxZ) + 1) / 2;   // far dim, near bright
-  // edges — the connections ARE the point; recall sets them alight
+  // the hovered memory's neighbourhood (Obsidian's best move): it and its
+  // relations hold full light, everything else steps back
+  const nbr = new Set();
+  if (focusIdx !== null){
+    nbr.add(focusIdx);
+    gedges.forEach(l => {
+      if (l.a === focusIdx) nbr.add(l.b);
+      if (l.b === focusIdx) nbr.add(l.a);
+    });
+  }
+  const dimmed = n => focusIdx !== null && !nbr.has(n.idx) ? 0.3 : 1;
+  // edges — the connections ARE the point; recall and focus set them alight
   ctx.save();
   gedges.forEach(l => {
     const a = gindex["n" + l.a], b = gindex["n" + l.b];
     if (!a || !b) return;
     const A = S(a.px, a.py), B = S(b.px, b.py);
     const hot = (glow["node:" + l.a] || 0) + (glow["node:" + l.b] || 0);
-    const dp = (depthOf(a) + depthOf(b)) / 2;
-    ctx.strokeStyle = "rgba(160,180,235," + Math.min(0.65, (0.10 + (l.w || 0) * 0.2 + hot * 0.5) * dp) + ")";
-    ctx.lineWidth = hot > 0.1 ? 1.6 : 0.8;
+    const focused = focusIdx !== null && (l.a === focusIdx || l.b === focusIdx);
+    const dp = (depthOf(a) + depthOf(b)) / 2 * (focusIdx !== null && !focused ? 0.25 : 1);
+    ctx.strokeStyle = "rgba(160,180,235," +
+      Math.min(0.8, (0.10 + (l.w || 0) * 0.2 + hot * 0.5 + (focused ? 0.4 : 0)) * dp) + ")";
+    ctx.lineWidth = hot > 0.1 || focused ? 1.6 : 0.8;
     ctx.beginPath(); ctx.moveTo(A.X, A.Y); ctx.lineTo(B.X, B.Y); ctx.stroke();
   });
-  // radial filaments: every memory held to her heart by a fine thread — one
-  // organism, not floating dots
+  // the tethers to her BRAIN: every memory is held to the heart, and the
+  // thread's weight is honest — the strength of the memory (how often it's
+  // been recalled into real thinking) plus its freshness. strong memories
+  // hold on thick and bright; strays barely hang on.
   gnodes.forEach(n => {
     const P = S(n.px, n.py);
     const m = Math.hypot(n.px, n.py) || 1;
     const E = S(n.px / m * cloudR() * 0.5, n.py / m * cloudR() * 0.5);
     const hot = glow["node:" + n.idx] || 0;
-    ctx.strokeStyle = "rgba(200,212,240," + ((0.06 + hot * 0.5) * depthOf(n)) + ")";
-    ctx.lineWidth = hot > 0.1 ? 1.2 : 0.55;
+    const grip = Math.min(1, n.heat * 0.8 + n.fresh * 0.4);
+    const focused = focusIdx === n.idx;
+    ctx.strokeStyle = "rgba(200,212,240," +
+      ((0.05 + grip * 0.18 + hot * 0.5 + (focused ? 0.35 : 0)) * depthOf(n) * dimmed(n)) + ")";
+    ctx.lineWidth = 0.5 + grip * 1.2 + (hot > 0.1 || focused ? 0.8 : 0);
     ctx.beginPath(); ctx.moveTo(E.X, E.Y); ctx.lineTo(P.X, P.Y); ctx.stroke();
   });
   ctx.restore();
   // nodes far-to-near: sized by connectedness (an Obsidian instinct), depth-lit,
-  // labels by level of detail — the strongest few, whatever glows, and the cursor
+  // warm when fresh, labels by level of detail
   const named = new Set(gnodes.slice().sort((a, b) => b.deg - a.deg).slice(0, 10));
   gnodes.slice().sort((a, b) => a.pz - b.pz).forEach(n => {
     const P = S(n.px, n.py);
-    const dp = depthOf(n);
+    const dp = depthOf(n) * dimmed(n);
     const hot = glow["node:" + n.idx] || 0;
-    const r = (2.6 + Math.min(4, n.deg * 0.7) + hot * 3) * dp;
+    const r = (2.6 + Math.min(4, n.deg * 0.7) + hot * 3) * depthOf(n);
     ctx.globalAlpha = dp;
-    ctx.fillStyle = n.color; ctx.shadowColor = n.color; ctx.shadowBlur = 8 + hot * 16;
+    ctx.fillStyle = n.color; ctx.shadowColor = n.color;
+    ctx.shadowBlur = 8 + hot * 16 + n.fresh * 8;
     ctx.beginPath(); ctx.arc(P.X, P.Y, r, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    if (n.fresh > 0.3){          // new this week: a warm ring, fading with age
+      ctx.strokeStyle = "rgba(255,214,160," + (0.5 * n.fresh * dp) + ")";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(P.X, P.Y, r + 2.5, 0, 7); ctx.stroke();
+    }
     ctx.fillStyle = "rgba(255,255,255,0.9)";
     ctx.beginPath(); ctx.arc(P.X, P.Y, Math.max(0.7, r * 0.32), 0, 7); ctx.fill();
     const near = Math.hypot(P.X - mouse.x, P.Y - mouse.y) < r + 6;
-    n.hit = ((named.has(n) && dp > 0.72) || near || hot > 0.1)
-      ? pill(P, nodeShort(n), n.color, hot > 0.1, n.px < 0 ? -1 : 1)
+    n.hit = ((named.has(n) && dp > 0.72) || near || hot > 0.1 || nbr.has(n.idx))
+      ? pill(P, nodeShort(n), n.color, hot > 0.1 || focusIdx === n.idx, n.px < 0 ? -1 : 1)
       : null;
     ctx.globalAlpha = 1;
     if (near || inRect(n.hit, mouse.x, mouse.y)) hover = { n, P };
   });
+  focusIdx = hover ? hover.n.idx : null;
   return hover;
 }
 /* docs/memory-ia.md: ANGLE = what it is (type sector, related pulled together),
