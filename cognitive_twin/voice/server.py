@@ -114,6 +114,15 @@ class _Handler(BaseHTTPRequestHandler):
             else:
                 models = []
             self._json(200, {"models": models})
+        elif self.path == "/api/greet":
+            # the greeting as FACT: real clock, real weather, straight from the
+            # skill — never via the model, which will happily invent September
+            # 2023 and a gentle breeze when it skips the tool
+            from ..skills import builtin
+            try:
+                self._json(200, {"text": builtin.greeting()})
+            except Exception as e:
+                self._json(200, {"text": "", "error": str(e)})
         elif self.path == "/api/reflections":
             # thoughts Anita had about your projects while you were away —
             # served ONCE (cleared on delivery): a thought shared twice is a
