@@ -93,31 +93,44 @@ struct ChatPanel: View {
     }
 
     private var inputBar: some View {
-        HStack(spacing: 8) {
-            // While listening, the field becomes the live transcript — your
-            // words appear as you say them (the Siri detail), then submit
-            // themselves when you pause.
+        VStack(spacing: 5) {
+            // While listening, your words appear live ABOVE the field (the
+            // Siri detail) — the field itself never goes away: no state may
+            // ever take typing from the user.
             if model.voice.isListening {
                 HStack(spacing: 6) {
                     Image(systemName: "waveform")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.red)
                         .opacity(0.55 + Double(model.voice.level) * 0.45)
                     Text(model.voice.transcript.isEmpty ? "listening…" : model.voice.transcript)
-                        .font(.system(size: 13))
+                        .font(.system(size: 12))
                         .foregroundStyle(model.voice.transcript.isEmpty ? .secondary : .primary)
                         .lineLimit(1)
                         .truncationMode(.head)      // keep the newest words visible
                     Spacer(minLength: 0)
                 }
-                .padding(.vertical, 9).padding(.leading, 14)
-            } else {
-                TextField("Ask your twin…", text: $typed)
-                    .textFieldStyle(.plain)
-                    .focused($focused)
-                    .onSubmit(send)
-                    .padding(.vertical, 9).padding(.leading, 14)
+                .padding(.horizontal, 16)
             }
+            inputRow
+        }
+        .padding(12)
+    }
+
+    private var inputRow: some View {
+        HStack(spacing: 8) {
+            TextField(model.voice.isListening ? "type to cancel listening…" : "Ask your twin…",
+                      text: $typed)
+                .textFieldStyle(.plain)
+                .focused($focused)
+                .onSubmit(send)
+                .onChange(of: typed) { v in
+                    // typing is an interruption too — keyboard wins over mic
+                    if model.voice.isListening && !v.isEmpty {
+                        model.voice.stopListening(submit: false)
+                    }
+                }
+                .padding(.vertical, 9).padding(.leading, 14)
 
             Button(action: { model.micTapped() }) {
                 Image(systemName: model.voice.isSpeaking ? "stop.fill"
@@ -138,7 +151,6 @@ struct ChatPanel: View {
         }
         .background(Capsule().fill(.ultraThinMaterial)
             .overlay(Capsule().strokeBorder(.white.opacity(0.12))))
-        .padding(12)
     }
 
     private func send() {

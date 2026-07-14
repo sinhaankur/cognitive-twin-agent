@@ -34,6 +34,12 @@ final class FaceEngine: NSObject, ObservableObject {
     @Published var captions: [Caption] = []
     @Published var reading = ""                 // one honest line of what she reads
     @Published var status = "starting her eye…"
+    // live meters for the instrument row (what the dots are reading, as numbers)
+    @Published var readSmile = 0.0
+    @Published var readBrow = 0.0
+    @Published var readBlink = 0.0              // blinks per minute
+    @Published var readAttending = true
+    @Published var facePresent = false
 
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "vera.eye", qos: .userInitiated)
@@ -58,6 +64,10 @@ final class FaceEngine: NSObject, ObservableObject {
     // frame glides after you rather than jumping — smoothed centre + span
     private var frameC = CGPoint(x: 0.5, y: 0.5)
     private var frameS: CGFloat = 1.0
+    // per-landmark temporal smoothing: Vision's points jitter a little every
+    // frame; each landmark eases toward its new position, so the whole face
+    // GLIDES — the single biggest "finished" cue in the preview
+    private var smoothPts: [Int: CGPoint] = [:]
 
     // ---- lifecycle (main thread) --------------------------------------------
 
@@ -123,8 +133,10 @@ final class FaceEngine: NSObject, ObservableObject {
     private func ingest(_ face: VNFaceObservation?) {
         guard let face, let marks = face.landmarks else {
             if let seen = lastSeen, Date().timeIntervalSince(seen) > 1.5 {
+                smoothPts.removeAll()   // don't glide across an absence
                 DispatchQueue.main.async {
                     self.dots = []; self.captions = []; self.reading = ""
+                    self.facePresent = false
                     self.status = "looking for you…"
                 }
             }
@@ -137,6 +149,7 @@ final class FaceEngine: NSObject, ObservableObject {
         let lBrow = Self.imagePoints(marks.leftEyebrow, box)
         let rBrow = Self.imagePoints(marks.rightEyebrow, box)
         let lips  = Self.imagePoints(marks.outerLips, box)
+        let inner = Self.imagePoints(marks.innerLips, box)
         let nose  = Self.imagePoints(marks.nose, box)
         let rim   = Self.imagePoints(marks.faceContour, box)
         guard lEye.count > 2, rEye.count > 2, lips.count > 3 else { return }
@@ -202,7 +215,7 @@ final class FaceEngine: NSObject, ObservableObject {
         energy = min(1, max(0, Double(meanMag) / 2.5))
 
         publishDots(rim: rim, lEye: lEye, rEye: rEye, lBrow: lBrow, rBrow: rBrow,
-                    lips: lips, nose: nose)
+                    lips: lips, inner: inner, nose: nose)
     }
 
     private var gesture: String? {
@@ -235,7 +248,7 @@ final class FaceEngine: NSObject, ObservableObject {
 
     private func publishDots(rim: [CGPoint], lEye: [CGPoint], rEye: [CGPoint],
                              lBrow: [CGPoint], rBrow: [CGPoint],
-                             lips: [CGPoint], nose: [CGPoint]) {
+                             lips: [CGPoint], inner: [CGPoint], nose: [CGPoint]) {
         let cyan = Color(red: 0.49, green: 0.78, blue: 1)
         let gold = Color(red: 1, green: 0.85, blue: 0.45)
         let pink = Color(red: 0.94, green: 0.5, blue: 0.8)
@@ -261,7 +274,14 @@ final class FaceEngine: NSObject, ObservableObject {
         var id = 0
         func add(_ pts: [CGPoint], _ c: Color, _ a: Double, _ r: CGFloat,
                  group: Int, closes: Bool = false) {
-            for p in pts {
+            for (i, raw) in pts.enumerated() {
+                // temporal smoothing per landmark: ease toward the fresh
+                // position so the face glides instead of jittering
+                let key = group &* 1000 &+ i
+                let prev = smoothPts[key] ?? raw
+                let p = CGPoint(x: prev.x + (raw.x - prev.x) * 0.45,
+                                y: prev.y + (raw.y - prev.y) * 0.45)
+                smoothPts[key] = p
                 let (x, y) = map(p)
                 out.append(Dot(id: id, x: x, y: y, color: c, alpha: a, r: r,
                                group: group, closes: closes))
@@ -275,6 +295,7 @@ final class FaceEngine: NSObject, ObservableObject {
         add(lBrow, browKnit > 0.5 ? pink : cyan, 0.5 + browKnit * 0.5, 1.5, group: 4)
         add(rBrow, browKnit > 0.5 ? pink : cyan, 0.5 + browKnit * 0.5, 1.5, group: 5)
         add(lips, smile > 0.5 ? gold : cyan, 0.5 + smile * 0.5, 1.5, group: 6, closes: true)
+        add(inner, smile > 0.5 ? gold : cyan, 0.35 + smile * 0.4, 1.2, group: 7, closes: true)
 
         var caps: [Caption] = []
         if smile > 0.5 {
@@ -297,10 +318,14 @@ final class FaceEngine: NSObject, ObservableObject {
                     : energy < 0.6 ? "animated" : "very animated")
         let line = "reading: " + bits.joined(separator: " · ")
 
+        let m = (smile, browKnit, blinkRate, attending)
         DispatchQueue.main.async {
             self.dots = out
             self.captions = caps
             self.reading = line
+            self.readSmile = m.0; self.readBrow = m.1
+            self.readBlink = m.2; self.readAttending = m.3
+            self.facePresent = true
             self.status = "face landmarks · on-device · close to stop"
         }
     }

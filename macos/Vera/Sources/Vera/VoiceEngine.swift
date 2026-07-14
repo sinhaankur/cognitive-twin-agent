@@ -93,6 +93,12 @@ final class VoiceEngine: ObservableObject {
         // never listen over our own voice; this also ends any barge hunt, so a
         // real turn can always begin
         if !hunting { stopSpeaking() }
+        if hunting && muted && request != nil {
+            // hunt already running for her previous utterance — refresh the
+            // echo filter so her NEW words don't read as an interruption
+            echoWords.formUnion(Self.wordSet(utterance))
+            return
+        }
         guard request == nil else { return }     // one session at a time
         muted = hunting
         echoWords = hunting ? Self.wordSet(utterance) : []
@@ -146,10 +152,12 @@ final class VoiceEngine: ObservableObject {
         let segments = result.bestTranscription.segments
         if muted {
             // Hunting: her own words (and their echo through the mic) match the
-            // utterance she's speaking — anything else is YOU. Two non-echo
-            // words in a row = a real interruption, not a cough.
+            // utterance she's speaking — anything else is YOU. Mis-hearings of
+            // her own voice happen, so the bar is: three non-echo words, or two
+            // with real voice energy at the mic. A false trigger here steals
+            // the user's turn — err toward letting her finish.
             let tail = Self.trailingUserRun(segments, echo: echoWords)
-            if tail.count >= 2 {
+            if tail.count >= 3 || (tail.count >= 2 && level > 0.22) {
                 bargeIn(fromSegment: segments.count - tail.count)
             }
             return
@@ -364,8 +372,17 @@ final class VoiceEngine: ObservableObject {
     }
 
     private func checkEndpoint() {
-        guard isListening, !muted, !transcript.isEmpty else { return }
+        guard isListening, !muted else { return }
         let now = Date()
+        if transcript.isEmpty {
+            // nothing said at all: close quietly after 8 s rather than
+            // listening into the room forever
+            if now.timeIntervalSince(listenStart) > 8 { stopListening(submit: false) }
+            return
+        }
+        // no turn lives forever: if recognition stalls mid-turn, submit what we
+        // have at 45 s instead of trapping the mic (and the input field) open
+        if now.timeIntervalSince(listenStart) > 45 { stopListening(submit: true); return }
         guard now.timeIntervalSince(listenStart) > endpointMinTurn,
               now.timeIntervalSince(lastVoiceAt) > endpointSilence else { return }
         stopListening(submit: true)

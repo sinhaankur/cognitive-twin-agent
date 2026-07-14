@@ -80,11 +80,21 @@ def record(prompt: str, answer: str, *, model: str | None = None,
         line = vault.seal_line(line)
     except Exception:
         pass
+    global _entries_cache
+    pre = _stamp(path) if existed else None
     try:
         with path.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
         if not existed:
             _secure(path)
+        # extend the decrypted cache in place (only if it matched the file we
+        # just appended to — anything else re-reads honestly)
+        if _entries_cache is not None and existed and _entries_cache[0] == pre:
+            post = _stamp(path)
+            if post is not None:
+                _entries_cache = (post, _entries_cache[1] + [entry])
+        else:
+            _entries_cache = None
     except OSError:
         pass  # memory is best-effort; never break the agent over it
     # let the day shadow listen for tasks/completions in what was said — cheap
@@ -97,10 +107,29 @@ def record(prompt: str, answer: str, *, model: str | None = None,
 
 
 # ---- read ---------------------------------------------------------------------
+# Decrypted-entries cache: opening sealed lines is pure-Python crypto, so a big
+# log must not be re-decrypted on every recall. Keyed by (path, mtime, size);
+# record() extends it in place, anything else invalidates naturally.
+_entries_cache: tuple[tuple[str, int, int], list[dict[str, Any]]] | None = None
+
+
+def _stamp(path: Path) -> tuple[str, int, int] | None:
+    try:
+        st = path.stat()
+        return (str(path), st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
 def entries(limit: int | None = None) -> list[dict[str, Any]]:
+    global _entries_cache
     path = _file()
     if not path.is_file():
         return []
+    stamp = _stamp(path)
+    if _entries_cache is not None and stamp is not None and _entries_cache[0] == stamp:
+        out = _entries_cache[1]
+        return list(out[-limit:]) if limit else list(out)
     out: list[dict[str, Any]] = []
     try:
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -119,7 +148,9 @@ def entries(limit: int | None = None) -> list[dict[str, Any]]:
                 continue
     except OSError:
         return []
-    return out[-limit:] if limit else out
+    if stamp is not None:
+        _entries_cache = (stamp, out)
+    return list(out[-limit:]) if limit else list(out)
 
 
 def recent_prompts(n: int = 8) -> list[str]:
@@ -423,6 +454,8 @@ def context_for(query: str, k: int = 3) -> str:
 # ---- clear --------------------------------------------------------------------
 def clear() -> bool:
     """Delete all stored memory (and its strength sidecar). True if removed."""
+    global _entries_cache
+    _entries_cache = None
     removed = False
     for path in (_file(), _strength_file()):
         try:

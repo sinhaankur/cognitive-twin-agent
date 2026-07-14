@@ -157,7 +157,7 @@ struct SettingsView: View {
                     Button {
                         exporting = true
                     } label: {
-                        Label("Export for another device…", systemImage: "arrow.down.doc")
+                        Label("Export for another device…", systemImage: "square.and.arrow.up")
                     }
                     Button(role: .destructive) {
                         model.clearMemory()

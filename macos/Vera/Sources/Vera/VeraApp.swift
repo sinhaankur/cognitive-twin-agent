@@ -30,6 +30,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var photosItem: NSMenuItem?  // the Read-my-Photos switch (opt-in)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // one of her per device: if another copy is already running (e.g. a
+        // second install), hand over to it and bow out — two Veras would fight
+        // over the mic, the servers, and the orb
+        let myID = Bundle.main.bundleIdentifier ?? "com.sinhaankur.anita"
+        let twins = NSRunningApplication.runningApplications(withBundleIdentifier: myID)
+            .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+        if !twins.isEmpty {
+            twins.first?.activate(options: [])
+            NSApp.terminate(nil)
+            return
+        }
         NSApp.setActivationPolicy(.accessory)   // background app, NO Dock icon
         model.openSettings = { [weak self] in self?.showSettings() }
         model.openVoiceLearn = { [weak self] in self?.showVoiceLearn() }
@@ -62,34 +73,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: model.assistantName, action: nil, keyEquivalent: "")
         menu.addItem(.separator())
+        // every item carries its canonical SF Symbol — the menu reads at a
+        // glance, the way the system's own menus do
+        func symbol(_ name: String) -> NSImage? {
+            NSImage(systemSymbolName: name, accessibilityDescription: nil)
+        }
         let show = NSMenuItem(title: "Open \(model.assistantName)",
                               action: #selector(menuShowOrb), keyEquivalent: "")
+        show.image = symbol("circle.hexagongrid.fill")
         show.target = self; menu.addItem(show)
         let chat = NSMenuItem(title: "Chat…", action: #selector(menuChat), keyEquivalent: "")
+        chat.image = symbol("bubble.left.and.bubble.right")
         chat.target = self; menu.addItem(chat)
         menu.addItem(.separator())
         // Privacy controls — front and centre.
         privacyItem = NSMenuItem(title: "Private mode (pause learning)",
                                  action: #selector(menuTogglePrivate), keyEquivalent: "")
+        privacyItem?.image = symbol("hand.raised")
         privacyItem?.target = self; menu.addItem(privacyItem!)
         let snooze = NSMenuItem(title: "Snooze 30 min", action: #selector(menuSnooze), keyEquivalent: "")
+        snooze.image = symbol("moon.zzz")
         snooze.target = self; menu.addItem(snooze)
         learnItem = NSMenuItem(title: "Learn how I work", action: #selector(menuToggleLearn), keyEquivalent: "")
+        learnItem?.image = symbol("graduationcap")
         learnItem?.target = self; menu.addItem(learnItem!)
         menu.addItem(.separator())
         let settings = NSMenuItem(title: "Settings…", action: #selector(menuSettings), keyEquivalent: ",")
+        settings.image = symbol("gearshape")
         settings.target = self; menu.addItem(settings)
         let voice = NSMenuItem(title: "Teach her a voice…", action: #selector(menuVoice), keyEquivalent: "")
+        voice.image = symbol("waveform")
         voice.target = self; menu.addItem(voice)
         let brain = NSMenuItem(title: "See how she thinks…", action: #selector(menuBrain), keyEquivalent: "b")
+        brain.image = symbol("brain.head.profile")
         brain.target = self; menu.addItem(brain)
         eyeItem = NSMenuItem(title: "Let her see me (on/off)", action: #selector(menuEye), keyEquivalent: "")
+        eyeItem?.image = symbol("eye")
         eyeItem?.target = self; menu.addItem(eyeItem!)
         photosItem = NSMenuItem(title: "Let her read my Photos (on/off)",
                                 action: #selector(menuPhotos), keyEquivalent: "")
+        photosItem?.image = symbol("photo.on.rectangle")
         photosItem?.target = self; menu.addItem(photosItem!)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit \(model.assistantName)", action: #selector(menuQuit), keyEquivalent: "q")
+        quit.image = symbol("power")
         quit.target = self; menu.addItem(quit)
         item.menu = menu
         statusItem = item

@@ -772,11 +772,16 @@ setInterval(clockTick, 5000); clockTick();
 
 /* ---------- data load ---------------------------------------------------------- */
 async function j(u){ return await (await fetch(u)).json(); }
+let CLOUD_KEY = "";   // rebuild the fluid mass only when the data really changed —
+                      // a poll must never snap advected grains back to their homes
 async function loadAll(){
   try{ STATE = await j("/api/state"); }catch(_){}
   try{ LAND = await j("/api/landscape"); }catch(_){}
   try{ BRAIN = await j("/api/brain"); }catch(_){}
-  buildCloud(); buildNodes(); buildChips(); hudRefresh();
+  const key = (STATE.memory_count || 0) + "|" +
+    Object.entries(LAND.types || {}).map(([k, t]) => k + ":" + (t.count || 0)).join(",");
+  if (key !== CLOUD_KEY){ CLOUD_KEY = key; buildCloud(); }
+  buildNodes(); buildChips(); hudRefresh();
 }
 function resize(){
   DPR = window.devicePixelRatio || 1;
