@@ -98,6 +98,13 @@ struct ChatPanel: View {
                     withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
+            // streaming grows the LAST bubble without changing the count —
+            // keep the newest words on screen as they arrive
+            .onChange(of: model.turns.last?.text) { _ in
+                if let last = model.turns.last, !last.isUser {
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                }
+            }
         }
     }
 

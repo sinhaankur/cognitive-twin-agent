@@ -45,6 +45,7 @@ final class VoiceEngine: ObservableObject {
 
     // ---- endpointing state (main actor) ----
     private var listenStart = Date.distantPast
+    private var sessionStart = Date.distantPast    // any session, incl. muted watches
     private var lastVoiceAt = Date.distantPast     // loud buffer OR transcript growth
     private var lastTranscriptLength = 0
     /// Endpointing tuning: how long a pause ends the turn, and the minimum
@@ -58,6 +59,13 @@ final class VoiceEngine: ObservableObject {
     private var echoWords: Set<String> = []        // words of HER current utterance
     private var displayFromSegment = 0             // barge turns: hide echo prefix
     private var externalSpeech = false             // cloned-voice playback in flight
+
+    // ---- wake word (opt-in): her name, watched for while idle ----
+    /// Fully local: the name watch never posts anywhere; it is a muted session
+    /// whose ONLY trigger is the name itself. keepWatching survives turns so
+    /// the app can re-arm the watch whenever she falls idle.
+    private var nameWords: Set<String> = []
+    private(set) var keepWatching = false
 
     /// Called when a final transcript is ready (user stopped talking).
     var onFinal: ((String) -> Void)?
@@ -111,6 +119,9 @@ final class VoiceEngine: ObservableObject {
         echoWords = hunting ? Self.wordSet(utterance) : []
         displayFromSegment = 0
         didDeliverFinal = false                  // fresh turn
+        // a hunt over her utterance is never a name watch (and vice versa)
+        if !hunting || !utterance.isEmpty { nameWords = [] }
+        sessionStart = Date()
         if !hunting {
             transcript = ""
             listenStart = Date()
@@ -152,7 +163,18 @@ final class VoiceEngine: ObservableObject {
             }
             if error != nil {
                 Task { @MainActor in
-                    if self.muted { self.tearDownSession() } else { self.stopListening() }
+                    if self.muted {
+                        let names = Array(self.nameWords)
+                        self.tearDownSession()
+                        // a name watch survives recognizer hiccups — re-arm
+                        if self.keepWatching && !names.isEmpty {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                self.startNameWatch(names)
+                            }
+                        }
+                    } else {
+                        self.stopListening()
+                    }
                 }
             }
         }
@@ -163,6 +185,19 @@ final class VoiceEngine: ObservableObject {
     private func ingest(_ result: SFSpeechRecognitionResult) {
         let segments = result.bestTranscription.segments
         if muted {
+            // Name watch (idle): the ONLY trigger is her name — say it and a
+            // real turn opens, transcript starting after the name itself.
+            if !nameWords.isEmpty {
+                for (i, seg) in segments.enumerated().reversed() {
+                    let w = seg.substring.lowercased()
+                        .trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+                    if nameWords.contains(w) {
+                        bargeIn(fromSegment: i + 1)
+                        return
+                    }
+                }
+                return
+            }
             // Hunting: her own words (and their echo through the mic) match the
             // utterance she's speaking — anything else is YOU. Mis-hearings of
             // her own voice happen, so the bar is: three non-echo words, or two
@@ -291,6 +326,24 @@ final class VoiceEngine: ObservableObject {
         startListening(hunting: true, over: text)
     }
 
+    /// Start watching for her name (opt-in wake word). Muted, fully local,
+    /// no posts anywhere. Safe to call every tick — it no-ops while any
+    /// session is open or while she speaks.
+    func startNameWatch(_ names: [String]) {
+        guard request == nil, !isSpeaking else { return }
+        let words = Set(names.map { $0.lowercased() }.filter { $0.count > 2 })
+        guard !words.isEmpty else { return }
+        nameWords = words
+        keepWatching = true
+        startListening(hunting: true)
+    }
+
+    func stopNameWatch() {
+        keepWatching = false
+        nameWords = []
+        if muted && request != nil { tearDownSession() }
+    }
+
     /// Cloned-voice playback happens server-side; the app still owns the
     /// speaking STATE — the orb, and the barge-in hunt over the same text.
     func beginExternalSpeech(_ text: String) {
@@ -379,6 +432,14 @@ final class VoiceEngine: ObservableObject {
             self.level = self.level * 0.7 + scaled * 0.3      // smoothing
             self.brightness = self.brightness * 0.6 + sparkle * 0.4
             if scaled > 0.16 { self.lastVoiceAt = Date() }
+            // on-device recognition quietly stalls near a minute: recycle a
+            // long-lived name watch before it goes deaf
+            if self.muted && self.keepWatching && !self.nameWords.isEmpty
+                && Date().timeIntervalSince(self.sessionStart) > 50 {
+                let names = Array(self.nameWords)
+                self.tearDownSession()
+                self.startNameWatch(names)
+            }
             self.checkEndpoint()
         }
     }

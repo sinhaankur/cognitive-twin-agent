@@ -171,6 +171,40 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(200, {"answer": f"(error: {e})", "route": None})
                 return
             self._json(200, {"answer": answer, "route": route})
+        elif self.path == "/api/ask/stream":
+            # the same ask, streamed: newline-delimited JSON — {"delta": "…"}
+            # as the words arrive, then {"done": true, "answer", "route"}.
+            # facts stay identical to /api/ask; only the arrival changes.
+            data = self._read_json()
+            text = (data.get("text") or "").strip()
+            if not text:
+                self._json(400, {"error": "no text"})
+                return
+            agent = self.server.agent  # type: ignore[attr-defined]
+            internal = bool(data.get("internal"))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+
+            def _send(obj) -> None:
+                try:
+                    self.wfile.write((json.dumps(obj) + "\n").encode("utf-8"))
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    raise
+            try:
+                answer, route = _run_once_capture(
+                    agent, text, record=not internal,
+                    on_delta=lambda d: _send({"delta": d}))
+                _send({"done": True, "answer": answer, "route": route})
+            except (BrokenPipeError, ConnectionResetError):
+                pass                        # client went away mid-stream
+            except Exception as e:
+                try:
+                    _send({"done": True, "answer": f"(error: {e})", "route": None})
+                except Exception:
+                    pass
         elif self.path == "/api/model":
             data = self._read_json()
             name = (data.get("model") or "").strip()

@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKey: HotKey?          // summon her from anywhere (⌥Space)
     private var eyeItem: NSMenuItem?     // the See-me switch — checkmark shows state
     private var earItem: NSMenuItem?     // the Hear-the-room switch (opt-in)
+    private var wakeItem: NSMenuItem?    // the Wake-on-name switch (opt-in)
     private var photosItem: NSMenuItem?  // the Read-my-Photos switch (opt-in)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -55,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.refreshActivity()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.syncMenuChecks() }
         photosItem?.state = UserDefaults.standard.bool(forKey: "photosOn") ? .on : .off
+        wakeItem?.state = UserDefaults.standard.bool(forKey: "wakeOn") ? .on : .off
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -137,6 +139,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                              action: #selector(menuEar), keyEquivalent: "")
         earItem?.image = symbol("ear")
         earItem?.target = self; menu.addItem(earItem!)
+        wakeItem = NSMenuItem(title: "Wake on her name (on/off)",
+                              action: #selector(menuWake), keyEquivalent: "")
+        wakeItem?.image = symbol("person.wave.2")
+        wakeItem?.target = self; menu.addItem(wakeItem!)
         photosItem = NSMenuItem(title: "Let her read my Photos (on/off)",
                                 action: #selector(menuPhotos), keyEquivalent: "")
         photosItem?.image = symbol("photo.on.rectangle")
@@ -161,6 +167,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             self.earItem?.state = self.model.ear.on ? .on : .off
         }
+    }
+    @objc private func menuWake() {
+        model.wakeOn.toggle()
+        wakeItem?.state = model.wakeOn ? .on : .off
     }
     @objc private func menuPhotos() { togglePhotos() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
@@ -369,7 +379,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// One line in the chat panel.
 struct ChatTurn: Identifiable {
     let id = UUID()
-    let text: String
+    var text: String        // var: her bubble grows live while she streams
     let isUser: Bool
 }
 
@@ -821,9 +831,35 @@ final class AppModel: ObservableObject {
                         answerText = reply.answer
                     }
                 } else {
-                    let reply = try await agent.ask(text)
+                    // streamed: her bubble appears with the first words and
+                    // grows as she thinks — no more staring at "thinking…"
+                    let turnID = await MainActor.run { () -> UUID in
+                        let turn = ChatTurn(text: "", isUser: false)
+                        self.turns.append(turn)
+                        return turn.id
+                    }
+                    let reply = try await agent.askStream(text) { partial in
+                        Task { @MainActor in
+                            if let i = self.turns.firstIndex(where: { $0.id == turnID }) {
+                                self.turns[i].text = partial
+                            }
+                        }
+                    }
                     if let m = reply.model { await MainActor.run { self.modelName = m } }
                     answerText = reply.answer
+                    await MainActor.run {
+                        if let i = self.turns.firstIndex(where: { $0.id == turnID }) {
+                            if answerText.isEmpty {
+                                self.turns.remove(at: i)
+                            } else {
+                                self.turns[i].text = answerText
+                            }
+                        }
+                        self.answer = answerText
+                        if self.speakReplies { self.speakReply(answerText) }
+                        else { self.phase = .idle }
+                    }
+                    return
                 }
                 await MainActor.run {
                     self.answer = answerText
@@ -839,6 +875,7 @@ final class AppModel: ObservableObject {
                     // The failure must LAND IN THE CHAT — without a bubble the
                     // typed message just vanishes and the whole panel reads as
                     // broken (the original bug: errors only set `answer`).
+                    self.turns.removeAll { !$0.isUser && $0.text.isEmpty }   // drop a dead stream bubble
                     let msg = "I couldn't answer that — my local brain isn't reachable. Give me a few seconds and try again."
                     self.answer = msg
                     self.turns.append(ChatTurn(text: msg, isUser: false))
@@ -917,9 +954,26 @@ final class AppModel: ObservableObject {
         return Color(red: 0.30, green: 0.45, blue: 0.95)
     }
 
+    /// Wake on her name (opt-in). Persisted; the watch re-arms whenever idle.
+    @Published var wakeOn = UserDefaults.standard.bool(forKey: "wakeOn") {
+        didSet {
+            UserDefaults.standard.set(wakeOn, forKey: "wakeOn")
+            if !wakeOn { voice.stopNameWatch() }
+        }
+    }
+    private var wakeNames: [String] {
+        var names = ["vera"]
+        if let first = assistantName.components(separatedBy: " ").first, first.count > 2 {
+            names.append(first)
+        }
+        return names
+    }
+
     func syncPhase() {
         if voice.isListening { phase = .listening }
         else if voice.isSpeaking { phase = .speaking }
         else if phase != .thinking { phase = .idle }
+        // idle + switch on → she listens for her name (no-op if already armed)
+        if wakeOn && phase == .idle { voice.startNameWatch(wakeNames) }
     }
 }

@@ -84,7 +84,8 @@ class Agent:
         """Forget the current session's back-and-forth (not the on-disk memory)."""
         self.history = []
 
-    def run(self, user_input: str, *, record: bool = True) -> AgentResult:
+    def run(self, user_input: str, *, record: bool = True,
+            on_delta: Any = None) -> AgentResult:
         """``record=False`` answers without writing to memory — for scripted,
         internal prompts (greetings, background reflections). The twin should
         learn from the USER, never from its own boilerplate."""
@@ -182,7 +183,12 @@ class Agent:
         used: list[tuple[str, dict[str, Any]]] = []
 
         for step in range(1, self.max_steps + 1):
-            reply = self.client.chat(messages, tools=tools)
+            # stream tokens to the caller when it asked and the client can —
+            # the words appear as she thinks them, not as one late block
+            if on_delta is not None and hasattr(self.client, "chat_stream"):
+                reply = self.client.chat_stream(messages, tools=tools, on_delta=on_delta)
+            else:
+                reply = self.client.chat(messages, tools=tools)
             messages.append(reply)
 
             if not reply.tool_calls:
