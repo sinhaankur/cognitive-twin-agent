@@ -362,7 +362,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // 2) The chat panel — appears next to the orb on click.
     private func makeChatWindow() {
-        let w = NSWindow(
+        // KeyableWindow, not NSWindow: a borderless window refuses key status
+        // by default, so the keyboard could NEVER reach the chat field —
+        // "typing is not supported" was this window silently declining keys
+        let w = KeyableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 520),
             styleMask: [.borderless], backing: .buffered, defer: false)
         w.isOpaque = false
@@ -397,6 +400,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 /// One line in the chat panel.
+/// A borderless window that accepts the keyboard — AppKit's default is to
+/// refuse key status without a title bar, which silently kills all typing.
+private final class KeyableWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 struct ChatTurn: Identifiable {
     let id = UUID()
     var text: String        // var: her bubble grows live while she streams
