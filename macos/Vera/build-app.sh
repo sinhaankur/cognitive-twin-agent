@@ -13,19 +13,24 @@ cd "$(dirname "$0")"
 APP="Vera.app"
 BIN_NAME="Vera"
 
-echo "[1/4] Compiling (release)..."
-swift build -c release
+echo "[1/4] Compiling (release, cross-module optimized)..."
+T0=$(date +%s)
+swift build -c release -Xswiftc -cross-module-optimization
 
 BIN_PATH="$(swift build -c release --show-bin-path)/$BIN_NAME"
 if [ ! -f "$BIN_PATH" ]; then
   echo "build failed: $BIN_PATH not found" >&2
   exit 1
 fi
+echo "  ($(($(date +%s) - T0))s)"
 
 echo "[2/4] Assembling $APP..."
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_PATH" "$APP/Contents/MacOS/$BIN_NAME"
+# strip debug symbols from the bundled copy (the .build one keeps them)
+strip -rSTx "$APP/Contents/MacOS/$BIN_NAME" 2>/dev/null || true
+echo "  binary: $(du -h "$APP/Contents/MacOS/$BIN_NAME" | cut -f1) (was $(du -h "$BIN_PATH" | cut -f1))"
 
 # App icon (Anita's orb). Generate it if missing.
 if [ ! -f AppIcon.icns ]; then

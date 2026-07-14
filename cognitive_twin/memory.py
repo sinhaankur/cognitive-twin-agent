@@ -71,9 +71,18 @@ def record(prompt: str, answer: str, *, model: str | None = None,
     }
     path = _file()
     existed = path.exists()
+    line = json.dumps(entry, ensure_ascii=False)
+    # seal at rest (vault: device+account key). If the vault is ever
+    # unavailable the line stays plaintext — losing a memory would be worse;
+    # `ctwin vault status` tells the truth about what's sealed.
+    try:
+        from . import vault
+        line = vault.seal_line(line)
+    except Exception:
+        pass
     try:
         with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            f.write(line + "\n")
         if not existed:
             _secure(path)
     except OSError:
@@ -96,11 +105,18 @@ def entries(limit: int | None = None) -> list[dict[str, Any]]:
     try:
         for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
-            if line:
+            if not line:
+                continue
+            if line.startswith("ctv1:"):        # sealed at rest — open with the vault
                 try:
-                    out.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
+                    from . import vault
+                    line = vault.open_line(line)
+                except Exception:
+                    continue                    # wrong device/key: unreadable, skip
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
     except OSError:
         return []
     return out[-limit:] if limit else out
@@ -282,8 +298,12 @@ def _strength_file() -> Path:
 
 def _strengths() -> dict[str, int]:
     try:
-        return json.loads(_strength_file().read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        raw = _strength_file().read_bytes()
+        if raw.startswith(b"CTV1F"):            # sealed at rest
+            from . import vault
+            raw = vault.open_bytes(raw)
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
         return {}
 
 
@@ -306,7 +326,13 @@ def reinforce(hits: list[dict[str, Any]]) -> None:
             k = _skey(e)
             counts[k] = counts.get(k, 0) + 1
         path = _strength_file()
-        path.write_text(json.dumps(counts), encoding="utf-8")
+        data = json.dumps(counts).encode("utf-8")
+        try:
+            from . import vault
+            data = vault.seal_bytes(data)
+        except Exception:
+            pass
+        path.write_bytes(data)
         _secure(path)
     except OSError:
         pass

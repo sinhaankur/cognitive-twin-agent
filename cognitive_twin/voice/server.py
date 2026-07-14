@@ -286,6 +286,18 @@ class _Handler(BaseHTTPRequestHandler):
             from .. import presence
             presence.stop()
             self._json(200, {"ok": True})
+        elif self.path == "/api/vault/export":
+            # Settings' "Export for another device": one passphrase-encrypted
+            # bundle of the memory folder, written where the user chose.
+            from pathlib import Path as _P
+            from .. import vault
+            data = self._read_json()
+            try:
+                r = vault.export_bundle(_P(str(data.get("path") or "")),
+                                        str(data.get("passphrase") or ""))
+                self._json(200, {"ok": True, **r})
+            except Exception as e:
+                self._json(200, {"ok": False, "error": str(e)})
         elif self.path == "/api/photos/events":
             # life events derived from Photos METADATA (album titles + dates,
             # never pixels) — sent only while the opt-in "Read my Photos"
