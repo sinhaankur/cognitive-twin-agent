@@ -585,22 +585,33 @@ final class AppModel: ObservableObject {
     private func greetOnLaunch() async {
         guard !didGreet else { return }
         didGreet = true
-        do {
-            let reply = try await agent.ask(
-                "Greet me for the day using your greeting tool. Then add ONE "
-                + "specific, intelligent line grounded in what's actually current "
-                + "— an open task from today, or the most recent thing we were "
-                + "talking about — a real thought about it, not a platitude, and "
-                + "never something you've already told me. If nothing is current, "
-                + "the greeting alone is enough. Three sentences maximum.",
-                internal: true)
-            await MainActor.run {
-                self.answer = reply.answer
-                if let m = reply.model { self.modelName = m }
-                self.turns.append(ChatTurn(text: reply.answer, isUser: false))
-                if self.speakReplies { self.speakReply(reply.answer) }
+        // Facts first, deterministically: the clock and weather come from the
+        // greeting SKILL, never the model — a model that skips the tool will
+        // cheerfully invent "September 15, 2023" and a gentle breeze.
+        let fact = await agent.greet()
+        var line = ""
+        if let reply = try? await agent.ask(
+            "In ONE short sentence, bring up the most current thing between us "
+            + "— an open task from today or the latest topic in memory — with a "
+            + "real thought about it. Only things that actually appear in my "
+            + "memory or tasks: no scenery, no imagery, no invented details, and "
+            + "do NOT mention the date, time, or weather (already said). "
+            + "If nothing is current, reply exactly: (nothing)",
+            internal: true) {
+            let t = reply.answer.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty && !t.lowercased().contains("(nothing)") && t.count < 220 {
+                line = t
             }
-        } catch { /* greeting is best-effort */ }
+            if let m = reply.model { await MainActor.run { self.modelName = m } }
+        }
+        let text = [fact, line].filter { !$0.isEmpty }.joined(separator: " ")
+        if !text.isEmpty {
+            await MainActor.run {
+                self.answer = text
+                self.turns.append(ChatTurn(text: text, isUser: false))
+                if self.speakReplies { self.speakReply(text) }
+            }
+        }
         // Is her actual (cloned) voice ready? If so, she speaks in it from now on.
         let ready = await agent.cloneReady()
         await MainActor.run { self.clonedVoiceReady = ready }

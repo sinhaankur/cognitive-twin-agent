@@ -137,6 +137,18 @@ final class AgentClient {
         } catch { return false }
     }
 
+    /// GET /api/greet — the deterministic greeting: real clock, real weather,
+    /// straight from the skill. Facts the app owns never come from the model.
+    func greet() async -> String {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/greet"))
+        req.timeoutInterval = 12
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (obj["text"] as? String) ?? ""
+        } catch { return "" }
+    }
+
     /// GET /api/reflections — thoughts Anita had about your projects while away.
     func reflections() async -> [String] {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/reflections"))
