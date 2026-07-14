@@ -49,8 +49,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <!-- identifier kept as 'anita' on purpose: changing it would reset the
        mic/speech/accessibility permissions the user already granted -->
   <key>CFBundleIdentifier</key>      <string>com.sinhaankur.anita</string>
-  <key>CFBundleVersion</key>         <string>0.2.2</string>
-  <key>CFBundleShortVersionString</key> <string>0.2.2</string>
+  <key>CFBundleVersion</key>         <string>0.2.3</string>
+  <key>CFBundleShortVersionString</key> <string>0.2.3</string>
   <key>CFBundlePackageType</key>     <string>APPL</string>
   <key>CFBundleExecutable</key>      <string>Vera</string>
   <key>CFBundleIconFile</key>        <string>AppIcon</string>

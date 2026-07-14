@@ -669,6 +669,17 @@ function stepGraph(dt){
     if (dd > RIM){ n.x *= RIM / dd; n.y *= RIM / dd; n.z *= RIM / dd; }
   });
 }
+/* hexagon path — the owner's choice for memory cells: honeycomb, not bubbles */
+function hexPath(c, X, Y, r, rot){
+  c.beginPath();
+  for (let k = 0; k < 6; k++){
+    const a = rot + k * Math.PI / 3;
+    const x = X + Math.cos(a) * r, y = Y + Math.sin(a) * r;
+    k ? c.lineTo(x, y) : c.moveTo(x, y);
+  }
+  c.closePath();
+}
+
 let focusIdx = null;   // hovered memory (last frame): its neighbourhood lights
 function drawGraph(now){
   let hover = null;
@@ -729,18 +740,20 @@ function drawGraph(now){
     const P = S(n.px, n.py);
     const dp = depthOf(n) * dimmed(n);
     const hot = glow["node:" + n.idx] || 0;
-    const r = (2.6 + Math.min(4, n.deg * 0.7) + hot * 3) * depthOf(n);
+    const r = (3.0 + Math.min(4, n.deg * 0.7) + hot * 3) * depthOf(n);
+    // memory CELLS: flat-top hexagons (each keeps its own slight tilt)
+    const rot = rnd(n.idx * 13) * 0.5;
     ctx.globalAlpha = dp;
     ctx.fillStyle = n.color; ctx.shadowColor = n.color;
     ctx.shadowBlur = 8 + hot * 16 + n.fresh * 8;
-    ctx.beginPath(); ctx.arc(P.X, P.Y, r, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    hexPath(ctx, P.X, P.Y, r, rot); ctx.fill(); ctx.shadowBlur = 0;
     if (n.fresh > 0.3){          // new this week: a warm ring, fading with age
       ctx.strokeStyle = "rgba(255,214,160," + (0.5 * n.fresh * dp) + ")";
       ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(P.X, P.Y, r + 2.5, 0, 7); ctx.stroke();
+      hexPath(ctx, P.X, P.Y, r + 2.5, rot); ctx.stroke();
     }
     ctx.fillStyle = "rgba(255,255,255,0.9)";
-    ctx.beginPath(); ctx.arc(P.X, P.Y, Math.max(0.7, r * 0.32), 0, 7); ctx.fill();
+    hexPath(ctx, P.X, P.Y, Math.max(0.9, r * 0.34), rot); ctx.fill();
     const near = Math.hypot(P.X - mouse.x, P.Y - mouse.y) < r + 6;
     n.hit = ((named.has(n) && dp > 0.72) || near || hot > 0.1 || nbr.has(n.idx))
       ? pill(P, nodeShort(n), n.color, hot > 0.1 || focusIdx === n.idx, n.px < 0 ? -1 : 1)
@@ -1247,7 +1260,8 @@ function frame(now){
     r.r += 60 * dt; r.a *= 0.93;
     const P = S(r.x, r.y);
     ctx.strokeStyle = "rgba(126,200,255," + r.a + ")"; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.arc(P.X, P.Y, r.r * cam.zoom, 0, 7); ctx.stroke();
+    if (MODE === "simple"){ hexPath(ctx, P.X, P.Y, r.r * cam.zoom, 0.26); ctx.stroke(); }
+    else { ctx.beginPath(); ctx.arc(P.X, P.Y, r.r * cam.zoom, 0, 7); ctx.stroke(); }
   });
 
   // hover card
