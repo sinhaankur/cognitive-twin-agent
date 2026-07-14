@@ -6,14 +6,17 @@ import SwiftUI
 /// at rest and intensifies — brighter, faster swirl, bigger bloom — as `amplitude`
 /// rises (listening / speaking).
 ///
-///   amplitude  0…1, drives bloom + swirl speed + scale
+///   amplitude  0…1, drives bloom + swirl speed + scale (spring-fed upstream)
 ///   phase      ever-increasing; rotates the blobs so the colors flow
 ///   tint       a subtle state bias (listening cooler, speaking warmer) layered
 ///              on top of the rainbow, so state still reads without losing "Siri".
+///   brightness 0…1 spectral flicker — sibilants sparkle the white core and rim
+///              while vowels swell the body (fed by the mic's zero-crossing rate)
 struct SiriOrb: View {
     var amplitude: CGFloat
     var phase: CGFloat
     var tint: Color
+    var brightness: CGFloat = 0
 
     // The Siri palette — saturated, luminous.
     private let blobs: [Color] = [
@@ -70,12 +73,16 @@ struct SiriOrb: View {
                             .opacity(0.82)
                     }
 
-                    // central white-hot core (grows when speaking/listening)
+                    // central white-hot core (grows when speaking/listening;
+                    // sparkles with the voice's spectral brightness — an "s"
+                    // flickers it, an "aah" swells the body instead)
                     Circle()
                         .fill(
                             RadialGradient(
-                                colors: [.white.opacity(0.9), .white.opacity(0.0)],
-                                center: .center, startRadius: 0, endRadius: r * (0.35 + amplitude * 0.3)
+                                colors: [.white.opacity(0.75 + brightness * 0.25),
+                                         .white.opacity(0.0)],
+                                center: .center, startRadius: 0,
+                                endRadius: r * (0.35 + amplitude * 0.3 + brightness * 0.12)
                             )
                         )
                         .blendMode(.plusLighter)
@@ -119,17 +126,19 @@ struct SiriOrb: View {
                     .blendMode(.screen)
                     .clipShape(Circle())
 
-                // --- crisp rim ---
+                // --- crisp rim (shimmers with the voice's brightness) ---
                 Circle()
                     .strokeBorder(
-                        LinearGradient(colors: [.white.opacity(0.35), .white.opacity(0.05)],
+                        LinearGradient(colors: [.white.opacity(0.35 + brightness * 0.3),
+                                                .white.opacity(0.05)],
                                        startPoint: .topLeading, endPoint: .bottomTrailing),
                         lineWidth: 1
                     )
             }
             .frame(width: s, height: s)
             .scaleEffect(breathe)
-            .animation(.easeInOut(duration: 0.25), value: amplitude)
+            // no easing here: amplitude arrives spring-smoothed from the orb's
+            // 60 fps tick (FloatingOrb), so onsets punch instead of fading in
         }
     }
 }

@@ -195,6 +195,19 @@ class _Handler(BaseHTTPRequestHandler):
                 if not ok:
                     ok = tts.speak(text, blocking=False)
             self._json(200, {"ok": ok, "cloned": ok and self._cloned_ready()})
+        elif self.path == "/api/speak/stop":
+            # barge-in: the user spoke over her — silence playback mid-word
+            stopped = False
+            try:
+                from .. import voice_clone
+                stopped = voice_clone.stop_playback() or stopped
+            except Exception:
+                pass
+            try:
+                stopped = tts.stop() or stopped
+            except Exception:
+                pass
+            self._json(200, {"ok": True, "stopped": stopped})
         elif self.path == "/api/memory/clear":
             from .. import memory
             self._json(200, {"ok": memory.clear()})
