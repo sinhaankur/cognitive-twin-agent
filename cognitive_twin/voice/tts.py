@@ -59,12 +59,31 @@ def speak(text: str, *, voice: str | None = None, rate: int | None = None,
     if rate:
         cmd += ["-r", str(rate)]
     cmd.append(text)
+    global _proc
     try:
         if blocking:
-            subprocess.run(cmd, check=False, timeout=120)
+            _proc = subprocess.Popen(cmd)
+            _proc.wait(timeout=120)
         else:
-            subprocess.Popen(cmd)
+            _proc = subprocess.Popen(cmd)
         return True
     except (OSError, subprocess.SubprocessError) as e:
         print(f"[tts error] {e}", file=sys.stderr)
         return False
+
+
+# the live `say` process, so barge-in can actually silence her mid-word
+_proc: subprocess.Popen | None = None
+
+
+def stop() -> bool:
+    """Stop any in-flight speech immediately (the app's barge-in)."""
+    global _proc
+    p = _proc
+    if p is not None and p.poll() is None:
+        try:
+            p.terminate()
+            return True
+        except OSError:
+            pass
+    return False

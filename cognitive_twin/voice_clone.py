@@ -239,20 +239,50 @@ def synthesize_fast(text: str) -> Path | None:
     return synthesize(text)  # cold fallback
 
 
+# barge-in bookkeeping: the live afplay process, plus generation counters so a
+# stop that lands while XTTS is still RENDERING silences the playback that
+# would have followed (killing nothing isn't the same as staying quiet)
+_play_proc: subprocess.Popen | None = None
+_speak_gen = 0
+_stop_gen = -1
+
+
 def speak(text: str) -> bool:
-    """Render in the cloned voice and play it. Returns True if it played; False
-    means the caller should fall back to the built-in voice."""
+    """Render in the cloned voice and play it. Returns True if it played (or
+    was deliberately silenced by a barge-in); False means the caller should
+    fall back to the built-in voice."""
+    global _play_proc, _speak_gen
+    _speak_gen += 1
+    gen = _speak_gen
     out = synthesize_fast(text)
     if out is None:
         return False
+    if _stop_gen >= gen:
+        return True      # the user interrupted during render — stay quiet
     player = shutil.which("afplay")  # macOS
     if not player:
         return False
     try:
-        subprocess.run([player, str(out)], check=False, timeout=180)
+        _play_proc = subprocess.Popen([player, str(out)])
+        _play_proc.wait(timeout=180)
         return True
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def stop_playback() -> bool:
+    """Stop the cloned voice immediately (the app's barge-in) — including a
+    voice still in the renderer that hasn't reached the speaker yet."""
+    global _play_proc, _stop_gen
+    _stop_gen = _speak_gen
+    p = _play_proc
+    if p is not None and p.poll() is None:
+        try:
+            p.terminate()
+            return True
+        except OSError:
+            pass
+    return False
 
 
 # --- meta + status ------------------------------------------------------------

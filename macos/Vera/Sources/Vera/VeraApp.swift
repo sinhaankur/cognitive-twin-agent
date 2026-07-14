@@ -377,18 +377,22 @@ final class AppModel: ObservableObject {
     }
 
     /// Speak a reply in her cloned voice if available, else the built-in voice.
-    /// The orb shows the speaking state for the rough duration either way.
+    /// Either way the mic opens muted underneath her (VoiceEngine's barge-in
+    /// hunt): speak over her and she stops mid-word, your words already caught.
     func speakReply(_ text: String) {
         phase = .speaking
         if clonedVoiceReady {
-            // Cloned voice renders + plays server-side (her real voice).
+            // Cloned voice renders + plays server-side (her real voice); the
+            // request returns when playback ends, so the orb settles exactly
+            // on time — no more length guessing.
+            voice.beginExternalSpeech(text)
             Task {
                 let ok = await agent.speak(text)
-                if !ok { await MainActor.run { self.voice.speak(text) } }  // fallback
-                // settle the orb after a rough estimate of speech length
-                let secs = min(20.0, 1.0 + Double(text.count) * 0.06)
-                try? await Task.sleep(nanoseconds: UInt64(secs * 1_000_000_000))
-                await MainActor.run { if self.phase == .speaking { self.phase = .idle } }
+                await MainActor.run {
+                    self.voice.endExternalSpeech()
+                    if !ok { self.voice.speak(text) }   // fallback
+                    else if self.phase == .speaking { self.phase = .idle }
+                }
             }
         } else {
             voice.speak(text)
@@ -793,9 +797,19 @@ final class AppModel: ObservableObject {
     /// Map engine state → UI phase + amplitude for the orb.
     var amplitude: CGFloat {
         if voice.isListening { return max(0.25, voice.level) }
-        if voice.isSpeaking { return 0.55 }
+        // speaking: each word bumps speakPulse (the synthesizer's per-word
+        // callback), so her mouth visibly moves; cloned playback holds steady
+        if voice.isSpeaking { return 0.40 + voice.speakPulse * 0.45 }
         if phase == .thinking { return 0.12 }
         return 0.0
+    }
+
+    /// Spectral sparkle for the orb's core: your sibilants while listening,
+    /// her word onsets while speaking.
+    var brightness: CGFloat {
+        if voice.isListening { return voice.brightness }
+        if voice.isSpeaking { return voice.speakPulse * 0.7 }
+        return 0
     }
 
     var tint: Color {
