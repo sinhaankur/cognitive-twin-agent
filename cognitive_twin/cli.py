@@ -166,7 +166,8 @@ def _run_once(agent: Agent, prompt: str, explain: bool, *, repl: bool = False) -
 
 
 def _run_once_capture(agent: Agent, prompt: str, *,
-                      record: bool = True) -> tuple[str, dict | None]:
+                      record: bool = True,
+                      on_delta=None) -> tuple[str, dict | None]:
     """Run one prompt and RETURN (answer, route_dict) instead of printing — used
     by the voice server. Shares the routed-model fallback behaviour of _run_once
     (if the policy's model isn't pulled, pin a tool-capable installed one)."""
@@ -198,7 +199,7 @@ def _run_once_capture(agent: Agent, prompt: str, *,
         client.model = pinned  # type: ignore[attr-defined]
         saved_router, agent.router = agent.router, None
     try:
-        result = agent.run(prompt, record=record)
+        result = agent.run(prompt, record=record, on_delta=on_delta)
     finally:
         if saved_router is not None:
             agent.router = saved_router
@@ -349,13 +350,60 @@ def _voice_command(rest: list[str]) -> int:
 
 
 def _memory_command(rest: list[str]) -> int:
-    """`ctwin memory [clear]` — inspect or clear the local, private memory."""
+    """`ctwin memory [clear|export-md <dir>]` — inspect, clear, or export the
+    local private memory as a folder of linked markdown notes (the Obsidian
+    idea: your knowledge as plain files you own — openable in any editor,
+    walkable in Obsidian itself)."""
     from . import memory
     if rest and rest[0] == "clear":
         print("cleared local memory." if memory.clear() else "nothing to clear.")
+    elif rest and rest[0] == "export-md" and len(rest) > 1:
+        from pathlib import Path
+        n = _export_memory_md(Path(rest[1]).expanduser())
+        print(f"  exported {n} memories as linked markdown → {rest[1]}")
+        print("  (plain files, decrypted by your choice — treat the folder accordingly)")
     else:
         print(memory.status())
     return 0
+
+
+def _export_memory_md(out: "Path") -> int:
+    """Her memory as an Obsidian-style vault: one note per memory, [[links]]
+    between memories that share real terms, and an index. Plain markdown."""
+    from . import memory
+    out.mkdir(parents=True, exist_ok=True)
+    entries = memory.entries()
+    notes: list[tuple[str, dict, set]] = []      # (filename, entry, terms)
+    seen: set[str] = set()
+    for e in entries:
+        prompt = (e.get("prompt") or "").strip()
+        if not prompt:
+            continue
+        slug = "".join(c if c.isalnum() or c == " " else "" for c in prompt.lower())
+        slug = "-".join(slug.split()[:6]) or "note"
+        name = f"{(e.get('ts') or '')[:10]}-{slug}"
+        while name in seen:
+            name += "-2"
+        seen.add(name)
+        notes.append((name, e, memory._terms(prompt)))
+    for name, e, terms in notes:
+        related = [n for n, _, t in notes
+                   if n != name and len(terms & t) >= 2][:6]
+        lines = ["---",
+                 f"date: {e.get('ts') or ''}",
+                 f"type: {e.get('type') or 'knowledge'}",
+                 f"source: {e.get('source') or 'conversation'}",
+                 "---", "",
+                 e.get("prompt") or "", ""]
+        if e.get("gist"):
+            lines += ["> " + (e.get("gist") or ""), ""]
+        if related:
+            lines += ["Related: " + " ".join(f"[[{r}]]" for r in related), ""]
+        (out / f"{name}.md").write_text("\n".join(lines), encoding="utf-8")
+    index = ["# Her memory", ""]
+    index += [f"- [[{name}]] — {(e.get('type') or '?')}" for name, e, _ in notes]
+    (out / "index.md").write_text("\n".join(index) + "\n", encoding="utf-8")
+    return len(notes)
 
 
 def _persona_command(rest: list[str]) -> int:

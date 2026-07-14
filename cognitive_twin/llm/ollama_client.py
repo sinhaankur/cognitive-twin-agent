@@ -106,6 +106,68 @@ class OllamaClient:
             tool_calls=msg.get("tool_calls", []) or [],
         )
 
+    def chat_stream(
+        self,
+        messages: list[ChatMessage],
+        tools: list[dict[str, Any]] | None = None,
+        on_delta: Any = None,
+    ) -> ChatMessage:
+        """One chat turn, streamed. Content deltas flow to `on_delta` as they
+        arrive; returns the same complete ChatMessage as chat(). Deltas are
+        briefly buffered until it's clear the model is answering rather than
+        reaching for a tool, so tool-turn preambles never leak to the UI."""
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": [m.to_api() for m in messages],
+            "stream": True,
+            "options": {"temperature": self.temperature},
+        }
+        if tools:
+            payload["tools"] = tools
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            self.host + "/api/chat", data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        content: list[str] = []
+        tool_calls: list[dict[str, Any]] = []
+        held: list[str] = []
+        committed = False
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                for raw in resp:
+                    try:
+                        data = json.loads(raw.decode("utf-8"))
+                    except ValueError:
+                        continue
+                    msg = data.get("message", {}) or {}
+                    if msg.get("tool_calls"):
+                        tool_calls.extend(msg["tool_calls"])
+                    piece = msg.get("content") or ""
+                    if piece:
+                        content.append(piece)
+                        if on_delta and not tool_calls:
+                            if committed:
+                                on_delta(piece)
+                            else:
+                                held.append(piece)
+                                if sum(len(h) for h in held) > 24:
+                                    for h in held:
+                                        on_delta(h)
+                                    held, committed = [], True
+                    if data.get("done"):
+                        break
+        except urllib.error.URLError as e:
+            raise OllamaError(f"Ollama stream failed: {e}") from e
+        if on_delta and not tool_calls and not committed:
+            for h in held:                       # short answers flush at the end
+                on_delta(h)
+        return ChatMessage(
+            role="assistant",
+            content="".join(content),
+            tool_calls=tool_calls,
+        )
+
     # ---- transport ----------------------------------------------------------
     def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         body = json.dumps(payload).encode("utf-8")

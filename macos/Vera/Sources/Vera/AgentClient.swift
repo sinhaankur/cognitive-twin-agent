@@ -137,6 +137,37 @@ final class AgentClient {
         } catch { return false }
     }
 
+    /// POST /api/ask/stream — the same ask, but the words arrive as she thinks
+    /// them. `onDelta` receives the ACCUMULATED text after each fragment.
+    func askStream(_ text: String,
+                   onDelta: @escaping @Sendable (String) -> Void) async throws -> AgentReply {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/ask/stream"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: ["text": text])
+        req.timeoutInterval = 300
+        let (bytes, _) = try await URLSession.shared.bytes(for: req)
+        var answer = ""
+        var model: String?, rule: String?
+        for try await line in bytes.lines {
+            guard let d = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
+            else { continue }
+            if let delta = obj["delta"] as? String {
+                answer += delta
+                onDelta(answer)
+            }
+            if (obj["done"] as? Bool) == true {
+                if let a = obj["answer"] as? String, !a.isEmpty { answer = a }
+                if let r = obj["route"] as? [String: Any] {
+                    model = r["model"] as? String
+                    rule = r["rule"] as? String
+                }
+            }
+        }
+        return AgentReply(answer: answer, model: model, rule: rule)
+    }
+
     /// GET /api/greet — the deterministic greeting: real clock, real weather,
     /// straight from the skill. Facts the app owns never come from the model.
     func greet() async -> String {
