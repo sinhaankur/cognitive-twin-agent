@@ -151,8 +151,45 @@ def _thought(q: str) -> dict[str, Any]:
 
 
 # ---- page (self-contained: HTML+CSS+JS in one string) ------------------------
+def _git(args: list[str]) -> str:
+    """Ask the repo itself — the changelog and version are real history, not
+    prose that drifts. Empty string if git isn't there; the pages degrade."""
+    try:
+        import subprocess
+        from pathlib import Path
+        root = Path(__file__).resolve().parent.parent
+        r = subprocess.run(["git", *args], cwd=root, capture_output=True,
+                           text=True, timeout=3)
+        return r.stdout.strip() if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
 def _page() -> bytes:
-    return _PAGE.encode("utf-8")
+    ver = _git(["rev-parse", "--short", "HEAD"]) or "dev"
+    return _PAGE.replace("__VER__", ver).encode("utf-8")
+
+
+def _about_page() -> bytes:
+    """/about — what's built, the real changelog (git history), how a change
+    ships, and the map of the whole thing. Server-rendered, zero JS."""
+    import html as H
+    ver = _git(["rev-parse", "--short", "HEAD"]) or "dev"
+    n_commits = _git(["rev-list", "--count", "HEAD"]) or "?"
+    raw = _git(["log", "--pretty=%ad%x09%s", "--date=format:%Y-%m-%d"])
+    # group consecutive commits under their day, newest first — as it happened
+    log_html, last_day = [], None
+    for line in raw.splitlines():
+        day, _, subject = line.partition("\t")
+        if not subject:
+            continue
+        if day != last_day:
+            log_html.append(f'<div class="day">{H.escape(day)}</div>')
+            last_day = day
+        log_html.append(f'<div class="entry">{H.escape(subject)}</div>')
+    changelog = "\n".join(log_html) or '<div class="entry">no history readable here — the repo speaks when git can</div>'
+    return _ABOUT.replace("__VER__", ver).replace("__COUNT__", n_commits) \
+                 .replace("__LOG__", changelog).encode("utf-8")
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -172,6 +209,8 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path.split("?")[0] in ("/", "/index.html"):
             self._send(200, _page(), "text/html; charset=utf-8")
+        elif self.path.split("?")[0] == "/about":
+            self._send(200, _about_page(), "text/html; charset=utf-8")
         elif self.path == "/api/state":
             self._json(200, _state())
         elif self.path.startswith("/api/route"):
@@ -219,7 +258,11 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   :root{ --mono: ui-monospace, "SF Mono", Menlo, monospace; }
   html,body{margin:0;height:100%;overflow:hidden;background:#04050a;color:#dfe4ee;
     font-family:var(--mono);-webkit-font-smoothing:antialiased}
-  canvas{position:fixed;inset:0;display:block}
+  /* a canvas does NOT stretch with inset:0 (replaced element keeps its
+     intrinsic size) — on a 2× display the backing store is twice the window
+     and the centred heart lands in the bottom-right corner. Pin the box. */
+  canvas{position:fixed;inset:0;display:block;width:100%;height:100%;
+    opacity:0;transition:opacity .9s ease}
   .hud{position:fixed;pointer-events:none;z-index:2}
   .box{background:rgba(7,9,16,.78);border:1px solid rgba(170,190,230,.22);
     backdrop-filter:blur(6px);padding:6px 10px;font-size:10.5px;letter-spacing:.08em}
@@ -229,11 +272,11 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   #who{top:14px;left:18px}
   #who .name{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#eef2fa}
   #who .sub{color:#77809466;color:rgba(150,160,180,.75);font-size:10px;margin-top:3px;letter-spacing:.06em}
-  #legend{bottom:16px;left:18px;display:flex;flex-direction:column;gap:6px;font-size:10px}
+  #legend{bottom:42px;left:18px;display:flex;flex-direction:column;gap:6px;font-size:10px}
   #legend .chip{display:inline-flex;align-items:center;gap:7px;background:rgba(7,9,16,.7);
     border:1px solid rgba(170,190,230,.16);padding:3px 8px;letter-spacing:.08em;text-transform:uppercase}
   #legend .dot{width:7px;height:7px;border-radius:50%}
-  #askbar{bottom:18px;left:50%;transform:translateX(-50%);pointer-events:auto;display:flex;gap:0}
+  #askbar{bottom:44px;left:50%;transform:translateX(-50%);pointer-events:auto;display:flex;gap:0}
   #askbar input{width:380px;background:rgba(7,9,16,.85);border:1px solid rgba(170,190,230,.28);
     color:#dfe4ee;padding:10px 14px;font-size:12px;outline:none;font-family:var(--mono)}
   #askbar input:focus{border-color:rgba(126,200,255,.65)}
@@ -241,7 +284,20 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
     color:#bfe3ff;padding:10px 16px;font-size:11px;cursor:pointer;letter-spacing:.12em;
     text-transform:uppercase;font-family:var(--mono)}
   #askbar button:hover{background:rgba(126,200,255,.3)}
-  #hint{bottom:64px;left:50%;transform:translateX(-50%);color:rgba(150,160,180,.4);font-size:10px;letter-spacing:.06em}
+  #hint{bottom:90px;left:50%;transform:translateX(-50%);color:rgba(150,160,180,.55);font-size:10px;letter-spacing:.06em;white-space:nowrap}
+  /* the thought chain — numbered stations joined by links that fill as it moves */
+  #stages .stgh{font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+    color:rgba(150,160,180,.7);margin-bottom:9px}
+  #stages .stg{display:flex;align-items:center;gap:9px;opacity:.26;transition:opacity .3s}
+  #stages .stg.now{opacity:1}
+  #stages .stg.done{opacity:.6}
+  #stages .n{width:18px;height:18px;border-radius:50%;border:1px solid rgba(170,190,230,.5);
+    display:inline-flex;align-items:center;justify-content:center;font-size:9px;flex:none;
+    background:rgba(7,9,16,.8)}
+  #stages .stg.now .n{border-color:#7ec8ff;color:#bfe3ff;box-shadow:0 0 10px rgba(126,200,255,.55)}
+  #stages .stg.done .n{border-color:rgba(127,209,185,.7);color:#7fd1b9}
+  #stages .stgline{width:1px;height:13px;background:rgba(170,190,230,.22);margin-left:9px}
+  #stages .stgline.full{background:rgba(127,209,185,.55)}
   #card{display:none;background:rgba(7,9,16,.92);border:1px solid rgba(170,190,230,.3);
     padding:9px 12px;font-size:11.5px;max-width:300px;box-shadow:0 6px 24px rgba(0,0,0,.5)}
   #card .t{font-weight:600;margin-bottom:3px;letter-spacing:.1em;text-transform:uppercase;font-size:10px}
@@ -251,7 +307,17 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   #answer .t{font-weight:600;color:#7ec8ff;margin-bottom:6px;letter-spacing:.12em;text-transform:uppercase;font-size:10px}
   #answer .row{color:#aeb4c0;margin-top:3px}
   #answer .kv{color:#7fd1b9}
-  #axes{bottom:16px;right:18px;color:rgba(190,200,220,.75);font-size:9.5px;text-transform:uppercase}
+  #axes{bottom:42px;right:18px;color:rgba(190,200,220,.75);font-size:9.5px;text-transform:uppercase}
+  /* the footer — a quiet instrument strip; every page ends the same way */
+  #footer{position:fixed;left:0;right:0;bottom:0;height:26px;z-index:3;
+    display:flex;align-items:center;gap:16px;padding:0 16px;
+    background:rgba(5,7,13,.9);border-top:1px solid rgba(170,190,230,.14);
+    backdrop-filter:blur(6px);font-size:9.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:rgba(150,160,180,.6);pointer-events:auto}
+  #footer a{color:rgba(175,190,220,.78);text-decoration:none}
+  #footer a:hover{color:#bfe3ff}
+  #footer .sp{flex:1}
+  #footer .ver{color:rgba(150,160,180,.42)}
 </style></head><body>
 <canvas id="sky"></canvas>
 <div class="hud" id="who"><div class="name box" id="whoname">THE MIND</div><div class="sub" id="stats">reading her real state…</div></div>
@@ -259,14 +325,24 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <div class="hud" id="legend"></div>
 <div class="hud" id="hint">drag to orbit her mind · scroll to zoom · double-click resets · hover any node</div>
 <div class="hud box" id="axes">ANGLE · what &nbsp;&nbsp;RADIUS · strength &nbsp;&nbsp;HEIGHT · when</div>
-<div class="hud" id="state" style="top:auto;bottom:96px;left:50%;transform:translateX(-50%);
+<div class="hud" id="state" style="top:auto;bottom:122px;left:50%;transform:translateX(-50%);
   font-size:15px;letter-spacing:.04em;color:#dfe4ee;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.8)"></div>
 <div class="hud" id="stages" style="top:50%;left:26px;transform:translateY(-50%);
-  font-size:11px;line-height:2.1;color:rgba(200,210,230,.9);display:none"></div>
+  font-size:11px;color:rgba(200,210,230,.9);display:none"></div>
 <div class="hud" id="askbar"><input id="q" placeholder="ask her something — watch the thought move…"><button id="go">think</button></div>
 <div class="hud" id="card"></div>
 <div class="hud" id="answer"></div>
-<div class="hud" id="modebtn" style="bottom:16px;right:18px;pointer-events:auto">
+<div id="footer">
+  <span>VERA · A MIND ON THIS MACHINE</span>
+  <span class="sp"></span>
+  <a href="/">the mind</a>
+  <a href="/about">what's built · changelog</a>
+  <a href="/about#ship">how it ships</a>
+  <a href="/about#map">site map</a>
+  <span class="sp"></span>
+  <span class="ver">build __VER__ · 127.0.0.1 only</span>
+</div>
+<div class="hud" id="modebtn" style="bottom:42px;right:18px;pointer-events:auto">
   <button id="mode" style="background:rgba(7,9,16,.7);border:1px solid rgba(170,190,230,.25);
     color:rgba(200,210,230,.8);padding:6px 12px;font:10px ui-monospace,Menlo,monospace;
     letter-spacing:.1em;cursor:pointer;text-transform:uppercase">details</button>
@@ -322,14 +398,55 @@ function rnd(i){ let t = (i + 1) * 0x6D2B79F5;
 
 /* ---------- camera: orbit the mind ------------------------------------------- */
 /* The memory space is genuinely 3-D (see docs/memory-ia.md): drag orbits it
-   (yaw + a clamped pitch), scroll zooms. No pan — orbit + zoom reads better. */
-const cam = { zoom: 1, yaw: 0, pitch: 0.42, drag: null };
-// ?yaw=&pitch= — start from a given orbit angle (demos + screenshots)
+   (yaw + a clamped pitch), scroll zooms. The camera has hands now: a released
+   drag keeps gliding (a throw), zoom eases instead of snapping, and clicking a
+   memory VISITS it — the camera keeps it centred while you orbit around it.
+   Double-click glides home. No free pan; travel is always TO something. */
+const cam = { zoom: 1, tzoom: 1, yaw: 0, pitch: 0.42, cx: 0, cy: 0,
+              vyaw: 0, vpitch: 0, drag: null };
+const HOME = { yaw: 0, pitch: 0.42, zoom: 1 };
+let follow = null;    // idx of the memory the camera keeps centred (click to visit)
+let fly = null;       // eased camera flight {t,dur,from,to} — the intro + going home
+function flyTo(to, dur){
+  fly = { t: 0, dur, to,
+          from: { yaw: cam.yaw, pitch: cam.pitch, zoom: cam.zoom, cx: cam.cx, cy: cam.cy } };
+  cam.tzoom = to.zoom; cam.vyaw = cam.vpitch = 0;
+}
+// ?yaw=&pitch= — start from a given orbit angle (demos + screenshots);
+// otherwise the first sight is an approach: from far out and high above,
+// the mind grows from a distant glow to fill the frame
 const qs = new URLSearchParams(location.search);
-if (qs.get("yaw"))   cam.yaw   = parseFloat(qs.get("yaw"))   || 0;
-if (qs.get("pitch")) cam.pitch = parseFloat(qs.get("pitch")) || 0.42;
-function S(x, y){ return { X: W/2 + (x*cam.zoom), Y: H/2 + (y*cam.zoom) }; }
-function toWorld(sx, sy){ return { x: (sx - W/2)/cam.zoom, y: (sy - H/2)/cam.zoom }; }
+let introPending = false;
+if (qs.get("yaw") || qs.get("pitch")){
+  cam.yaw   = parseFloat(qs.get("yaw"))   || 0;
+  cam.pitch = parseFloat(qs.get("pitch")) || 0.42;
+} else {
+  introPending = true;   // the flight runs only once the view proves itself
+  cam.zoom = cam.tzoom = 0.22; cam.yaw = -2.1; cam.pitch = 0.98;
+}
+function S(x, y){ return { X: W/2 + (x - cam.cx)*cam.zoom, Y: H/2 + (y - cam.cy)*cam.zoom }; }
+function toWorld(sx, sy){ return { x: (sx - W/2)/cam.zoom + cam.cx, y: (sy - H/2)/cam.zoom + cam.cy }; }
+/* the entrance animation shows ONLY if it will work properly: data answered
+   and the canvas box truly matches the window (a mis-sized view once put the
+   heart in a corner — never animate a broken picture, just show it settled) */
+function viewSane(){
+  const r = cv.getBoundingClientRect();
+  return W > 0 && H > 0 && Math.abs(r.width - W) < 2 && Math.abs(r.height - H) < 2;
+}
+let revealed = false;
+function reveal(){
+  if (revealed) return;
+  revealed = true;
+  if (introPending && viewSane()){
+    flyTo({ yaw: HOME.yaw, pitch: HOME.pitch, zoom: 1, cx: 0, cy: 0 }, 3.2);
+    setTimeout(startTour, 3500);      // land, then name the layers
+  } else if (introPending){   // view can't vouch for itself: settle instantly
+    cam.yaw = HOME.yaw; cam.pitch = HOME.pitch; cam.zoom = cam.tzoom = 1;
+    setTimeout(startTour, 800);
+  }
+  introPending = false;
+  cv.style.opacity = 1;
+}
 function R0(){ return Math.min(W, H); }
 /* world 3-D (x: right, z: toward viewer at yaw 0, h: up) → flat world 2-D */
 function project(x0, h, z0){
@@ -683,6 +800,80 @@ function hexPath(c, X, Y, r, rot){
   c.closePath();
 }
 
+/* ---------- the anatomy, drawn — the design explains itself ------------------ */
+/* Two dashed Kronos-style layer rings orbit with the camera: the inner one
+   circles her consciousness (the churn), the outer circles memory (where the
+   cells live). Each ring carries its name on the edge nearest the viewer, so
+   the strata read like an anatomical plate — no manual needed. */
+let coreShine = 0, nodeShine = 0, edgeShine = 0;   // tour highlights, decaying
+function ring(r, label, alpha){
+  ctx.beginPath();
+  for (let k = 0; k <= 72; k++){
+    const a = (k / 72) * 6.2832;
+    const w = project(Math.cos(a) * r, 0, Math.sin(a) * r);
+    const P = S(w.x, w.y);
+    k ? ctx.lineTo(P.X, P.Y) : ctx.moveTo(P.X, P.Y);
+  }
+  ctx.strokeStyle = "rgba(170,190,235," + alpha + ")";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 7]); ctx.stroke(); ctx.setLineDash([]);
+  const a0 = Math.PI / 2 - cam.yaw;                // the point facing the viewer
+  const w0 = project(Math.cos(a0) * r, 0, Math.sin(a0) * r);
+  const P0 = S(w0.x, w0.y);
+  ctx.font = "9px ui-monospace, Menlo, monospace"; ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(195,206,235," + Math.min(0.8, 0.3 + alpha * 4) + ")";
+  ctx.fillText(label, P0.X, P0.Y + 14);
+  ctx.textAlign = "left";
+}
+function drawAnatomy(){
+  ring(cloudR() * 0.68, "CONSCIOUSNESS", 0.07 + coreShine * 0.45);
+  ring(R0() * 0.43,     "MEMORY",        0.055 + nodeShine * 0.4);
+}
+
+/* the landing tour — once per tab, right after the approach: each layer lights
+   as she names it in plain words. Everything highlighted is real state. */
+let tour = null;
+function startTour(){
+  if (MODE !== "simple" || sessionStorage.getItem("mindTour")) return;
+  sessionStorage.setItem("mindTour", "1");
+  tour = { t: 0, fired: {} };
+}
+function stepTour(dt){
+  if (!tour) return;
+  tour.t += dt;
+  [
+    { at: 0.3,  k: "a", s: "this churn is her consciousness — always awake",
+      go(){ coreShine = 1; ripples.push({ x: 0, y: 0, r: cloudR() * 0.4, a: 0.7 }); } },
+    { at: 3.2,  k: "b", s: "each cell around it is a memory — its colour is its kind",
+      go(){ nodeShine = 1; } },
+    { at: 6.2,  k: "c", s: "the threads are how her memories relate",
+      go(){ edgeShine = 1; } },
+    { at: 9.2,  k: "d", s: "ask her something below — and watch the thought move",
+      go(){} },
+    { at: 13.0, k: "e", s: "", go(){ tour = null; } },
+  ].forEach(st => {
+    if (tour && tour.t >= st.at && !tour.fired[st.k]){
+      tour.fired[st.k] = true;
+      if (st.s) setStatus(st.s, 2700);
+      st.go();
+    }
+  });
+}
+
+/* at rest her mind still murmurs: every few seconds a faint spark rides one
+   REAL connection between two memories — pure ambience, drawn only on edges
+   that exist (same licence as the motes on the faculty wiring) */
+let synAt = 0;
+function synapse(now){
+  if (!gedges.length || now < synAt) return;
+  synAt = now + 2400 + Math.random() * 2800;
+  const l = gedges[(Math.random() * gedges.length) | 0];
+  const a = gindex["n" + l.a], b = gindex["n" + l.b];
+  if (!a || !b || a.px === undefined) return;
+  spawnStream({ x: a.px, y: a.py }, { x: b.px, y: b.py },
+    { n: 5, color: hexRgb(a.color), spread: 10, stagger: 0.3 });
+}
+
 let focusIdx = null;   // hovered memory (last frame): its neighbourhood lights
 function drawGraph(now){
   let hover = null;
@@ -715,7 +906,7 @@ function drawGraph(now){
     const focused = focusIdx !== null && (l.a === focusIdx || l.b === focusIdx);
     const dp = (depthOf(a) + depthOf(b)) / 2 * (focusIdx !== null && !focused ? 0.25 : 1);
     ctx.strokeStyle = "rgba(160,180,235," +
-      Math.min(0.8, (0.10 + (l.w || 0) * 0.2 + hot * 0.5 + (focused ? 0.4 : 0)) * dp) + ")";
+      Math.min(0.8, (0.10 + (l.w || 0) * 0.2 + hot * 0.5 + (focused ? 0.4 : 0) + edgeShine * 0.35) * dp) + ")";
     ctx.lineWidth = hot > 0.1 || focused ? 1.6 : 0.8;
     ctx.beginPath(); ctx.moveTo(A.X, A.Y); ctx.lineTo(B.X, B.Y); ctx.stroke();
   });
@@ -743,12 +934,12 @@ function drawGraph(now){
     const P = S(n.px, n.py);
     const dp = depthOf(n) * dimmed(n);
     const hot = glow["node:" + n.idx] || 0;
-    const r = (3.0 + Math.min(4, n.deg * 0.7) + hot * 3) * depthOf(n);
+    const r = (3.0 + Math.min(4, n.deg * 0.7) + hot * 3 + nodeShine * 2.5) * depthOf(n);
     // memory CELLS: flat-top hexagons (each keeps its own slight tilt)
     const rot = rnd(n.idx * 13) * 0.5;
     ctx.globalAlpha = dp;
     ctx.fillStyle = n.color; ctx.shadowColor = n.color;
-    ctx.shadowBlur = 8 + hot * 16 + n.fresh * 8;
+    ctx.shadowBlur = 8 + hot * 16 + n.fresh * 8 + nodeShine * 10;
     hexPath(ctx, P.X, P.Y, r, rot); ctx.fill(); ctx.shadowBlur = 0;
     if (n.fresh > 0.3){          // new this week: a warm ring, fading with age
       ctx.strokeStyle = "rgba(255,214,160," + (0.5 * n.fresh * dp) + ")";
@@ -758,7 +949,10 @@ function drawGraph(now){
     ctx.fillStyle = "rgba(255,255,255,0.9)";
     hexPath(ctx, P.X, P.Y, Math.max(0.9, r * 0.34), rot); ctx.fill();
     const near = Math.hypot(P.X - mouse.x, P.Y - mouse.y) < r + 6;
-    n.hit = ((named.has(n) && dp > 0.72) || near || hot > 0.1 || nbr.has(n.idx))
+    // come close and she shows you what's written: past ~1.7× zoom, everything
+    // near the centre of your gaze is named (level of detail by travel)
+    const gazed = cam.zoom > 1.7 && Math.hypot(P.X - W/2, P.Y - H/2) < R0() * 0.3;
+    n.hit = ((named.has(n) && dp > 0.72) || near || gazed || hot > 0.1 || nbr.has(n.idx))
       ? pill(P, nodeShort(n), n.color, hot > 0.1 || focusIdx === n.idx, n.px < 0 ? -1 : 1)
       : null;
     ctx.globalAlpha = 1;
@@ -903,13 +1097,15 @@ async function think(q){
   const path = (d.path || []).filter(id => chips.find(c => c.id === id));
   // the plain-words stages (the isometric-pipeline idea, told in captions):
   // timed to the REAL events — recall flashes, then the answer forms
+  const model = (d.route || {}).model;
   const stages = [
     { at: 0.0, label: "heard you" },
     { at: 0.55, label: recall.length
-        ? "remembering — " + recall.length + (recall.length === 1 ? " memory" : " memories")
+        ? "remembering — " + recall.length + (recall.length === 1 ? " memory surfaces" : " memories surface")
         : "nothing familiar — thinking fresh" },
-    { at: 0.6 + recall.length * 0.35 + 0.3, label: "connecting" },
-    { at: 0.6 + recall.length * 0.35 + 0.3 + path.length * 0.4, label: "choosing words" },
+    { at: 0.6 + recall.length * 0.35 + 0.3, label: "connecting what she knows" },
+    { at: 0.6 + recall.length * 0.35 + 0.3 + path.length * 0.4,
+      label: "choosing words" + (model ? " — " + model : "") },
   ];
   thought = { t: 0, recall, path, route: d.route || {}, fired: {}, stages };
   // the prompt enters: a stream from the ask bar up into the cloud
@@ -961,9 +1157,16 @@ function stepThought(dt){
   if (MODE === "simple" && T.stages){
     const el = document.getElementById("stages");
     el.style.display = "block";
-    el.innerHTML = T.stages.map(s =>
-      '<div style="opacity:' + (T.t >= s.at ? 1 : 0.25) + '">'
-      + (T.t >= s.at ? "● " : "○ ") + s.label + "</div>").join("");
+    // the chain of events, drawn AS a chain: each real step lights the moment
+    // it happens, and the link beneath it fills once the thought has passed
+    const ai = T.stages.reduce((m, s, i) => T.t >= s.at ? i : m, -1);
+    el.innerHTML = '<div class="stgh">the thought, step by step</div>'
+      + T.stages.map((s, i) =>
+        '<div class="stg ' + (i < ai ? "done" : i === ai ? "now" : "next") + '">'
+        + '<span class="n">' + (i + 1) + '</span><span>' + s.label + '</span></div>'
+        + (i < T.stages.length - 1
+            ? '<div class="stgline' + (i < ai ? " full" : "") + '"></div>' : "")
+      ).join("");
   }
   // arrival: the honest routing result
   const done = base + T.path.length * 0.4 + 0.5;
@@ -986,23 +1189,52 @@ function stepThought(dt){
 }
 
 /* ---------- interaction ------------------------------------------------------ */
-let mouse = { x: -1, y: -1 };
+let mouse = { x: -1, y: -1 }, lastHover = null, dragMoved = 0;
 const card = document.getElementById("card");
 cv.addEventListener("mousemove", e => {
   mouse = { x: e.clientX, y: e.clientY };
   if (cam.drag){
-    cam.yaw   += (e.clientX - cam.drag.x) * 0.006;
-    cam.pitch  = Math.max(0.16, Math.min(0.8, cam.pitch + (e.clientY - cam.drag.y) * 0.003));
-    cam.drag = { x: e.clientX, y: e.clientY };
+    const dx = e.clientX - cam.drag.x, dy = e.clientY - cam.drag.y;
+    cam.yaw   += dx * 0.006;
+    cam.pitch  = Math.max(0.06, Math.min(1.05, cam.pitch + dy * 0.003));
+    // remember the hand's speed — release becomes a throw that glides out
+    cam.vyaw   = cam.vyaw   * 0.4 + dx * 0.006 * 60 * 0.6;
+    cam.vpitch = cam.vpitch * 0.4 + dy * 0.003 * 60 * 0.6;
+    cam.drag = { x: e.clientX, y: e.clientY, t: performance.now(),
+                 moved: cam.drag.moved + Math.abs(dx) + Math.abs(dy) };
   }
 });
-cv.addEventListener("mousedown", e => { cam.drag = { x: e.clientX, y: e.clientY }; cv.style.cursor = "grabbing"; });
-window.addEventListener("mouseup", () => { cam.drag = null; cv.style.cursor = "grab"; });
-cv.addEventListener("wheel", e => { e.preventDefault();
-  const f = e.deltaY < 0 ? 1.1 : 1/1.1;
-  cam.zoom = Math.max(0.5, Math.min(3.2, cam.zoom * f)); }, { passive:false });
-cv.addEventListener("dblclick", () => { cam.zoom = 1; cam.yaw = 0; cam.pitch = 0.42; });
+cv.addEventListener("mousedown", e => { fly = null; cam.vyaw = cam.vpitch = 0;
+  cam.drag = { x: e.clientX, y: e.clientY, t: performance.now(), moved: 0 };
+  cv.style.cursor = "grabbing"; });
+window.addEventListener("mouseup", () => {
+  if (cam.drag){
+    dragMoved = cam.drag.moved;
+    // a throw only if the hand was still moving at release
+    if (performance.now() - cam.drag.t > 120) cam.vyaw = cam.vpitch = 0;
+  }
+  cam.drag = null; cv.style.cursor = "grab"; });
+cv.addEventListener("click", () => {
+  // a click (not a drag) on a memory: VISIT it — the camera glides over and
+  // keeps it centred; dragging now orbits around that memory, not the middle
+  if (dragMoved > 6 || !lastHover) return;
+  follow = lastHover.n.idx;
+  fly = null;
+  cam.tzoom = Math.max(cam.tzoom, 1.9);
+});
+cv.addEventListener("wheel", e => { e.preventDefault(); fly = null;
+  const f = e.deltaY < 0 ? 1.12 : 1/1.12;
+  cam.tzoom = Math.max(0.35, Math.min(4.5, cam.tzoom * f)); }, { passive:false });
+cv.addEventListener("dblclick", () => { follow = null;
+  flyTo({ yaw: HOME.yaw, pitch: HOME.pitch, zoom: 1, cx: 0, cy: 0 }, 1.1); });
 cv.style.cursor = "grab";
+/* the visited memory, resolved fresh each frame (rebuilds replace node objects) */
+function followNode(){
+  if (follow === null) return null;
+  const n = MODE === "simple" ? gindex["n" + follow]
+                              : nodes.find(n => n.idx === follow);
+  return (n && n.px !== undefined) ? n : null;
+}
 
 /* ---------- HUD --------------------------------------------------------------- */
 function hudRefresh(){
@@ -1011,8 +1243,12 @@ function hudRefresh(){
   // the simple view speaks human: hide the instrument HUD, warm placeholder
   const simple = MODE === "simple";
   document.getElementById("axes").style.display = simple ? "none" : "block";
-  document.getElementById("hint").style.display = simple ? "none" : "block";
-  document.getElementById("legend").style.display = simple ? "none" : "flex";
+  // navigation must be discoverable in BOTH views — the simple one just says it human
+  document.getElementById("hint").textContent = simple
+    ? "drag to look around her mind · scroll to come closer · click a memory to visit it · double-click to step back"
+    : "drag to orbit · throw to spin · scroll to zoom · click a memory to visit it · double-click resets";
+  // the legend answers "what am I looking at" — both views deserve it
+  document.getElementById("legend").style.display = "flex";
   document.getElementById("state").style.display = simple ? "block" : "none";
   if (!simple) document.getElementById("stages").style.display = "none";
   document.getElementById("q").placeholder = simple
@@ -1024,14 +1260,21 @@ function hudRefresh(){
   if (st.open_tasks) bits.push(st.open_tasks + " open tasks");
   if (STATE.part_of_day) bits.push(STATE.part_of_day);
   document.getElementById("stats").textContent = bits.join(" · ");
+  // the key to the whole picture — every element of the design, named
   const lg = document.getElementById("legend"); lg.innerHTML = "";
+  const key = (txt, dot) => {
+    const c = document.createElement("span"); c.className = "chip";
+    c.innerHTML = (dot ? '<span class="dot" style="background:' + dot
+                 + ';box-shadow:0 0 6px ' + dot + '"></span>' : "") + txt;
+    lg.appendChild(c);
+  };
+  key("the churn — her consciousness", "#cfd8f2");
   Object.keys(LAND.types || {}).forEach(k => {
     const t = LAND.types[k]; if (!t || !t.count) return;
-    const c = document.createElement("span"); c.className = "chip";
-    c.innerHTML = '<span class="dot" style="background:' + t.color + ';box-shadow:0 0 6px ' + t.color + '"></span>'
-                + t.label + " · " + t.count;
-    lg.appendChild(c);
+    key(t.label + " memories · " + t.count, t.color);
   });
+  key("threads — memories that relate");
+  key("moving light — a thought", "#7ec8ff");
 }
 function clockTick(){
   const d = new Date();
@@ -1069,10 +1312,12 @@ window.addEventListener("resize", resize);
 resize();
 setInterval(loadAll, 12000);
 loadAll().then(() => {
+  reveal();
   // ?demo=1 — auto-run one visible thought (handy for demos + screenshots)
   if (location.search.indexOf("demo") >= 0)
     setTimeout(() => think("how is mom doing today"), 1200);
 });
+setTimeout(reveal, 2500);   // never leave the mind dark, even if an API stalls
 
 /* ---------- ambience ----------------------------------------------------------- */
 const BG_PAL = [[200,215,255],[236,240,250],[255,225,190]];
@@ -1113,7 +1358,31 @@ function frame(now){
   // she is never frozen — but in the simple view the CAMERA is: a graph that
   // drifts forever reads as "why is it circling", not as alive. life comes
   // from the heart and the threads, not from spinning the room.
-  if (MODE !== "simple" && !cam.drag && !hoverHold) cam.yaw += dt * 0.012;
+  if (MODE !== "simple" && !cam.drag && !hoverHold && !fly) cam.yaw += dt * 0.012;
+  // camera dynamics: a flight in progress, else the throw + eased zoom + follow
+  if (fly){
+    fly.t += dt;
+    // a stuttering flight is worse than none — sustained slow frames end it clean
+    if (dt > 0.09 && (fly.slow = (fly.slow || 0) + 1) > 5) fly.t = fly.dur;
+    const u = Math.min(1, fly.t / fly.dur);
+    const e = u < 0.5 ? 4*u*u*u : 1 - Math.pow(-2*u + 2, 3)/2;   // ease in-out
+    cam.yaw   = fly.from.yaw   + (fly.to.yaw   - fly.from.yaw)   * e;
+    cam.pitch = fly.from.pitch + (fly.to.pitch - fly.from.pitch) * e;
+    cam.zoom  = fly.from.zoom  + (fly.to.zoom  - fly.from.zoom)  * e;
+    cam.cx    = fly.from.cx    + (fly.to.cx    - fly.from.cx)    * e;
+    cam.cy    = fly.from.cy    + (fly.to.cy    - fly.from.cy)    * e;
+    if (u >= 1) fly = null;
+  } else {
+    if (!cam.drag){          // the throw: a released orbit glides, then settles
+      cam.yaw  += cam.vyaw * dt;
+      cam.pitch = Math.max(0.06, Math.min(1.05, cam.pitch + cam.vpitch * dt));
+      const k = Math.pow(0.08, dt); cam.vyaw *= k; cam.vpitch *= k;
+    }
+    cam.zoom += (cam.tzoom - cam.zoom) * Math.min(1, dt * 7);
+    const F = followNode();  // glide toward the visited memory (or back home)
+    cam.cx += ((F ? F.px : 0) - cam.cx) * Math.min(1, dt * 4);
+    cam.cy += ((F ? F.py : 0) - cam.cy) * Math.min(1, dt * 4);
+  }
   stepThought(dt);
   Object.keys(glow).forEach(k => { glow[k] *= Math.pow(0.4, dt); if (glow[k] < 0.02) delete glow[k]; });
   ctx.clearRect(0, 0, W, H);
@@ -1141,7 +1410,9 @@ function frame(now){
 
   // faint stars
   bgStars.forEach(d => {
-    const px = W/2 + d.x*W*0.75 + cam.yaw*36*d.z, py = H/2 + d.y*H*0.75;
+    // stars answer the camera — yaw sweeps them, travel slides them (parallax)
+    const px = W/2 + d.x*W*0.75 + (cam.yaw*36 - cam.cx*0.22)*d.z;
+    const py = H/2 + d.y*H*0.75 - cam.cy*0.22*d.z;
     ctx.globalAlpha = (0.12 + 0.3*d.z) * (0.8 + 0.2*Math.sin(now*0.0012 + d.tw));
     ctx.fillStyle = "rgb(" + d.c[0] + "," + d.c[1] + "," + d.c[2] + ")";
     ctx.beginPath(); ctx.arc(px, py, d.s, 0, 7); ctx.fill();
@@ -1153,9 +1424,21 @@ function frame(now){
   let hoverNode = null, hoverChip = null;
   if (MODE === "simple"){
     drawCloud(now, dt, 0.5);
+    drawAnatomy();
     stepGraph(dt);
     const h = drawGraph(now);
     if (h) hoverNode = h;
+    synapse(now);
+    stepTour(dt);
+    const dk = Math.pow(0.5, dt);          // tour highlights breathe back out
+    coreShine *= dk; nodeShine *= dk; edgeShine *= dk;
+    if (thought && !fly){                  // the moving light, named while it moves
+      const cp = S(0, 0), cr = cloudR() * 0.5 * cam.zoom;
+      ctx.font = "9px ui-monospace, Menlo, monospace"; ctx.textAlign = "center";
+      ctx.globalAlpha = 0.6; ctx.fillStyle = "#7ec8ff";
+      ctx.fillText("A THOUGHT, MOVING", cp.X, cp.Y - cr - 12);
+      ctx.globalAlpha = 1; ctx.textAlign = "left";
+    }
     // plain words for the state — working vs resting, no jargon
     const st = document.getElementById("state");
     const idle = "resting — " + gnodes.length + " memories, "
@@ -1272,6 +1555,8 @@ function frame(now){
 
   // hover card
   hoverHold = !!(hoverNode || hoverChip);
+  lastHover = hoverNode;                     // what a click would visit
+  if (!cam.drag) cv.style.cursor = hoverNode ? "pointer" : "grab";
   if (hoverNode || hoverChip){
     const h = hoverNode || hoverChip;
     card.style.display = "block";
@@ -1279,8 +1564,18 @@ function frame(now){
     card.style.top  = Math.max(10, h.P.Y + 14) + "px";
     if (hoverNode){
       const n = hoverNode.n, meta = (LAND.types || {})[n.type] || {};
-      card.innerHTML = '<div class="t" style="color:' + n.color + '">' + (meta.label || n.type) + "</div>"
-        + '<div>' + n.label + "</div>" + '<div class="m">' + (n.ts || "") + "</div>";
+      // the relations, spelled out: which memories this one is really wired to
+      const rel = [];
+      gedges.forEach(l => {
+        const o = l.a === n.idx ? gindex["n" + l.b] : (l.b === n.idx ? gindex["n" + l.a] : null);
+        if (o) rel.push(o.label.length > 24 ? o.label.slice(0, 23) + "…" : o.label);
+      });
+      card.innerHTML = '<div class="t" style="color:' + n.color + '">' + (meta.label || n.type) + " memory</div>"
+        + '<div>' + n.label + "</div>" + '<div class="m">' + (n.ts || "") + "</div>"
+        + (rel.length
+          ? '<div class="m" style="margin-top:4px">related — ' + rel.slice(0, 3).join(" · ")
+            + (rel.length > 3 ? " · +" + (rel.length - 3) + " more" : "") + "</div>"
+          : '<div class="m" style="margin-top:4px">not yet related to anything</div>');
     } else {
       const c = hoverChip.c;
       card.innerHTML = '<div class="t" style="color:' + c.color + '">' + c.label + "</div>"
@@ -1297,9 +1592,10 @@ function frame(now){
   }
 
   // the instrument frame — corner ticks, like a well-made console
+  // (bottom pair rides above the footer strip)
   ctx.strokeStyle = "rgba(170,190,230,0.28)"; ctx.lineWidth = 1;
-  const M = 10, L = 16;
-  [[M,M,1,1],[W-M,M,-1,1],[M,H-M,1,-1],[W-M,H-M,-1,-1]].forEach(([x,y,sx,sy]) => {
+  const M = 10, MB = 36, L = 16;
+  [[M,M,1,1],[W-M,M,-1,1],[M,H-MB,1,-1],[W-M,H-MB,-1,-1]].forEach(([x,y,sx,sy]) => {
     ctx.beginPath();
     ctx.moveTo(x + sx*L, y); ctx.lineTo(x, y); ctx.lineTo(x, y + sy*L);
     ctx.stroke();
@@ -1309,4 +1605,135 @@ function frame(now){
 }
 requestAnimationFrame(frame);
 </script></body></html>
+"""
+
+
+# /about — the story so far. Server-rendered; the changelog is the repo's real
+# git history and the version is the real HEAD, so this page can never drift
+# from the truth. Same instrument language as the Mind.
+_ABOUT = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vera · The Story So Far</title>
+<style>
+  :root{ --mono: ui-monospace, "SF Mono", Menlo, monospace; }
+  html{background:#04050a}
+  body{margin:0;min-height:100vh;background:
+    radial-gradient(ellipse at 50% -10%, #0a0e1c 0%, #04050a 55%);
+    color:#dfe4ee;font-family:var(--mono);-webkit-font-smoothing:antialiased;
+    padding-bottom:64px}
+  a{color:#9fc6ef;text-decoration:none}
+  a:hover{color:#bfe3ff}
+  header{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:14px;
+    padding:12px 18px;background:rgba(5,7,13,.92);backdrop-filter:blur(6px);
+    border-bottom:1px solid rgba(170,190,230,.14);font-size:10px;
+    letter-spacing:.12em;text-transform:uppercase}
+  header .t{color:#eef2fa;border:1px solid rgba(170,190,230,.25);padding:5px 10px}
+  header nav{display:flex;gap:14px;margin-left:auto}
+  header nav a{color:rgba(175,190,220,.78)}
+  main{max-width:740px;margin:0 auto;padding:34px 22px}
+  h2{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#7ec8ff;
+    margin:44px 0 6px;font-weight:600}
+  h2:first-of-type{margin-top:8px}
+  .sub{color:rgba(150,160,180,.75);font-size:11px;margin:0 0 18px}
+  .pillar{display:flex;gap:12px;padding:10px 12px;margin:8px 0;font-size:12px;
+    background:rgba(9,12,20,.6);border:1px solid rgba(170,190,230,.14);line-height:1.55}
+  .pillar .dot{width:8px;height:8px;border-radius:50%;flex:none;margin-top:5px}
+  .pillar b{color:#eef2fa;font-weight:600}
+  .pillar span{color:#aeb4c0}
+  /* the lifecycle — the same chain language the thought uses */
+  .step{display:flex;gap:12px;align-items:baseline;font-size:12px;line-height:1.6;margin:2px 0}
+  .step .n{width:20px;height:20px;border-radius:50%;border:1px solid rgba(126,200,255,.5);
+    color:#bfe3ff;display:inline-flex;align-items:center;justify-content:center;
+    font-size:9.5px;flex:none;transform:translateY(3px)}
+  .step div{color:#aeb4c0}
+  .step b{color:#eef2fa;font-weight:600}
+  .stepline{width:1px;height:12px;background:rgba(126,200,255,.3);margin-left:10px}
+  /* the changelog — the repo speaking for itself */
+  #log{border-left:1px solid rgba(170,190,230,.18);padding-left:16px}
+  #log .day{color:#7fd1b9;font-size:10px;letter-spacing:.12em;margin:16px 0 4px}
+  #log .day:first-child{margin-top:2px}
+  #log .entry{color:#c6ccd9;font-size:12px;line-height:1.65;padding:1px 0}
+  #log .entry::before{content:"· ";color:rgba(150,160,180,.5)}
+  pre.map{background:rgba(9,12,20,.6);border:1px solid rgba(170,190,230,.14);
+    padding:16px;font-size:11.5px;line-height:1.7;color:#c6ccd9;overflow-x:auto}
+  pre.map b{color:#eef2fa}
+  pre.map i{color:rgba(150,160,180,.7);font-style:normal}
+  #footer{position:fixed;left:0;right:0;bottom:0;height:26px;z-index:3;
+    display:flex;align-items:center;gap:16px;padding:0 16px;
+    background:rgba(5,7,13,.9);border-top:1px solid rgba(170,190,230,.14);
+    backdrop-filter:blur(6px);font-size:9.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:rgba(150,160,180,.6)}
+  #footer a{color:rgba(175,190,220,.78)}
+  #footer .sp{flex:1}
+  #footer .ver{color:rgba(150,160,180,.42)}
+</style></head><body>
+<header>
+  <span class="t">VERA — THE STORY SO FAR</span>
+  <nav>
+    <a href="/">← her mind</a>
+    <a href="#built">built</a>
+    <a href="#changelog">changelog</a>
+    <a href="#ship">how it ships</a>
+    <a href="#map">site map</a>
+  </nav>
+</header>
+<main>
+  <h2 id="built">what we've built so far</h2>
+  <p class="sub">a twin that lives on this machine — everything below is running now, none of it leaves 127.0.0.1</p>
+  <div class="pillar"><span class="dot" style="background:#cfd8f2"></span><div><b>the mind, visible.</b> <span>her consciousness is a real fluid simulation (a hand-ported lattice-Boltzmann churn), her memories are cells constellated around it, their relations are threads, and a thought is light you can watch move. Nothing drawn is invented — every label is her real state.</span></div></div>
+  <div class="pillar"><span class="dot" style="background:#7fd1b9"></span><div><b>memory that holds.</b> <span>everything she keeps is typed (emotion · task · opinion · knowledge), related, weighted by how often it truly returns in her thinking, and prunable when it's junk.</span></div></div>
+  <div class="pillar"><span class="dot" style="background:#7ec8ff"></span><div><b>thinking you can audit.</b> <span>ask her something and the chain of events plays out: heard → memories surface → connecting → choosing words, ending with the model her policy genuinely routed to.</span></div></div>
+  <div class="pillar"><span class="dot" style="background:#ffd9a0"></span><div><b>a mind you can travel.</b> <span>approach flight on open, orbit with a thrown hand, click a memory to visit it, double-click to glide home. The entrance animation only plays when the view proves it is rendering correctly.</span></div></div>
+  <div class="pillar"><span class="dot" style="background:#c98bff"></span><div><b>her inner life.</b> <span>persona, soul (reflections while you're away), mood, rhythms of the day, day-task shadows, and a voice — each a faculty on the wiring you can see in the details view.</span></div></div>
+  <div class="pillar"><span class="dot" style="background:#f3c969"></span><div><b>private by design.</b> <span>zero dependencies, no build step, local-first: the engine serves only 127.0.0.1 and the pages work offline.</span></div></div>
+
+  <h2 id="changelog">changelog — __COUNT__ changes and counting</h2>
+  <p class="sub">this is the repository's real history, read live from git — not release notes written after the fact</p>
+  <div id="log">
+__LOG__
+  </div>
+
+  <h2 id="ship">how a change ships</h2>
+  <p class="sub">the same lifecycle every time — the thought chain, applied to the software itself</p>
+  <div class="step"><span class="n">1</span><div><b>a want, said plainly.</b> the owner asks in human words — "the brain view lacks wow", "design has to communicate this better".</div></div>
+  <div class="stepline"></div>
+  <div class="step"><span class="n">2</span><div><b>built small.</b> zero dependencies, no build step; one file owns the change so the whole thing stays holdable.</div></div>
+  <div class="stepline"></div>
+  <div class="step"><span class="n">3</span><div><b>proven before shown.</b> syntax checks, screenshots at true retina density with real data, a live sweep for runtime errors across every interaction. Broken things never animate.</div></div>
+  <div class="stepline"></div>
+  <div class="step"><span class="n">4</span><div><b>served locally.</b> the engine restarts on 127.0.0.1:7879; the app's windows pick it up on reopen. Nothing is deployed anywhere — this machine is production.</div></div>
+  <div class="stepline"></div>
+  <div class="step"><span class="n">5</span><div><b>recorded honestly.</b> a human-readable commit per change — the changelog above <i>is</i> that record, unedited.</div></div>
+
+  <h2 id="map">site map — where everything lives</h2>
+  <p class="sub">the whole information architecture, one screen</p>
+  <pre class="map"><b>the mind</b>  /                      <i>the live view — simple by default</i>
+  ├─ ?mode=simple | expert        <i>human view · instrument view ("details")</i>
+  ├─ ask bar → watch the thought  <i>recall → connect → choose words</i>
+  ├─ click a memory → visit it    <i>camera keeps it centred; orbit around it</i>
+  └─ ?demo=1 · ?yaw= · ?pitch=    <i>demos and screenshots</i>
+
+<b>the story</b>  /about               <i>this page — built · changelog · lifecycle · map</i>
+
+<b>the engine</b>  /api/*  <i>(127.0.0.1 only — the same data the pages draw)</i>
+  ├─ /api/state                   <i>who she is right now</i>
+  ├─ /api/landscape               <i>every memory, typed and related</i>
+  ├─ /api/brain                   <i>faculties + real wiring</i>
+  ├─ /api/thought?q=              <i>what a thought would really touch</i>
+  └─ /api/route?q=                <i>the model the policy picks</i>
+
+<b>the app</b>  Vera (macOS · iOS)     <i>Brain window = this Mind · voice at :7878</i></pre>
+</main>
+<div id="footer">
+  <span>VERA · A MIND ON THIS MACHINE</span>
+  <span class="sp"></span>
+  <a href="/">the mind</a>
+  <a href="#built">what's built</a>
+  <a href="#changelog">changelog</a>
+  <a href="#ship">how it ships</a>
+  <a href="#map">site map</a>
+  <span class="sp"></span>
+  <span class="ver">build __VER__ · 127.0.0.1 only</span>
+</div>
+</body></html>
 """
