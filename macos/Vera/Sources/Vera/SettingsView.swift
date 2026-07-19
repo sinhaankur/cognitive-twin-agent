@@ -109,7 +109,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Model")
                 } footer: {
-                    Text("Local via Ollama, LM Studio, or your own Unhosted cluster — or Apple Intelligence on-device. Anita auto-detects Unhosted if it's running.")
+                    Text("Local via Ollama, LM Studio, or your own Unhosted cluster — or Apple Intelligence on-device. Vera auto-detects Unhosted if it's running.")
                         .font(.caption)
                 }
 

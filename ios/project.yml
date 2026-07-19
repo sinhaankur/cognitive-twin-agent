@@ -24,6 +24,9 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: YES
+        # Brand rule (docs/BRAND.md): the product is Vera; Anita is the persona.
+        # Home screen says Vera; bundle id stays 'anita' so permissions survive.
+        INFOPLIST_KEY_CFBundleDisplayName: Vera
         # Apple-Silicon Mac: build the active arch only (the xcframework sim slice
         # is arm64), so the simulator build doesn't try x86_64.
         ONLY_ACTIVE_ARCH: YES
@@ -31,8 +34,8 @@ targets:
         # The bridging header lets Swift call the Rust C ABI (ctwin_*).
         SWIFT_OBJC_BRIDGING_HEADER: Vera/Sources/Anita-Bridging-Header.h
         # Permission strings (required for mic + speech on device).
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Anita listens to your voice so you can talk with her — audio stays on your device."
-        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Anita transcribes your speech on-device to understand you."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Listens to your voice so you can talk — audio stays on your device, never recorded."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Transcribes your speech on-device to understand you."
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         # Header search so the bridging header finds the xcframework's header.

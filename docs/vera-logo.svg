@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 160" width="560" height="160">
+  <!-- Vera wordmark — the orb from SiriOrb.swift / make-icon.py, same palette.
+       For dark backgrounds (the orb's home). -->
+  <defs>
+    <filter id="blob" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+    <filter id="core" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="5.5"/>
+    </filter>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="8.5"/>
+    </filter>
+    <filter id="hl" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="4"/>
+    </filter>
+    <clipPath id="orb">
+      <circle cx="80" cy="80" r="58"/>
+    </clipPath>
+  </defs>
+
+  <!-- glow -->
+  <circle cx="80" cy="80" r="72" fill="#785AFF" opacity="0.35" filter="url(#glow)"/>
+  <!-- dark base -->
+  <circle cx="80" cy="80" r="58" fill="#0E1018"/>
+  <!-- swirling blobs, clipped to the sphere -->
+  <g clip-path="url(#orb)" opacity="0.78">
+    <circle cx="96.2" cy="88.9" r="36" fill="#FF458C" filter="url(#blob)"/>
+    <circle cx="76.6" cy="98.2" r="36" fill="#9E4DFF" filter="url(#blob)"/>
+    <circle cx="61.6" cy="82.4" r="36" fill="#3385FF" filter="url(#blob)"/>
+    <circle cx="71.9" cy="63.4" r="36" fill="#2ED9F2" filter="url(#blob)"/>
+    <circle cx="93.6" cy="67.5" r="36" fill="#FF9E33" filter="url(#blob)"/>
+  </g>
+  <!-- bright core -->
+  <circle cx="80" cy="80" r="17.4" fill="#FFFFFF" opacity="0.70" filter="url(#core)"/>
+  <!-- glassy highlight -->
+  <g clip-path="url(#orb)">
+    <circle cx="63.8" cy="60.3" r="24.4" fill="#FFFFFF" opacity="0.42" filter="url(#hl)"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="168" y="103" font-family="-apple-system, 'SF Pro Display', 'Segoe UI', 'Helvetica Neue', sans-serif"
+        font-size="72" font-weight="600" letter-spacing="1" fill="#E8EAF0">Vera</text>
+  <text x="171" y="130" font-family="-apple-system, 'SF Pro Text', 'Segoe UI', 'Helvetica Neue', sans-serif"
+        font-size="15" font-weight="400" letter-spacing="0.4" fill="#8B90A0">your faithful presence — private, on-device</text>
+</svg>

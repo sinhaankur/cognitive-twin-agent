@@ -32,7 +32,7 @@ cp "$BIN_PATH" "$APP/Contents/MacOS/$BIN_NAME"
 strip -rSTx "$APP/Contents/MacOS/$BIN_NAME" 2>/dev/null || true
 echo "  binary: $(du -h "$APP/Contents/MacOS/$BIN_NAME" | cut -f1) (was $(du -h "$BIN_PATH" | cut -f1))"
 
-# App icon (Anita's orb). Generate it if missing.
+# App icon (Vera's orb). Generate it if missing.
 if [ ! -f AppIcon.icns ]; then
   echo "  (generating AppIcon.icns)"; python3 make-icon.py >/dev/null 2>&1 || true
 fi
@@ -64,13 +64,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSUIElement</key>            <true/>
   <!-- Permission prompts (required or the app crashes on first use) -->
   <key>NSMicrophoneUsageDescription</key>
-  <string>Anita listens to your voice so you can talk with her - and, only when you turn on "Hear the room", reads ambient sound types (music, typing) on-device. Audio stays on this machine and is never recorded.</string>
+  <string>Listens to your voice so you can talk - and, only when you turn on "Hear the room", reads ambient sound types (music, typing) on-device. Audio stays on this machine and is never recorded.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
-  <string>Anita transcribes your speech on-device to understand you.</string>
+  <string>Transcribes your speech on-device to understand you.</string>
   <key>NSCameraUsageDescription</key>
-  <string>Only when you turn on "See me": she reads face cues on-device - present, calm vs animated, a nod, a smile, a knitted brow. No video is stored or sent anywhere.</string>
+  <string>Only when you turn on "See me": reads face cues on-device - present, calm vs animated, a nod, a smile, a knitted brow. No video is stored or sent anywhere.</string>
   <key>NSPhotoLibraryUsageDescription</key>
-  <string>Only when you turn on "Read my Photos": she reads album names and dates - metadata only, never the photos themselves - to learn life events like birthdays and anniversaries. Nothing is uploaded or copied.</string>
+  <string>Only when you turn on "Read my Photos": reads album names and dates - metadata only, never the photos themselves - to learn life events like birthdays and anniversaries. Nothing is uploaded or copied.</string>
 </dict>
 </plist>
 PLIST
