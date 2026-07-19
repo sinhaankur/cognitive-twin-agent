@@ -20,3 +20,12 @@ wasm-bindgen = "0.2"
 
 [dev-dependencies]
 # (tests use std only)
+
+# One profile, every device: these settings shape the .a/.dylib/.wasm shipped
+# to iOS, macOS, Android, Windows, Linux, and the browser alike.
+[profile.release]
+opt-level = "s"      # persona/memory/routing is string work, not number crunching — size wins on phones and the web
+lto = true           # whole-program optimization across serde and the core
+codegen-units = 1    # let LLVM see everything at once (slower compile, smaller/faster output)
+panic = "abort"      # unwinding can't cross the C FFI into Swift anyway; drops the landing pads
+strip = "debuginfo"  # apps link the symbols they need; debug info stays out of shipped bundles
