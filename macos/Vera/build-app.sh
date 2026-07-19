@@ -2,6 +2,7 @@
 # Build "Vera.app" -- a real, double-clickable macOS app bundle.
 #
 #   ./build-app.sh            # builds and places Vera.app in this folder
+#   ./build-app.sh --universal  # Apple Silicon + Intel in one bundle (for sharing)
 #   open "Vera.app"     # launch it
 #
 # The bundle includes the Info.plist permission strings macOS requires for the
@@ -13,11 +14,16 @@ cd "$(dirname "$0")"
 APP="Vera.app"
 BIN_NAME="Vera"
 
-echo "[1/4] Compiling (release, cross-module optimized)..."
-T0=$(date +%s)
-swift build -c release -Xswiftc -cross-module-optimization
+# Native arch by default (your own machine); --universal adds Intel so the
+# bundle runs on any Mac someone drags it onto.
+ARCH_FLAGS=""
+[ "${1:-}" = "--universal" ] && ARCH_FLAGS="--arch arm64 --arch x86_64"
 
-BIN_PATH="$(swift build -c release --show-bin-path)/$BIN_NAME"
+echo "[1/4] Compiling (release, cross-module optimized${ARCH_FLAGS:+, universal})..."
+T0=$(date +%s)
+swift build -c release $ARCH_FLAGS -Xswiftc -cross-module-optimization
+
+BIN_PATH="$(swift build -c release $ARCH_FLAGS --show-bin-path)/$BIN_NAME"
 if [ ! -f "$BIN_PATH" ]; then
   echo "build failed: $BIN_PATH not found" >&2
   exit 1
