@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Generate Anita's app icon — her multicolor Siri orb — at all macOS sizes, and
+Generate Vera's app icon — the multicolor orb — at all macOS sizes, and
 package it into AppIcon.icns. Run: python3 make-icon.py
+(Palette and brand rules: docs/BRAND.md.)
 
 Mirrors the SwiftUI SiriOrb: a dark sphere with soft, swirling color blobs
 (pink/purple/blue/cyan/orange), a bright core, a glassy highlight, and a glow.
