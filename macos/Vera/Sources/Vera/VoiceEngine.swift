@@ -89,12 +89,33 @@ final class VoiceEngine: ObservableObject {
         synth.delegate = delegate
     }
 
-    func requestPermission() {
-        SFSpeechRecognizer.requestAuthorization { status in
-            Task { @MainActor in
-                self.authorized = (status == .authorized)
+    /// Request BOTH permissions the voice pipeline needs: Speech Recognition
+    /// AND microphone. The old version only asked for Speech — so on a fresh
+    /// machine AVAudioEngine.start() failed (no mic access) and the mic button
+    /// silently did nothing. Now both are requested; `authorized` is true only
+    /// when speech + mic are both granted. Optional completion fires on the main
+    /// actor so a caller can start listening the moment access lands.
+    func requestPermission(_ completion: (@MainActor (Bool) -> Void)? = nil) {
+        SFSpeechRecognizer.requestAuthorization { speechStatus in
+            let speechOK = (speechStatus == .authorized)
+            // AVAudioApplication is the modern mic-permission API (macOS 14+);
+            // it falls through to the system prompt on first use.
+            AVCaptureDevice.requestAccess(for: .audio) { micOK in
+                Task { @MainActor in
+                    self.authorized = speechOK && micOK
+                    if !self.authorized {
+                        NSLog("[Vera voice] not authorized — speech:\(speechOK) mic:\(micOK)")
+                    }
+                    completion?(self.authorized)
+                }
             }
         }
+    }
+
+    /// True only when both speech + mic are already granted (no prompt).
+    var permissionsGranted: Bool {
+        SFSpeechRecognizer.authorizationStatus() == .authorized
+            && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     }
 
     func toggleListening() {
@@ -105,6 +126,17 @@ final class VoiceEngine: ObservableObject {
     /// for the user to speak over her (no UI state, no delivery) — the barge-in
     /// hunt that `speak`/`beginExternalSpeech` start.
     func startListening(hunting: Bool = false, over utterance: String = "") {
+        // Permission gate: if speech + mic aren't both granted yet, request them
+        // and — once granted — retry this exact call. This is what makes the mic
+        // button WORK on first tap instead of silently failing (the old code
+        // never requested mic access, so AVAudioEngine.start() threw and the
+        // catch below returned quietly).
+        if !permissionsGranted {
+            requestPermission { [weak self] ok in
+                if ok { self?.startListening(hunting: hunting, over: utterance) }
+            }
+            return
+        }
         // never listen over our own voice; this also ends any barge hunt, so a
         // real turn can always begin
         if !hunting { stopSpeaking() }
@@ -151,7 +183,12 @@ final class VoiceEngine: ObservableObject {
         do {
             try engine.start()
         } catch {
+            // Don't swallow this — a failed start is exactly why "the mic button
+            // does nothing". Log it and clean up so the next tap can retry.
+            NSLog("[Vera voice] AVAudioEngine.start() failed: \(error.localizedDescription)")
+            input.removeTap(onBus: 0)
             request = nil
+            isListening = false
             return
         }
         if !hunting { isListening = true }

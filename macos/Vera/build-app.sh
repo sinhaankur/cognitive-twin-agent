@@ -81,8 +81,25 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-echo "[4/5] Code-signing (ad-hoc)..."
-codesign --force --deep --sign - "$APP" 2>/dev/null || echo "  (codesign skipped -- app still runs locally)"
+echo "[4/5] Code-signing (ad-hoc, with mic entitlement)..."
+# Entitlements so the microphone works reliably (the voice button). Without the
+# audio-input entitlement a hardened/ad-hoc signed app can be denied mic access
+# even with the Info.plist usage string present.
+ENT="$(mktemp -t vera-entitlements).plist"
+cat > "$ENT" <<'ENTITLEMENTS'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.device.audio-input</key><true/>
+  <key>com.apple.security.device.microphone</key><true/>
+</dict>
+</plist>
+ENTITLEMENTS
+codesign --force --deep --sign - --entitlements "$ENT" "$APP" 2>/dev/null \
+  || codesign --force --deep --sign - "$APP" 2>/dev/null \
+  || echo "  (codesign skipped -- app still runs locally)"
+rm -f "$ENT"
 
 # ONE install per device: the app lives in /Applications and nowhere else.
 # The staging bundle is removed so Spotlight/Launchpad never see two copies.
