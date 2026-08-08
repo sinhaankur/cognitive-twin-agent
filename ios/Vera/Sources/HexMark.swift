@@ -28,57 +28,57 @@ struct HexMark: View {
         GeometryReader { geo in
             let s = min(geo.size.width, geo.size.height)
             let breathe = 1.0 + sin(phase * 0.18) * 0.03 + amplitude * 0.06
-            let corePulse = 0.85 + sin(phase * 0.5) * 0.12 + amplitude * 0.2
+            let corePulse = 0.9 + sin(phase * 0.5) * 0.1 + amplitude * 0.18
 
             ZStack {
-                // Warm bloom behind the orb.
+                // Warm bloom halo behind the orb.
                 Circle()
-                    .fill(RadialGradient(colors: [ember.opacity(0.34), gold.opacity(0.12), .clear],
-                                         center: .init(x: 0.5, y: 0.46), startRadius: 0, endRadius: s * 0.55))
-                    .scaleEffect(breathe)
+                    .fill(RadialGradient(colors: [ember.opacity(0.45), gold.opacity(0.16), .clear],
+                                         center: .center, startRadius: 0, endRadius: s * 0.6))
+                    .scaleEffect(breathe * 1.05)
 
-                // The sphere base gradient.
+                // Luminous gold sphere base — warm all the way, only a gentle
+                // deepening at the rim (no muddy black bottom).
                 Circle()
-                    .fill(RadialGradient(colors: [sandLit, sand,
-                                                  Color(red: 0.48, green: 0.36, blue: 0.31),
-                                                  Color(red: 0.20, green: 0.15, blue: 0.12)],
-                                         center: .init(x: 0.42, y: 0.34), startRadius: 0, endRadius: s * 0.55))
+                    .fill(RadialGradient(
+                        colors: [sandLit, sand,
+                                 Color(red: 0.62, green: 0.44, blue: 0.30),
+                                 Color(red: 0.40, green: 0.27, blue: 0.20)],
+                        center: .init(x: 0.40, y: 0.36), startRadius: 0, endRadius: s * 0.62))
 
-                // Swirling interior — soft-light blobs turning at the micro level.
+                // Swirling interior — soft warm light clearly turning (phase grows
+                // ~3/s; these multipliers give a visible drift, not a static blob).
                 ZStack {
-                    blob(sandLit, at: .init(x: 0.38, y: 0.40)).rotationEffect(.degrees(phase * 1.4))
-                    blob(plum,    at: .init(x: 0.62, y: 0.44)).rotationEffect(.degrees(-phase * 1.0))
-                    blob(sky,     at: .init(x: 0.50, y: 0.68)).rotationEffect(.degrees(phase * 1.7))
+                    blob(sandLit,          at: .init(x: 0.38, y: 0.40), r: s * 0.5).rotationEffect(.degrees(phase * 8))
+                    blob(ember.opacity(0.9), at: .init(x: 0.60, y: 0.56), r: s * 0.45).rotationEffect(.degrees(-phase * 6))
+                    blob(gold,             at: .init(x: 0.50, y: 0.30), r: s * 0.4).rotationEffect(.degrees(phase * 11))
                 }
-                .blendMode(.softLight)
+                .blendMode(.screen)
+                .opacity(0.7)
 
-                // Ember glow.
+                // Bright pulsing core — the heart of the orb.
                 Circle()
-                    .fill(RadialGradient(colors: [ember.opacity(0.85), .clear],
-                                         center: .init(x: 0.48, y: 0.58), startRadius: 0, endRadius: s * 0.34))
-                    .blendMode(.screen)
-                    .rotationEffect(.degrees(-phase * 0.7))
-
-                // Bright pulsing core.
-                Circle()
-                    .fill(RadialGradient(colors: [Color(red: 1, green: 0.96, blue: 0.88).opacity(0.92),
-                                                  Color(red: 1, green: 0.85, blue: 0.63).opacity(0.55), .clear],
-                                         center: .init(x: 0.46, y: 0.56), startRadius: 0, endRadius: s * 0.2))
+                    .fill(RadialGradient(colors: [Color(red: 1, green: 0.97, blue: 0.90),
+                                                  Color(red: 1, green: 0.86, blue: 0.62).opacity(0.6), .clear],
+                                         center: .init(x: 0.46, y: 0.50), startRadius: 0, endRadius: s * 0.26))
                     .scaleEffect(corePulse)
                     .blendMode(.screen)
 
-                // Faint 24-spoke gold Ashoka Chakra, slowly turning.
+                // Faint 24-spoke gold Ashoka Chakra — a DELICATE overlay, not a
+                // wire mesh: thin, low-opacity, sitting lightly over the glow.
                 ChakraShape(spokes: 24)
-                    .stroke(gold.opacity(0.8), lineWidth: max(0.5, s * 0.006))
-                    .overlay(Circle().stroke(gold.opacity(0.8), lineWidth: max(0.5, s * 0.007)).scaleEffect(0.72))
-                    .padding(s * 0.14)
-                    .blendMode(.overlay)
-                    .rotationEffect(.degrees(phase * 0.4))
+                    .stroke(gold.opacity(0.4), lineWidth: max(0.4, s * 0.004))
+                    .overlay(Circle().stroke(gold.opacity(0.45), lineWidth: max(0.4, s * 0.005)).scaleEffect(0.7))
+                    .padding(s * 0.16)
+                    // Clearly turning: phase grows ~3/s, ×3 ≈ 9°/s — a calm,
+                    // visible rotation (the reference's "chakra keeps working").
+                    .rotationEffect(.degrees(phase * 3))
+                    .opacity(0.85)
 
                 // Glass highlight, top-left.
                 Circle()
-                    .fill(RadialGradient(colors: [Color.white.opacity(0.25), .clear],
-                                         center: .init(x: 0.36, y: 0.24), startRadius: 0, endRadius: s * 0.28))
+                    .fill(RadialGradient(colors: [Color.white.opacity(0.35), .clear],
+                                         center: .init(x: 0.34, y: 0.22), startRadius: 0, endRadius: s * 0.3))
             }
             .frame(width: s, height: s)
             .clipShape(Circle())
@@ -86,10 +86,10 @@ struct HexMark: View {
         }
     }
 
-    private func blob(_ c: Color, at p: UnitPoint) -> some View {
+    private func blob(_ c: Color, at p: UnitPoint, r: CGFloat) -> some View {
         Circle()
-            .fill(RadialGradient(colors: [c, .clear], center: p, startRadius: 0, endRadius: 60))
-            .blur(radius: 10)
+            .fill(RadialGradient(colors: [c, .clear], center: p, startRadius: 0, endRadius: r))
+            .blur(radius: 8)
     }
 }
 
