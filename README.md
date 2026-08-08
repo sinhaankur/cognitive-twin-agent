@@ -243,6 +243,32 @@ is `false`: routing never leaves the machine.
 Talk to the twin. Speak a question, it answers out loud — built in the spirit of
 [Unhosted](https://github.com/unhosted-ai): the work stays on your machine.
 
+<p align="center">
+  <img src="docs/screenshots/chat.png" alt="Vera chat — the Siri-style orb, her voice, and replies that draw on her memory of your projects" width="360">
+</p>
+
+The **Siri-style orb** breathes at rest and shifts state as she works —
+**listening** (warm red), **thinking** (quiet shimmer), **speaking** (lively gold):
+
+<p align="center">
+  <img src="docs/screenshots/orb-states.png" alt="Vera orb states — idle, listening, speaking" width="520">
+</p>
+
+### Capabilities at a glance
+
+| She can… | How | Local? |
+|---|---|---|
+| **Reason as your twin** | a persona (`system_dna.md`) drives voice + behaviour over a local Ollama model | ✅ on-device |
+| **Talk & listen** | Apple Speech (STT) + `AVSpeechSynthesizer` / `say` (TTS); optional cloned voice | ✅ on-device |
+| **Speak in a loved one's voice** | Coqui XTTS-v2 clone from a cleaned recording that never leaves the machine | ✅ on-device |
+| **Remember you** | private memory of how you actually behave + a catalog of your projects/ideas | ✅ on-device |
+| **Hold your projects** | `remember_project` / `list_projects` / `projects_needing_attention` — she *questions* you on what's unresolved | ✅ on-device |
+| **See your screen** | reads the frontmost app / active window (Accessibility or screenshot+OCR), read-only | ✅ on-device |
+| **Sense the room** | detects ambient **sound types** — "music", "typing" — via on-device SoundAnalysis, opt-in, never recorded (she knows music is *playing*, not *which* song) | ✅ on-device |
+| **Drive VS Code** | a sandboxed, bounded, logged `drive` loop that plans + edits + verifies toward a goal | ✅ on-device |
+| **Do real tasks** | e.g. book a building amenity on BuildingLink (Playwright) via a skill | ✅ local |
+| **Route intelligently** | a policy picks the right local model per request by complexity, risk, device state | ✅ never leaves the machine |
+
 ```bash
 python -m cognitive_twin voice            # native macOS menubar (needs rumps)
 python -m cognitive_twin voice --web      # browser UI, zero extra deps
