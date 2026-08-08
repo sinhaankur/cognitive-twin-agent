@@ -113,6 +113,47 @@ final class AgentClient {
         } catch { return ActivityState() }
     }
 
+    /// GET /api/portrait/status — is a 3D likeness built, still building, and is
+    /// the local pipeline present. Returns the raw dict for the model to read.
+    func portraitStatus() async -> [String: Any] {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/portrait/status"))
+        req.timeoutInterval = 5
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            return (try JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+        } catch { return [:] }
+    }
+
+    /// POST /api/portrait/build — build a 3D likeness from ONE chosen photo,
+    /// locally (depth model + Blender). Returns once the build has *started*;
+    /// the app polls portraitStatus for completion.
+    @discardableResult
+    func portraitBuild(path: String) async -> Bool {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/portrait/build"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["path": path])
+        req.timeoutInterval = 10
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let o = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (o["ok"] as? Bool) ?? false
+        } catch { return false }
+    }
+
+    /// POST /api/portrait/clear — forget the built face; the orb returns to normal.
+    @discardableResult
+    func portraitClear() async -> Bool {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/portrait/clear"))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let o = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (o["ok"] as? Bool) ?? false
+        } catch { return false }
+    }
+
     /// POST /api/remember — teach the twin a fact to keep (e.g. its own name).
     func remember(_ fact: String) async {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/remember"))

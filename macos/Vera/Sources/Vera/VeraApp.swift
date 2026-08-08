@@ -462,6 +462,71 @@ final class AppModel: ObservableObject {
     @Published var activityEnabled = false    // she learns from your device activity
     @Published var activityPrivate = false    // private/snooze mode — not observing
 
+    // "See a loved one in 3D" — opt-in. Unlike the Photos sense (metadata only),
+    // this one reads the chosen photo's pixels to build a 3D relief. It stays on
+    // this Mac: the pipeline writes a USDZ into Application Support and nothing
+    // is sent anywhere. The switch alone shows nothing — the face appears only
+    // once a real mesh exists at `portraitMeshURL`.
+    @Published var portrait3DEnabled = UserDefaults.standard.bool(forKey: "portrait3DOn") {
+        didSet { UserDefaults.standard.set(portrait3DEnabled, forKey: "portrait3DOn") }
+    }
+
+    /// The built face relief, or nil if none exists yet. nil keeps the orb
+    /// exactly as it always was (see SiriOrb.portraitMesh / PortraitOrb).
+    /// `portraitReady` bumps to force SwiftUI to re-read this after a build.
+    @Published var portraitReady = false
+    @Published var portraitBuilding = false
+    var portraitMeshURL: URL? {
+        guard portrait3DEnabled else { return nil }
+        let base = FileManager.default.urls(for: .applicationSupportDirectory,
+                                            in: .userDomainMask).first
+        let url = base?.appendingPathComponent("Vera/portrait/face.usdz")
+        if let url, FileManager.default.fileExists(atPath: url.path) { return url }
+        return nil
+    }
+
+    /// Hand the local pipeline a chosen photo; it builds depth → Blender → USDZ
+    /// on this Mac. We poll status until the face appears (or the build ends).
+    func buildPortrait(from path: String) {
+        portraitBuilding = true
+        Task {
+            _ = await agent.portraitBuild(path: path)
+            // poll until the worker finishes (or ~3 min ceiling)
+            for _ in 0..<180 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                let st = await agent.portraitStatus()
+                if !(st["building"] as? Bool ?? false) {
+                    await MainActor.run {
+                        self.portraitBuilding = false
+                        self.portraitReady = (st["ready"] as? Bool ?? false)
+                    }
+                    return
+                }
+            }
+            await MainActor.run { self.portraitBuilding = false }
+        }
+    }
+
+    /// Forget the built face — the orb goes back to normal immediately.
+    func clearPortrait() {
+        Task {
+            _ = await agent.portraitClear()
+            await MainActor.run { self.portraitReady = false }
+        }
+    }
+
+    /// Reflect the on-disk truth into the UI at launch (so a face built in a past
+    /// session shows up, and a stale flag never claims one that isn't there).
+    func refreshPortrait() {
+        Task {
+            let st = await agent.portraitStatus()
+            await MainActor.run {
+                self.portraitReady = (st["ready"] as? Bool ?? false)
+                self.portraitBuilding = (st["building"] as? Bool ?? false)
+            }
+        }
+    }
+
     func refreshActivity() {
         Task {
             let s = await agent.activityStatus()

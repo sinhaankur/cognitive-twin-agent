@@ -36,6 +36,23 @@ final class TwinModel: ObservableObject {
     /// Read-only view of recent prompts, for the Brain graph.
     var recentPrompts: [String] { history }
 
+    // "See a loved one in 3D" — opt-in, persisted. On a phone there's no local
+    // Blender pipeline, so the USDZ likeness is *built on your Mac* and arrives
+    // with the memory vault (or dropped into the app's Documents). We only ever
+    // display a face that's actually present; otherwise the orb is untouched.
+    @Published var portrait3DEnabled = UserDefaults.standard.bool(forKey: "portrait3DOn") {
+        didSet { UserDefaults.standard.set(portrait3DEnabled, forKey: "portrait3DOn") }
+    }
+
+    /// The likeness file, or nil. nil keeps the orb exactly as it always was.
+    var portraitMeshURL: URL? {
+        guard portrait3DEnabled else { return nil }
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        let url = docs?.appendingPathComponent("portrait/face.usdz")
+        if let url, FileManager.default.fileExists(atPath: url.path) { return url }
+        return nil
+    }
+
     func savePersona(_ json: String) {
         personaJSON = json
         UserDefaults.standard.set(json, forKey: "persona")
