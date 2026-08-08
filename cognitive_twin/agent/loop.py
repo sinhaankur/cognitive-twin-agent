@@ -38,16 +38,45 @@ class AgentResult:
 
 
 def _load_persona() -> str:
-    """Persona = the repo's system_dna.md if present, else a sane default."""
-    for candidate in (
-        Path(__file__).resolve().parents[2] / "system_dna.md",
-        Path.cwd() / "system_dna.md",
-    ):
+    """Vera's core DNA = system_dna.md. Searched across a ROBUST set of paths so
+    she never silently drops to the bland default just because she was launched
+    from a different working directory (that was the 'Vera keeps going back to
+    basic' bug — the persona file wasn't found from a scheduler / other cwd).
+
+    Precedence: CTWIN_SYSTEM_DNA env → repo root (relative to this module) → cwd
+    → the user's config dir. If NONE is found we fall back, but LOUDLY (stderr +
+    a marker) rather than quietly becoming a generic assistant.
+    """
+    import os
+    import sys
+
+    candidates = []
+    env = os.environ.get("CTWIN_SYSTEM_DNA")
+    if env:
+        candidates.append(Path(env).expanduser())
+    # Module-relative repo root — stable regardless of cwd.
+    candidates.append(Path(__file__).resolve().parents[2] / "system_dna.md")
+    candidates.append(Path.cwd() / "system_dna.md")
+    # User config dir (where a customized DNA could live).
+    cfg = Path(os.environ.get("CTWIN_PERSONA_DIR", Path.home() / ".cognitive-twin"))
+    candidates.append(cfg / "system_dna.md")
+
+    for candidate in candidates:
         try:
             if candidate.is_file():
-                return candidate.read_text(encoding="utf-8")
+                text = candidate.read_text(encoding="utf-8").strip()
+                if text:
+                    return text
         except OSError:
             pass
+
+    # Loud fallback — this should be rare; make it visible so "basic Vera" is
+    # never a silent surprise.
+    print(
+        "[cognitive-twin] WARNING: system_dna.md not found — running with the "
+        "GENERIC persona. Set CTWIN_SYSTEM_DNA or run from the repo root.",
+        file=sys.stderr,
+    )
     return (
         "You are a local-first personal AI agent — pragmatic, concise, no fluff. "
         "Use the provided tools when they help; otherwise answer directly."
