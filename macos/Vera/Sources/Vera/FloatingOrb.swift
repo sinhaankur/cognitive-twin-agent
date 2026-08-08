@@ -32,8 +32,7 @@ struct FloatingOrb: View {
             }
 
             ZStack {
-                SiriOrb(amplitude: springAmp, phase: phase, tint: model.tint,
-                        brightness: model.brightness)
+                HexMark(amplitude: springAmp, phase: phase, tint: model.tint)
                 // press highlight: a bright ring that flashes on click
                 Circle()
                     .strokeBorder(Color.white.opacity(pressed ? 0.9 : 0), lineWidth: 3)

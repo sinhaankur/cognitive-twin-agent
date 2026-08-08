@@ -25,8 +25,7 @@ struct ChatPanel: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            SiriOrb(amplitude: model.amplitude, phase: phase, tint: model.tint,
-                    brightness: model.brightness)
+            HexMark(amplitude: model.amplitude, phase: phase, tint: model.tint)
                 .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
