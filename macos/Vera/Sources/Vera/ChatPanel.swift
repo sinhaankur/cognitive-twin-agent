@@ -81,13 +81,12 @@ struct ChatPanel: View {
                             .id(turn.id)
                     }
                     if model.phase == .thinking {
-                        // breathing ellipsis — riding the same 60 fps phase the
-                        // orb uses, so "alive" reads consistently everywhere
-                        Text("thinking" + String(repeating: ".",
-                             count: 1 + Int(phase * 0.8) % 3))
-                            .font(.caption).foregroundStyle(.secondary)
+                        // Three dots that breathe in sequence — riding the same
+                        // 60 fps phase the mark uses, so "alive" reads consistently.
+                        ThinkingDots(phase: phase)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 12)
+                            .transition(.opacity)
                     }
                 }
                 .padding(.vertical, 12)
@@ -176,19 +175,57 @@ struct ChatPanel: View {
     }
 }
 
+/// Three amber dots that pulse in sequence while Vera thinks — a small, alive
+/// touch that matches the hexagon mark's amber and its breathing cadence.
+private struct ThinkingDots: View {
+    let phase: CGFloat
+    private var amber: Color { Color(red: 0.81, green: 0.60, blue: 0.17) }
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<3, id: \.self) { i in
+                Circle()
+                    .fill(amber)
+                    .frame(width: 5, height: 5)
+                    .opacity(0.35 + 0.5 * (0.5 + 0.5 * sin(Double(phase) * 0.9 - Double(i) * 0.9)))
+            }
+        }
+        .padding(.horizontal, 13).padding(.vertical, 9)
+        .background(amber.opacity(0.08))
+        .clipShape(Capsule())
+    }
+}
+
 private struct TurnBubble: View {
     let turn: ChatTurn
+    private var amber: Color { Color(red: 0.81, green: 0.60, blue: 0.17) }
+
     var body: some View {
-        VStack(alignment: turn.isUser ? .trailing : .leading, spacing: 2) {
-            Text(turn.text)
-                .font(.system(size: 13))
-                .foregroundStyle(turn.isUser ? Color.white : Color.primary)
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(turn.isUser ? Color.accentColor : Color.gray.opacity(0.22)))
-        }
-        .frame(maxWidth: .infinity, alignment: turn.isUser ? .trailing : .leading)
-        .padding(.horizontal, 12)
+        Text(turn.text)
+            .font(.system(size: 13))
+            .textSelection(.enabled)                 // let the user copy replies
+            .foregroundStyle(turn.isUser ? Color.white : Color.primary)
+            .padding(.horizontal, 13).padding(.vertical, 9)
+            .background(bubbleFill)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(turn.isUser ? .clear : amber.opacity(0.22), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: .black.opacity(turn.isUser ? 0.18 : 0.06), radius: 3, y: 1)
+            .frame(maxWidth: 300, alignment: turn.isUser ? .trailing : .leading)
+            .frame(maxWidth: .infinity, alignment: turn.isUser ? .trailing : .leading)
+            .padding(.horizontal, 12)
+            .transition(.asymmetric(
+                insertion: .move(edge: turn.isUser ? .trailing : .leading)
+                    .combined(with: .opacity),
+                removal: .opacity))
+    }
+
+    // The user speaks in the accent; Vera speaks in a soft amber-tinted glass —
+    // her replies read as "hers" (matching the hexagon mark) without shouting.
+    private var bubbleFill: some ShapeStyle {
+        turn.isUser
+            ? AnyShapeStyle(Color.accentColor)
+            : AnyShapeStyle(amber.opacity(0.10))
     }
 }
