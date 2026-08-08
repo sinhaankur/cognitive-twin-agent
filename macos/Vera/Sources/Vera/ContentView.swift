@@ -25,9 +25,8 @@ struct ContentView: View {
             .padding(.top, 10)
             .padding(.horizontal, 16)
 
-            // --- the Siri orb ---
-            SiriOrb(amplitude: model.amplitude, phase: phase, tint: model.tint,
-                    brightness: model.brightness)
+            // --- Vera's Ashokan hexagon mark (replaces the Siri orb) ---
+            HexMark(amplitude: model.amplitude, phase: phase, tint: model.tint)
                 .frame(width: 220, height: 220)
                 .onTapGesture { model.micTapped() }
 

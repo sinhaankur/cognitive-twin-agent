@@ -35,9 +35,10 @@ struct TwinView: View {
 
                 Spacer()
 
-                SiriOrb(amplitude: model.thinking ? 0.35 : 0.18,
+                // Vera's Ashokan hexagon mark (replaces the Siri-style orb).
+                HexMark(amplitude: model.thinking ? 0.35 : 0.18,
                         phase: phase,
-                        tint: Color(red: 0.30, green: 0.45, blue: 0.95))
+                        tint: Color(red: 0.81, green: 0.60, blue: 0.17)) // amber
                     .frame(width: 220, height: 220)
 
                 if !model.transcript.isEmpty {
