@@ -15,21 +15,49 @@ struct HexMark: View {
     var phase: CGFloat
     var tint: Color = Color(red: 0.81, green: 0.60, blue: 0.17) // ~#cf9a2c amber
 
+    // A warm, amber-led palette for the living bloom behind the geometry —
+    // gold → amber → rose → deep-orange. Distinct from Siri's cool rainbow, so
+    // the mark reads as VERA's (Ashokan warmth), not a Siri copy.
+    private let blobs: [Color] = [
+        Color(red: 1.00, green: 0.80, blue: 0.35),  // gold
+        Color(red: 0.95, green: 0.55, blue: 0.18),  // amber
+        Color(red: 0.92, green: 0.38, blue: 0.30),  // rose-orange
+        Color(red: 0.78, green: 0.30, blue: 0.45),  // deep rose
+    ]
+
     var body: some View {
         GeometryReader { geo in
             let s = min(geo.size.width, geo.size.height)
             let breathe = 1.0 + sin(phase * 0.6) * 0.03 + amplitude * 0.10
 
             ZStack {
-                // Soft inner glow that breathes.
+                // --- LIVING BACKGROUND: colored blobs swirl behind the geometry,
+                //     clipped to the hexagon, so the mark feels alive like the Siri
+                //     orb did — without becoming an orb. Warm amber-led palette. ---
+                ZStack {
+                    ForEach(0..<blobs.count, id: \.self) { i in
+                        let a = Double(phase) * (0.35 + Double(i) * 0.08) + Double(i) * 2.4
+                        let orbit = s * (0.11 + 0.03 * Double(i)) * (1 + amplitude * 0.5)
+                        Circle()
+                            .fill(blobs[i])
+                            .frame(width: s * (0.42 + amplitude * 0.18),
+                                   height: s * (0.42 + amplitude * 0.18))
+                            .offset(x: CGFloat(cos(a)) * orbit,
+                                    y: CGFloat(sin(a * 1.13)) * orbit)
+                            .blur(radius: s * 0.09)
+                            .opacity(0.55 + amplitude * 0.35)
+                    }
+                }
+                .scaleEffect(breathe)
+                .clipShape(HexShape())
+                .blendMode(.plusLighter)
+
+                // Bright breathing core bloom.
                 Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [tint.opacity(0.55 + amplitude * 0.4),
-                                     tint.opacity(0.10), .clear],
-                            center: .center, startRadius: 0, endRadius: s * 0.42
-                        )
-                    )
+                    .fill(RadialGradient(
+                        colors: [tint.opacity(0.7 + amplitude * 0.3),
+                                 tint.opacity(0.12), .clear],
+                        center: .center, startRadius: 0, endRadius: s * 0.34))
                     .scaleEffect(breathe)
 
                 // Hexagon frame (pointy-top).
