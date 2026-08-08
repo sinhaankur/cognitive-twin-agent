@@ -47,6 +47,10 @@ WEB_DIR = Path(__file__).resolve().parent / "web"
 HOST = "127.0.0.1"
 DEFAULT_PORT = 7878
 
+# True while the opt-in "See a loved one in 3D" build (depth + Blender) runs on a
+# worker thread, so /api/portrait/status can report progress. See portrait.py.
+_portrait_building = False
+
 
 class _Handler(BaseHTTPRequestHandler):
     # the shared agent is attached to the server instance
@@ -151,6 +155,14 @@ class _Handler(BaseHTTPRequestHandler):
                 "observing": activity.observing(),
                 "status": activity.status(),
             })
+        elif self.path == "/api/portrait/status":
+            # "See a loved one in 3D": is a face built, and is the pipeline ready?
+            # Includes a "building" flag so the app can show progress while the
+            # local depth + Blender build runs. Nothing here reads or sends pixels.
+            from .. import portrait
+            st = portrait.status()
+            st["building"] = _portrait_building
+            self._json(200, st)
         else:
             self._json(404, {"error": "not found"})
 
@@ -374,6 +386,37 @@ class _Handler(BaseHTTPRequestHandler):
             data = self._read_json()
             result = photos.learn(data.get("events") or [])
             self._json(200, {"ok": True, **result})
+        elif self.path == "/api/portrait/build":
+            # Build the 3D likeness from ONE chosen photo (opt-in "See a loved one
+            # in 3D"). Unlike Photos (metadata only), this reads the photo's pixels
+            # — locally: depth model + Blender, output kept on this Mac. The build
+            # can take a while, so it runs on a worker thread and the app polls
+            # /api/portrait/status; here we just start it.
+            global _portrait_building
+            data = self._read_json()
+            path = (data.get("path") or "").strip()
+            if not path:
+                self._json(400, {"ok": False, "error": "no photo path"})
+                return
+            if _portrait_building:
+                self._json(200, {"ok": True, "building": True})
+                return
+            _portrait_building = True
+
+            def _work(p: str) -> None:
+                global _portrait_building
+                try:
+                    from .. import portrait
+                    portrait.build(p)
+                finally:
+                    _portrait_building = False
+
+            threading.Thread(target=_work, args=(path,), daemon=True).start()
+            self._json(200, {"ok": True, "building": True})
+        elif self.path == "/api/portrait/clear":
+            # Forget the face — turns the orb back to normal at once.
+            from .. import portrait
+            self._json(200, portrait.clear())
         elif self.path == "/api/reflect":
             # Anita thinks about your projects (while you're away) and saves a
             # thought. Best-effort; needs project seeds in memory + a reachable model.

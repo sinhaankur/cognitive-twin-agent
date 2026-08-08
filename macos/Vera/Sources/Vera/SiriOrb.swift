@@ -17,6 +17,11 @@ struct SiriOrb: View {
     var phase: CGFloat
     var tint: Color
     var brightness: CGFloat = 0
+    /// Opt-in "living photo" sub-state: a loved one's 3D face, held inside the
+    /// orb. nil (the default) means untouched — the orb renders exactly as it
+    /// always has. A face only appears when the switch is on AND a real mesh
+    /// exists, so nothing broken ever animates. See PortraitOrb.
+    var portraitMesh: URL? = nil
 
     // The Siri palette — saturated, luminous.
     private let blobs: [Color] = [
@@ -113,6 +118,13 @@ struct SiriOrb: View {
                 .frame(width: s, height: s)
                 .blur(radius: r * 0.10)               // melt the blobs together
                 .clipShape(Circle())
+
+                // --- opt-in "living photo": a loved one's 3D face, inside the
+                // orb. EmptyView unless the switch is on and a real mesh exists,
+                // so the orb above is untouched until there's a real face. The
+                // glass highlight + rim below still sit on top, keeping it "orb".
+                PortraitOrb(meshURL: portraitMesh, phase: phase)
+                    .frame(width: s, height: s)
 
                 // --- glassy specular highlight (top-left) ---
                 Circle()

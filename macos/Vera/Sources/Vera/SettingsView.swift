@@ -1,4 +1,6 @@
 import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
 
 /// Settings sheet: pick the local model, toggle spoken replies, and a few
 /// privacy controls. Kept simple and native.
@@ -152,6 +154,37 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
+                Section("Memory") {
+                    Toggle("See a loved one in 3D",
+                           isOn: $model.portrait3DEnabled)
+                    if model.portrait3DEnabled {
+                        if model.portraitBuilding {
+                            HStack(spacing: 8) {
+                                ProgressView().controlSize(.small)
+                                Text("Building the likeness on this Mac…")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        } else {
+                            Button {
+                                choosePortraitPhoto()
+                            } label: {
+                                Label(model.portraitReady ? "Choose a different photo…"
+                                                           : "Choose a photo…",
+                                      systemImage: "photo.on.rectangle")
+                            }
+                            if model.portraitReady {
+                                Button(role: .destructive) {
+                                    model.clearPortrait()
+                                } label: {
+                                    Label("Remove the 3D likeness", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                    Text("Choose a photo and \(model.assistantName) builds a gentle 3D likeness that lives inside the orb — a face you can see turn in the light. Unlike reading your Photos (dates only), this reads the photo itself to shape the relief. It's built and kept on this Mac; nothing is uploaded. Turn it off and the orb goes back to normal.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
                 Section("Privacy") {
                     LabeledContent("Conversation memory", value: "encrypted on this Mac")
                     Button {
@@ -181,7 +214,7 @@ struct SettingsView: View {
         }
         .padding(22)
         .frame(width: 420, height: 480)
-        .onAppear { model.refreshModels() }
+        .onAppear { model.refreshModels(); model.refreshPortrait() }
         .sheet(isPresented: $exporting) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Export her memory").font(.headline)
@@ -203,6 +236,18 @@ struct SettingsView: View {
             .padding(18)
             .frame(width: 360)
         }
+    }
+
+    /// Pick one photo; the local pipeline builds the 3D likeness on this Mac.
+    private func choosePortraitPhoto() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.prompt = "Use this photo"
+        panel.message = "Pick a clear, front-facing photo — it stays on this Mac."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        model.buildPortrait(from: url.path)
     }
 
     /// Ask where to save, then let the local server write the encrypted bundle.
