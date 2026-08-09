@@ -133,7 +133,7 @@ def read_lines(p: Path | str) -> list[Any]:
 # files are JSONL. This list is the audit surface — if a new personal store is
 # added, it belongs here so `seal-all` and `audit` cover it.
 STATE_STORES = [
-    "activity.state.json",  # activity.py summary/state (if present)
+    "activity_state.json",  # activity.py enable/pause state
     "mood.json",
     "rhythms.json",
     "soul.json",

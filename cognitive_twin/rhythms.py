@@ -127,24 +127,18 @@ def part_of_day() -> str:
     return "night"
 
 
-# --- json helpers --------------------------------------------------------------
+# --- json helpers (routed through the security kernel: sealed at rest) ---------
 def _read() -> dict[str, Any]:
-    p = _dir() / OVERRIDES
-    try:
-        return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
-    except (OSError, json.JSONDecodeError):
-        return {}
+    from . import security
+
+    data = security.read_state(_dir() / OVERRIDES, default={})
+    return data if isinstance(data, dict) else {}
 
 
 def _write(data: dict[str, Any]) -> None:
-    p = _dir() / OVERRIDES
-    existed = p.exists()
-    try:
-        p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        if not existed:
-            os.chmod(p, stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass
+    from . import security
+
+    security.write_state(_dir() / OVERRIDES, data)
 
 
 def status() -> str:
