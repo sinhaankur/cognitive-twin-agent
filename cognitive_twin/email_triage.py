@@ -321,7 +321,9 @@ def _main(argv: list[str]) -> int:
 
     host = os.environ.get("IMAP_HOST")
     user = os.environ.get("IMAP_USER")
-    password = os.environ.get("IMAP_PASSWORD")
+    # Password comes from the Keychain first (secure), env only as legacy fallback.
+    from .secrets_store import get as _secret
+    password = _secret("IMAP_PASSWORD")
     if not (host and user and password):
         print("✗ Set IMAP_HOST, IMAP_USER and IMAP_PASSWORD (an app-specific "
               "password) in your environment first. Nothing is uploaded; IMAP "

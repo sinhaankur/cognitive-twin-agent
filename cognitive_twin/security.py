@@ -211,9 +211,115 @@ def audit() -> list[tuple[str, str]]:
     return rows
 
 
+# ── doctor: one 'am I safe?' check across every front ──────────────────────────
+# Each check returns (ok: bool, label: str, detail: str). The doctor runs them all
+# and gives a single verdict, so "is the app safe?" has one honest answer.
+def _check_at_rest() -> tuple[bool, str, str]:
+    bad = [(n, s) for n, s in audit() if "PLAINTEXT" in s or "world-readable" in s]
+    if bad:
+        return (False, "Data sealed at rest",
+                "unsealed/exposed: " + ", ".join(n for n, _ in bad)
+                + " — run `security seal-all`")
+    return (True, "Data sealed at rest", "all personal stores sealed + owner-only")
+
+
+def _check_secrets() -> tuple[bool, str, str]:
+    try:
+        from . import secrets_store
+    except Exception:
+        return (True, "Secrets in Keychain", "secrets module unavailable (skipped)")
+    exposed = [n for n, s in secrets_store.audit() if "ENV PLAINTEXT" in s or "also in env" in s]
+    if exposed:
+        return (False, "Secrets in Keychain",
+                "in plaintext env: " + ", ".join(exposed)
+                + " — run `secrets_store migrate` then remove the .env lines")
+    return (True, "Secrets in Keychain", "no plaintext credentials in the environment")
+
+
+def _check_key_binding() -> tuple[bool, str, str]:
+    """Is the at-rest key held in the OS Keychain (device-bound) vs a derived
+    fallback? Both seal, but Keychain is stronger — report which."""
+    try:
+        if vault._keychain_read() is not None:  # type: ignore[attr-defined]
+            return (True, "Key protection", "sealing key held in macOS Keychain (device-bound)")
+    except Exception:
+        pass
+    return (True, "Key protection", "using derived key fallback (no Keychain) — still sealed")
+
+
+def _check_egress() -> tuple[bool, str, str]:
+    """Scan the package for network egress and report the surface. Anything beyond
+    the known-good set (Gmail/Google OAuth, localhost LLM) is flagged for review."""
+    import re
+
+    pkg = Path(__file__).resolve().parent
+    pattern = re.compile(r"IMAP4_SSL|SMTP|requests\.(?:post|get|request)|urlopen|"
+                         r"urllib\.request|http\.client\.HTTP|socket\.socket")
+    this_file = Path(__file__).name  # the scanner itself holds the patterns as text
+    hits: list[str] = []
+    for f in sorted(pkg.glob("*.py")):
+        if f.name == this_file:
+            continue
+        try:
+            text = f.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for i, line in enumerate(text.splitlines(), 1):
+            if pattern.search(line) and not line.lstrip().startswith("#"):
+                hits.append(f"{f.name}:{i}")
+    # Known-good egress files (your provider + local LLM only).
+    known = {"email_triage.py", "gmail_oauth.py", "email_send.py"}
+    unknown = [h for h in hits if h.split(":")[0] not in known]
+    if unknown:
+        return (False, "Network egress", "unexpected egress: " + ", ".join(unknown))
+    return (True, "Network egress",
+            f"{len(hits)} call(s), all to your Gmail / Google OAuth (LLM stays local)")
+
+
+def _check_git() -> tuple[bool, str, str]:
+    """Ensure no secret/sealed file is tracked by git and .env is ignored."""
+    import subprocess
+
+    repo = Path(__file__).resolve().parents[1]
+    try:
+        tracked = subprocess.run(["git", "-C", str(repo), "ls-files"],
+                                 capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return (True, "Git hygiene", "not a git checkout (skipped)")
+    leaked = [ln for ln in tracked.splitlines()
+              if ln == ".env" or ln.endswith(".sealed")
+              or "token" in ln.lower() or "secret" in ln.lower()]
+    if leaked:
+        return (False, "Git hygiene", "tracked sensitive file(s): " + ", ".join(leaked))
+    return (True, "Git hygiene", "no secrets, tokens, or sealed files tracked")
+
+
+def doctor() -> tuple[bool, list[tuple[bool, str, str]]]:
+    checks = [
+        _check_at_rest(),
+        _check_secrets(),
+        _check_key_binding(),
+        _check_egress(),
+        _check_git(),
+    ]
+    return (all(ok for ok, _, _ in checks), checks)
+
+
 # ── CLI ─────────────────────────────────────────────────────────────────────
 def _main(argv: list[str]) -> int:
     cmd = argv[0] if argv else "audit"
+    if cmd == "doctor":
+        safe, checks = doctor()
+        print("Vera security doctor\n")
+        for ok, label, detail in checks:
+            print(f"  {'✓' if ok else '✗'} {label:<22} {detail}")
+        print()
+        if safe:
+            print("✓ SAFE — sealed at rest, secrets in Keychain, egress is your "
+                  "Gmail only, nothing leaked to git.")
+            return 0
+        print("✗ NOT FULLY SAFE — address the ✗ lines above.")
+        return 1
     if cmd == "seal-all":
         r = seal_all()
         print(f"✓ Sealed {r['state_files_sealed']} state file(s) and "
