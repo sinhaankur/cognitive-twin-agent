@@ -66,14 +66,21 @@ def _humanize(result_json: str) -> str:
     status = r.get("status")
     if status == "booked":
         b = r.get("booked", {})
-        return f"Booked {b.get('amenity')} on {b.get('date')} at {b.get('time')}."
+        return f"Booked {b.get('amenity')} on {b.get('date')} at {b.get('time')} — confirmed."
+    if status == "booked-unverified":
+        b = r.get("booked", {})
+        # Honest: the Save click went through but the confirmation page wasn't
+        # seen. Never tell Ankur it's booked when we couldn't verify it.
+        return (f"I clicked through for {b.get('amenity')} on {b.get('date')} at "
+                f"{b.get('time')}, but couldn't confirm the reservation page — "
+                f"please double-check it actually took.")
     if status == "dry-run":
         w = r.get("wouldBook", {})
         return (f"Dry run — would book {w.get('amenity')} on {w.get('date')} at "
                 f"{w.get('time')} (out of {r.get('eligibleCount')} open slots). "
                 f"Enable confirmBookings in the booker to make it real.")
     if status == "none-available":
-        return "No open afternoon/evening slots for any target amenity right now."
+        return "No open slots for any target amenity across the next week right now."
     if status == "listed":
         rows = r.get("eligible", [])
         if not rows:
@@ -87,8 +94,8 @@ def _humanize(result_json: str) -> str:
 
 @R.add(
     "check_amenity_availability",
-    "Check BuildingLink for open afternoon/evening amenity slots (Ping Pong Table 1, "
-    "Tennis, Squash) WITHOUT booking. Read-only.",
+    "Check BuildingLink for open amenity slots (Ping Pong Table 1, Tennis, Squash) "
+    "across the next week WITHOUT booking. Read-only.",
 )
 def check_amenity_availability() -> str:
     return _humanize(_run_booker(["--list-only"]))
@@ -97,7 +104,9 @@ def check_amenity_availability() -> str:
 @R.add(
     "book_amenity",
     "Book a building amenity on BuildingLink (Ping Pong Table 1, Tennis, or Squash). "
-    "Picks a RANDOM open afternoon/evening slot. Actually books only if the booker's "
+    "Scans the next week and picks a RANDOM open slot honouring each amenity's "
+    "preferred time window + preferred days (Tennis→weekends, Ping Pong→weekdays), "
+    "then verifies the confirmation. Actually books only if the booker's "
     "confirmBookings is enabled; otherwise it's a safe dry run.",
 )
 def book_amenity() -> str:
