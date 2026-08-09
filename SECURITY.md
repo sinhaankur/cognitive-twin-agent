@@ -37,14 +37,47 @@ that's the whole contract.
 
 ## Verify it yourself
 
+**One command for the whole answer:**
+
 ```bash
-python3 -m cognitive_twin.security audit      # is everything sealed + owner-only?
-python3 -m cognitive_twin.security seal-all    # seal anything still plaintext (idempotent)
+python3 -m cognitive_twin.security doctor      # "am I safe?" — one verdict
+```
+
+The doctor runs five checks and prints ✓/✗ for each, then a single verdict:
+
+1. **Data sealed at rest** — every personal store sealed + owner-only.
+2. **Secrets in Keychain** — no plaintext credentials in the environment.
+3. **Key protection** — the sealing key is in the macOS Keychain (device-bound).
+4. **Network egress** — scans the code; every network call goes to *your* Gmail /
+   Google OAuth, nothing else. The LLM stays local. Any new/unknown egress is
+   flagged for review.
+5. **Git hygiene** — no secret, token, or sealed file is tracked by git.
+
+Finer-grained tools:
+
+```bash
+python3 -m cognitive_twin.security audit          # per-store at-rest state
+python3 -m cognitive_twin.security seal-all        # seal anything still plaintext (idempotent)
+python3 -m cognitive_twin.secrets_store audit      # per-secret: keychain / env-plaintext / absent
 ```
 
 `audit` reports each store as `sealed` / `PLAINTEXT` / `absent` / `empty`, and
 warns on world-readable files. `seal-all` self-heals: it reads any legacy
 plaintext store and re-seals it in place, without losing data.
+
+## Secrets live in the Keychain, not `.env`
+
+Credentials (`IMAP_PASSWORD`, the OAuth client secret) belong in the macOS
+Keychain, not a plaintext `.env`. Move them once:
+
+```bash
+python3 -m cognitive_twin.secrets_store set IMAP_PASSWORD        # hidden prompt
+python3 -m cognitive_twin.secrets_store migrate                  # or: move known .env secrets in
+```
+
+Then delete those lines from `.env`. Code reads secrets via
+`secrets_store.get(name)` — Keychain first, environment only as a legacy fallback
+(and it migrates an env-only value into the Keychain when it sees one).
 
 ## Reasoning stays on-device
 

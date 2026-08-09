@@ -76,8 +76,10 @@ def _token_path() -> Path:
 
 
 def _client() -> tuple[str, str, str]:
-    cid = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
-    secret = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+    # Client id/secret from the Keychain first (secure), env as legacy fallback.
+    from .secrets_store import get as _secret
+    cid = (_secret("GOOGLE_OAUTH_CLIENT_ID") or "").strip()
+    secret = (_secret("GOOGLE_OAUTH_CLIENT_SECRET") or "").strip()
     redirect = os.environ.get(
         "GOOGLE_OAUTH_REDIRECT_URI", "http://127.0.0.1:8765/callback"
     ).strip()
