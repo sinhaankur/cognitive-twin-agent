@@ -47,22 +47,16 @@ STATE = "activity_state.json"
 
 # --- enable / privacy gate ----------------------------------------------------
 def _state() -> dict[str, Any]:
-    p = _dir() / STATE
-    try:
-        return json.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
-    except (OSError, json.JSONDecodeError):
-        return {}
+    from . import security
+
+    data = security.read_state(_dir() / STATE, default={})
+    return data if isinstance(data, dict) else {}
 
 
 def _save_state(s: dict[str, Any]) -> None:
-    p = _dir() / STATE
-    existed = p.exists()
-    try:
-        p.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
-        if not existed:
-            os.chmod(p, stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass
+    from . import security
+
+    security.write_state(_dir() / STATE, s)
 
 
 def is_enabled() -> bool:
@@ -150,34 +144,16 @@ def sample(record_titles: bool = True) -> dict[str, Any] | None:
 
 
 def _append(entry: dict[str, Any]) -> None:
-    p = _dir() / LOG
-    existed = p.exists()
-    try:
-        with p.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        if not existed:
-            os.chmod(p, stat.S_IRUSR | stat.S_IWUSR)  # 0600
-    except OSError:
-        pass
+    from . import security
+
+    security.append_line(_dir() / LOG, entry)
 
 
 # --- patterns (how you work) --------------------------------------------------
 def _entries() -> list[dict[str, Any]]:
-    p = _dir() / LOG
-    if not p.is_file():
-        return []
-    out = []
-    try:
-        for line in p.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line:
-                try:
-                    out.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
-    except OSError:
-        return []
-    return out
+    from . import security
+
+    return [e for e in security.read_lines(_dir() / LOG) if isinstance(e, dict)]
 
 
 def patterns() -> dict[str, Any]:

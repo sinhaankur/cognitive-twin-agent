@@ -34,22 +34,20 @@ _DEFAULT = True
 
 
 def is_on() -> bool:
-    p = _dir() / STATE
-    try:
-        if p.is_file():
-            return bool(json.loads(p.read_text(encoding="utf-8")).get("reflective", _DEFAULT))
-    except (OSError, json.JSONDecodeError):
-        pass
+    # Read through the security kernel (sealed at rest; accepts legacy plaintext).
+    from . import security
+
+    data = security.read_state(_dir() / STATE, default=None)
+    if isinstance(data, dict):
+        return bool(data.get("reflective", _DEFAULT))
     return _DEFAULT
 
 
 def set_on(on: bool) -> None:
-    p = _dir() / STATE
-    try:
-        p.write_text(json.dumps({"reflective": on}), encoding="utf-8")
-        os.chmod(p, stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass
+    # Write through the security kernel — always sealed, atomic, owner-only.
+    from . import security
+
+    security.write_state(_dir() / STATE, {"reflective": on})
 
 
 # Original guidance — the *style*, not anyone's words.
