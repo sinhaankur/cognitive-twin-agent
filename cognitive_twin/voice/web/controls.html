@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vera — Controls</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: radial-gradient(ellipse at 50% 0%, #14161f 0%, #06070b 70%);
+      color: #f4f5f7; min-height: 100vh;
+      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      padding: 40px 16px 80px;
+    }
+    .wrap { max-width: 640px; margin: 0 auto; }
+    h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+    .sub { color: #8b93a7; font-size: 13px; margin-top: 4px; margin-bottom: 28px; }
+    .group { margin-bottom: 26px; }
+    .group h2 {
+      font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+      color: #7b839a; margin-bottom: 10px; font-weight: 600;
+    }
+    .card {
+      background: #12141c; border: 1px solid #1e2130; border-radius: 14px;
+      overflow: hidden;
+    }
+    .item {
+      display: flex; align-items: center; gap: 14px; padding: 14px 16px;
+      border-top: 1px solid #1a1d29;
+    }
+    .item:first-child { border-top: none; }
+    .item .meta { flex: 1; min-width: 0; }
+    .item .label { font-weight: 500; }
+    .item .desc { color: #8b93a7; font-size: 12.5px; margin-top: 2px; }
+    .item.unavailable { opacity: 0.45; }
+    .tag {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+      color: #7b839a; border: 1px solid #2a2e3f; border-radius: 6px;
+      padding: 2px 6px; margin-left: 6px; vertical-align: middle;
+    }
+    .tag.warn { color: #f0a868; border-color: #4a3a24; }
+    /* switch */
+    .sw { position: relative; width: 44px; height: 26px; flex: none; }
+    .sw input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; inset: 0; cursor: pointer; background: #2a2e3f;
+      border-radius: 26px; transition: 0.2s;
+    }
+    .slider::before {
+      content: ""; position: absolute; height: 20px; width: 20px; left: 3px; top: 3px;
+      background: #f4f5f7; border-radius: 50%; transition: 0.2s;
+    }
+    input:checked + .slider { background: #4d6ef0; }
+    input:checked + .slider::before { transform: translateX(18px); }
+    input:disabled + .slider { cursor: not-allowed; opacity: 0.5; }
+    .ro { font-size: 12px; color: #6f7789; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #3a3f52; flex: none; }
+    .dot.on { background: #3ddc84; }
+    #toast {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: #1e2130; border: 1px solid #2a2e3f; padding: 10px 16px;
+      border-radius: 10px; font-size: 13px; opacity: 0; transition: 0.25s;
+      pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+    #toast.err { border-color: #5a2a2a; color: #f0a0a0; }
+    a.back { color: #8b93a7; text-decoration: none; font-size: 13px; }
+    a.back:hover { color: #d6dae6; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <a class="back" href="/">← Vera</a>
+    <h1 style="margin-top:14px">Controls</h1>
+    <div class="sub">Every automation and data source. All on-device, sealed. Switches take effect immediately.</div>
+    <div id="groups"></div>
+  </div>
+  <div id="toast"></div>
+
+  <script>
+    const groupsEl = document.getElementById("groups");
+    const toastEl = document.getElementById("toast");
+
+    function toast(msg, err = false) {
+      toastEl.textContent = msg;
+      toastEl.className = "show" + (err ? " err" : "");
+      setTimeout(() => (toastEl.className = ""), 2200);
+    }
+
+    // Toggles that make outward changes get an extra confirm.
+    const CONFIRM = {
+      booker_confirm: "Turn ON real bookings? The booker will make actual reservations on your account.",
+      booker_nightly: "Schedule the booker to run automatically every night?",
+    };
+
+    async function load() {
+      const r = await fetch("/api/controls").then(r => r.json()).catch(() => null);
+      if (!r) { groupsEl.innerHTML = "<div class='sub'>Vera server not reachable.</div>"; return; }
+      render(r.controls);
+    }
+
+    function render(controls) {
+      const byGroup = {};
+      for (const c of controls) (byGroup[c.group] ||= []).push(c);
+      groupsEl.innerHTML = "";
+      for (const [group, items] of Object.entries(byGroup)) {
+        const g = document.createElement("div");
+        g.className = "group";
+        g.innerHTML = `<h2>${group}</h2><div class="card"></div>`;
+        const card = g.querySelector(".card");
+        for (const c of items) card.appendChild(itemEl(c));
+        groupsEl.appendChild(g);
+      }
+    }
+
+    function itemEl(c) {
+      const el = document.createElement("div");
+      el.className = "item" + (c.available ? "" : " unavailable");
+      const control = c.readonly
+        ? `<span class="dot ${c.on ? "on" : ""}"></span><span class="ro">${c.on ? "connected" : "not set"}</span>`
+        : `<label class="sw"><input type="checkbox" ${c.on ? "checked" : ""} ${c.available ? "" : "disabled"} data-key="${c.key}"><span class="slider"></span></label>`;
+      const warn = c.key.startsWith("booker_") ? `<span class="tag warn">outward</span>` : "";
+      el.innerHTML = `
+        <div class="meta">
+          <div class="label">${c.label}${warn}</div>
+          <div class="desc">${c.description || ""}</div>
+        </div>
+        ${control}`;
+      const input = el.querySelector("input[type=checkbox]");
+      if (input) input.addEventListener("change", () => onToggle(c, input));
+      return el;
+    }
+
+    async function onToggle(c, input) {
+      const on = input.checked;
+      if (on && CONFIRM[c.key] && !confirm(CONFIRM[c.key])) {
+        input.checked = false; return;
+      }
+      const r = await fetch("/api/controls/set", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: c.key, on }),
+      }).then(r => r.json()).catch(() => ({ error: "network error" }));
+      if (r.error) {
+        input.checked = !on;
+        toast(r.error, true);
+      } else {
+        toast(`${r.label}: ${r.on ? "on" : "off"}`);
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>

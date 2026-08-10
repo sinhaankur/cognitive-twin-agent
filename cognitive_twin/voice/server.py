@@ -98,6 +98,14 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == "/eye":
             # the app's small preview window (see eye.html header note)
             self._serve_file("eye.html", "text/html; charset=utf-8")
+        elif self.path in ("/controls", "/controls.html"):
+            # the automation control panel (switches for every data source +
+            # capability + the booker). All logic lives in controls.py — this
+            # page is just a front-end over it.
+            self._serve_file("controls.html", "text/html; charset=utf-8")
+        elif self.path == "/api/controls":
+            from .. import controls
+            self._json(200, {"controls": controls.snapshot()})
         elif self.path == "/api/health":
             agent = self.server.agent  # type: ignore[attr-defined]
             model = getattr(agent.client, "model", None) or getattr(agent, "configured_model", None)
@@ -167,6 +175,15 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
 
     def do_POST(self) -> None:
+        if self.path == "/api/controls/set":
+            # Flip one automation/data-source toggle. Body: {"key":..., "on":bool}
+            from .. import controls
+            data = self._read_json()
+            key = (data.get("key") or "").strip()
+            on = bool(data.get("on"))
+            result = controls.set_control(key, on)
+            self._json(200 if "error" not in result else 400, result)
+            return
         if self.path == "/api/ask":
             data = self._read_json()
             text = (data.get("text") or "").strip()
