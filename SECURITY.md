@@ -96,13 +96,42 @@ unavoidable for any email client. When you connect one:
   to a Vera server (there isn't one). Everything Vera *derives* (the local index,
   summaries, drafts, account inventory) stays sealed on this device.
 
-## Portability, when *you* choose it: `ctwin vault export/import`
+## Portability + multiple devices (design)
 
-To move Vera to a new machine, `vault export <file>` writes one bundle,
-re-encrypted under a passphrase *you* choose (PBKDF2-SHA256, 600k rounds). On the
-new device `vault import <file>` unpacks it and immediately re-seals everything
-under *that* device's key. You move it however you like; it's ciphertext the whole
-way.
+**Today (works):** `vault export <file>` writes one bundle, re-encrypted under a
+passphrase *you* choose (PBKDF2-SHA256, 600k rounds). On the other device `vault
+import <file>` unpacks it and immediately re-seals everything under *that* device's
+key. You move it however you like; it's ciphertext the whole way.
+
+**The invariant that makes multi-device safe:** each device holds its own at-rest
+key in its own Keychain, and **no key ever leaves a device**. Only the
+passphrase-encrypted bundle travels. A device compromise therefore stays contained
+to that one device — there is no shared key that unlocks the fleet.
+
+**Two private transports** (Vera never uses a third-party server for this):
+
+1. **iCloud private** — the encrypted bundle is written to *your* iCloud Drive.
+   Apple relays the ciphertext between your devices end-to-end; it's unreadable to
+   Apple and to us (there is no "us" — no Vera server). Works offline-asynchronously
+   (drop on A, pick up on B whenever it next syncs).
+2. **Direct device-to-device** — devices exchange the bundle over your local
+   network (AirDrop-style / a paired local link). No cloud at all; requires both
+   devices online and near each other.
+
+**What automatic sync still needs (not yet built), on top of this foundation:**
+
+- **Merge, not overwrite.** `import` currently overwrites. Append-only logs
+  (`memory.jsonl`, `places.jsonl`, `mail.jsonl`) merge cleanly by
+  timestamp/dedupe; single-document STATE files need a last-writer-wins (or
+  field-level) merge. This is the real engineering.
+- **Device trust / pairing.** A step to enrol a new device (e.g. a one-time code
+  shown on device A, entered on device B) so only *your* devices ever join.
+- **Conflict visibility.** If two devices edited the same STATE offline, surface
+  it rather than silently pick one.
+
+None of this changes the security kernel (`security.py`) or the sealed stores —
+sync is a layer *above* the one sealed path, which is exactly why the foundation
+was built first. A per-device diagram is in the project [README](./README.md).
 
 ## Honest threat model
 
