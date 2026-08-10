@@ -70,3 +70,39 @@ def enable_place_tracking(on: bool = True) -> str:
                 "source next to start logging where you go.")
     places.disable()
     return "Location tracking is off."
+
+
+@R.add(
+    "import_places",
+    "Pull location data into Vera's sealed index from a source: a Google Timeline/"
+    "Takeout export (give the file/folder path), the iOS Shortcut file, macOS Apple "
+    "locations, or this Mac's current location. Read-only on your data.",
+    {"type": "object", "properties": {
+        "source": {"type": "string",
+                    "description": "one of: google, ios, apple, here"},
+        "path": {"type": "string",
+                 "description": "file/folder path (required for source=google)"},
+    }, "required": ["source"]},
+)
+def import_places(source: str, path: str = "") -> str:
+    src = (source or "").lower().strip()
+    if src in ("google", "timeline", "takeout"):
+        if not path:
+            return "Give the path to your Google Takeout/Timeline file or folder."
+        from ..importers import google_timeline as G
+        r = G.import_from(path)
+        return r.get("note") or f"Imported {r['imported']} visit(s) from Google Timeline."
+    if src in ("ios", "shortcut"):
+        from ..importers import ios_shortcut as S
+        r = S.poll()
+        return r.get("note") or f"Ingested {r['imported']} place(s) from the iOS shortcut."
+    if src in ("apple", "significant", "macos"):
+        from ..importers import apple_locations as A
+        r = A.import_now()
+        return r.get("note") or f"Imported {r['imported']} Apple location visit(s)."
+    if src in ("here", "now", "core", "current"):
+        from ..importers import core_location as C
+        r = C.log()
+        return (r.get("note") if not r.get("logged")
+                else f"Logged where you are now: {r['place']}.")
+    return "Unknown source. Use: google (with path), ios, apple, or here."
