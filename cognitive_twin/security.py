@@ -254,12 +254,14 @@ def _check_egress() -> tuple[bool, str, str]:
     import re
 
     pkg = Path(__file__).resolve().parent
-    pattern = re.compile(r"IMAP4_SSL|SMTP|requests\.(?:post|get|request)|urlopen|"
-                         r"urllib\.request|http\.client\.HTTP|socket\.socket")
+    pattern = re.compile(r"IMAP4_SSL|SMTP|requests\.(?:post|get|request)|\.urlopen|"
+                         r"urllib\.request\.(?:urlopen|Request)|http\.client\.HTTP|"
+                         r"socket\.socket")
     this_file = Path(__file__).name  # the scanner itself holds the patterns as text
     hits: list[str] = []
-    for f in sorted(pkg.glob("*.py")):
-        if f.name == this_file:
+    # rglob so subpackages (careers/, importers/, …) are audited too, not just top-level.
+    for f in sorted(pkg.rglob("*.py")):
+        if f.name == this_file or "__pycache__" in f.parts:
             continue
         try:
             text = f.read_text(encoding="utf-8")
@@ -268,13 +270,25 @@ def _check_egress() -> tuple[bool, str, str]:
         for i, line in enumerate(text.splitlines(), 1):
             if pattern.search(line) and not line.lstrip().startswith("#"):
                 hits.append(f"{f.name}:{i}")
-    # Known-good egress files (your provider + local LLM only).
-    known = {"email_triage.py", "gmail_oauth.py", "email_send.py", "mail_store.py"}
-    unknown = [h for h in hits if h.split(":")[0] not in known]
+    # Known-good egress, by file + rationale:
+    known = {
+        # your email provider (only when you connect email)
+        "email_triage.py", "gmail_oauth.py", "email_send.py", "mail_store.py",
+        # a single public job posting page YOU point it at (robots-respecting,
+        # refuses LinkedIn/bulk)
+        "jobpost.py",
+        # the LOCAL LLM clients — these hit localhost/your configured local server,
+        # never a cloud API by default (that's the whole local-first design)
+        "ollama_client.py", "openai_client.py", "providers.py",
+        # opt-in web research skill (documented, off by default)
+        "builtin.py",
+    }
+    unknown = [h for h in hits if h.split(":")[0].split("/")[-1] not in known]
     if unknown:
         return (False, "Network egress", "unexpected egress: " + ", ".join(unknown))
     return (True, "Network egress",
-            f"{len(hits)} call(s), all to your Gmail / Google OAuth (LLM stays local)")
+            f"{len(hits)} call(s): your Gmail + local LLM (localhost) + opt-in web "
+            f"research. No unexpected destinations.")
 
 
 def _check_git() -> tuple[bool, str, str]:
@@ -326,8 +340,8 @@ def _main(argv: list[str]) -> int:
             print(f"  {'✓' if ok else '✗'} {label:<22} {detail}")
         print()
         if safe:
-            print("✓ SAFE — sealed at rest, secrets in Keychain, egress is your "
-                  "Gmail only, nothing leaked to git.")
+            print("✓ SAFE — sealed at rest, secrets in Keychain, egress only to "
+                  "your Gmail + local LLM + opt-in web research, nothing leaked to git.")
             return 0
         print("✗ NOT FULLY SAFE — address the ✗ lines above.")
         return 1

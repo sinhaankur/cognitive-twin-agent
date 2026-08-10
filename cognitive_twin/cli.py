@@ -34,6 +34,7 @@ from .skills import projects_db  # noqa: F401  (registers Ankur's projects/ideas
 from .skills import email_intel  # noqa: F401  (registers email intel: sync/inventory/search/triage)
 from .skills import places_skill  # noqa: F401  (registers places: today/week/status/enable)
 from .skills import social_skill  # noqa: F401  (registers social: summary/status/import Meta export)
+from .skills import careers_skill  # noqa: F401  (registers careers: job_fit/cover_letter/resumes/track)
 from .skills.base import default_registry
 
 

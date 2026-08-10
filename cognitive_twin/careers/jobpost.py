@@ -106,13 +106,17 @@ def _extract(text: str, source: str) -> JobPost:
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     low = text.lower()
 
-    # Title: first line that reads like a role title
+    # Title: first line that reads like a role title. Trim anything after a
+    # separator (·, |, —, "at") so "Senior AI Designer at Acme · Remote" → the role.
+    def _clean_title(s: str) -> str:
+        s = re.split(r"\s+(?:·|\||—|–|-\s|@|\bat\b)\s+", s, maxsplit=1)[0]
+        return s.strip()[:80]
     for ln in lines[:12]:
-        if _TITLE_HINTS.search(ln) and len(ln) < 90:
-            jp.title = ln
+        if _TITLE_HINTS.search(ln) and len(ln) < 110:
+            jp.title = _clean_title(ln)
             break
     if not jp.title and lines:
-        jp.title = lines[0][:90]
+        jp.title = _clean_title(lines[0])
 
     # Company: look for "at X", "Company: X", or a line before/after title
     m = re.search(r"\b(?:at|@)\s+([A-Z][\w&.\- ]{2,40})", text)
