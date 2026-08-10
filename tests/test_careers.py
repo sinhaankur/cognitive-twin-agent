@@ -94,6 +94,54 @@ def test_best_for_picks_higher_overlap(tmp_path):
     assert info["score"] > 0.5
 
 
+def test_tailor_fit_and_cover_letter(tmp_path):
+    J, R = _fresh(tmp_path)
+    from cognitive_twin.careers import tailor
+    import importlib
+    importlib.reload(tailor)
+    (tmp_path / "r.md").write_text(
+        "Principal UX Designer.\n"
+        "- Designed encryption console flows with strong usability and accessibility.\n"
+        "- Built human-ai interaction prototypes in figma with llm features.\n")
+    R.add(tmp_path / "r.md", name="ux")
+    jp = J.from_text("Senior AI Designer at Acme. Needs ux, figma, llm, "
+                     "human-ai interaction, usability.")
+    fit = tailor.analyze(jp)
+    assert fit.resume == "ux"
+    assert fit.score > 0.5
+    assert "figma" in fit.matched and "llm" in fit.matched
+    assert len(fit.emphasis) >= 1
+    # emphasis lines are clean (no markdown markers)
+    assert all("**" not in ln for ln in fit.emphasis)
+    letter = tailor.cover_letter(jp, fit)
+    assert "Acme" in letter and "Best," in letter
+
+
+def test_applications_lifecycle_sealed(tmp_path):
+    _fresh(tmp_path)
+    from cognitive_twin.careers import applications as A
+    import importlib
+    importlib.reload(A)
+    a = A.add("Acme AI", "Senior Designer", resume="ux")
+    assert a.status == "saved"
+    A.set_status(a.id, "applied")
+    A.add_note(a.id, "recruiter emailed")
+    got = A.get(a.id)
+    assert got.status == "applied"
+    assert len(got.history) == 2 and len(got.notes) == 1
+    assert A.open_apps()[0].id == a.id
+    # sealed at rest
+    raw = A._path().read_bytes()
+    assert b"Acme" not in raw
+    # bad status rejected
+    try:
+        A.set_status(a.id, "nonsense")
+    except ValueError:
+        pass
+    else:
+        assert False, "expected ValueError on bad status"
+
+
 if __name__ == "__main__":
     import tempfile
 
