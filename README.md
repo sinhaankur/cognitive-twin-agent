@@ -520,13 +520,27 @@ closes anything itself.
 ## Where you've been — location, on-device
 
 Opt-in, and Vera can answer "where did I go today?" from a **sealed** local index
-fed by your own data (Google Timeline export, Apple locations, an iOS Shortcut, or
-this Mac's Core Location). Off by default, pausable, encrypted at rest.
+fed by *your own* data. Off by default, pausable, encrypted at rest. Four sources,
+all reading files/services you already own — nothing is fetched from a third party:
 
 ```bash
 python -m cognitive_twin.places enable
+
+# Google location history you exported (Takeout or on-device Timeline) — richest
+python -m cognitive_twin.importers.google_timeline ~/Downloads/Takeout/…  # file or folder
+# Live Apple-Maps arrivals via an iPhone Shortcut writing to iCloud Drive
+python -m cognitive_twin.importers.ios_shortcut guide   # build it once, then: poll
+# macOS's own on-device store (needs Full Disk Access)
+python -m cognitive_twin.importers.apple_locations import
+# This Mac's current location (needs pyobjc-framework-CoreLocation)
+python -m cognitive_twin.importers.core_location log
+
 python -m cognitive_twin.places today
 ```
+
+Each importer degrades honestly — if a source needs a permission or a download it
+tells you exactly what, and never invents a place. Through Vera, the skill
+`import_places` (source = google/ios/apple/here) does the same.
 
 ## Multiple devices — without ever moving a key
 
