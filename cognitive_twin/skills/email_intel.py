@@ -93,6 +93,25 @@ def search_email(query: str) -> str:
 
 
 @R.add(
+    "send_email",
+    "Send an email over your own Gmail (uses the app password in your Keychain). "
+    "Explicit action only — Vera drafts, you decide to send. Give to/subject/body.",
+    {"type": "object", "properties": {
+        "to": {"type": "string", "description": "recipient email address"},
+        "subject": {"type": "string"},
+        "body": {"type": "string"},
+    }, "required": ["to", "subject", "body"]},
+)
+def send_email(to: str, subject: str, body: str) -> str:
+    from ..email_send import send, EmailSendError
+    try:
+        r = send(to=to, subject=subject, body=body)
+    except EmailSendError as e:
+        return f"Couldn't send: {e}"
+    return f"Sent to {', '.join(r['to'])}: “{subject}”."
+
+
+@R.add(
     "triage_inbox",
     "Classify recent inbox messages as good / marketing / spam (read-only IMAP). "
     "A quick 'what's worth my attention' pass.",

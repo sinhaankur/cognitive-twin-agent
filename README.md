@@ -499,6 +499,16 @@ python -m cognitive_twin "give me thoughts of the day"
 `thoughts_of_the_day` connects today's tasks with your recurring interests and
 writes a short reflection in your own voice — all from local context.
 
+## Built as modules, not locked to one assistant
+
+Every capability here — email, location, social, careers, the control panel — is a
+**standalone module with its own CLI** that works with zero assistant attached.
+Vera (the voice/persona) is just *one* front-end over them; the logic never lives
+inside the UI. So the same on-device, sealed engine can back any assistant, a
+menu-bar app, a cron job, or plain scripts. The `controls` layer, for instance,
+runs from the terminal (`python -m cognitive_twin.controls list`) exactly as it
+does behind the web panel.
+
 ## Email intelligence — know your inbox, on-device
 
 Connect your Gmail and Vera keeps a **sealed, on-device index** of your mail
