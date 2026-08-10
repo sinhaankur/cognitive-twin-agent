@@ -66,6 +66,16 @@ input:disabled+.slider{cursor:not-allowed;opacity:.5}
   <div class="sub">Everything tracked on this Mac — sealed, private, no account. Nothing here has left your machine.</div>
   <h2>Now</h2><div class="card" id="life"></div>
   <div id="groups"></div>
+  <h2>Automations</h2>
+  <div class="card" style="padding:14px 16px">
+    <div class="desc" style="margin-bottom:10px">Import an automation from a link or file. It's reviewed before it can run — nothing happens on import.</div>
+    <div style="display:flex;gap:8px">
+      <input id="recipeSrc" placeholder="https://…/recipe.json  or  /path/to/recipe.json"
+        style="flex:1;background:#0c0e15;border:1px solid #2a2e3f;border-radius:8px;color:#f4f5f7;padding:8px 10px;font-size:13px">
+      <button id="recipeImport" style="background:#4d6ef0;border:none;color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px">Import</button>
+    </div>
+  </div>
+  <div class="card" id="automations" style="margin-top:10px"></div>
   <div class="foot">Runs locally. Close the tab to stop looking; the data stays sealed on disk.</div>
 </div>
 <div id="toast"></div>
@@ -75,10 +85,49 @@ function toast(m,e){toastEl.textContent=m;toastEl.className="show"+(e?" err":"")
 const CONFIRM={booker_confirm:"Turn ON real bookings? The booker will make actual reservations on your account.",
  booker_nightly:"Schedule the booker to run automatically every night?"};
 async function load(){
-  const [life,ctrls]=await Promise.all([
+  const [life,ctrls,autos]=await Promise.all([
     fetch("/api/life").then(r=>r.json()).catch(()=>({areas:[]})),
-    fetch("/api/controls").then(r=>r.json()).catch(()=>({controls:[]}))]);
-  renderLife(life.areas||[]);renderControls(ctrls.controls||[]);
+    fetch("/api/controls").then(r=>r.json()).catch(()=>({controls:[]})),
+    fetch("/api/automations").then(r=>r.json()).catch(()=>({automations:[]}))]);
+  renderLife(life.areas||[]);renderControls(ctrls.controls||[]);renderAutomations(autos.automations||[]);
+}
+function renderAutomations(list){
+  const el=document.getElementById("automations");
+  if(!list.length){el.innerHTML='<div class="item off"><div class="meta"><div class="desc">No automations yet. Import one above.</div></div></div>';return}
+  el.innerHTML="";
+  for(const a of list){
+    const d=document.createElement("div");d.className="item";
+    const warn=a.sensitive?'<span class="tag">sensitive</span>':"";
+    const badge=a.approved?'<span class="ro" style="color:#3ddc84">approved</span>':'<span class="ro" style="color:#f0a868">needs review</span>';
+    d.innerHTML=`<div class="meta"><div class="label">${a.name}${warn} ${badge}</div>
+      <div class="desc">${a.description||""} · ${a.steps} step(s)${a.targets.length?" · "+a.targets[0]:""}</div></div>`;
+    const btns=document.createElement("div");btns.style.cssText="display:flex;gap:6px";
+    const mk=(txt,fn)=>{const b=document.createElement("button");b.textContent=txt;
+      b.style.cssText="background:#1e2130;border:1px solid #2a2e3f;color:#d6dae6;border-radius:7px;padding:6px 10px;cursor:pointer;font-size:12px";
+      b.onclick=fn;return b};
+    btns.appendChild(mk("Review",()=>alert(a.review)));
+    if(!a.approved)btns.appendChild(mk("Approve",()=>approveAuto(a.name)));
+    btns.appendChild(mk("Dry-run",()=>runAuto(a.name,false)));
+    if(a.approved)btns.appendChild(mk("Run",()=>{if(confirm("Run “"+a.name+"”? It will act in a browser."))runAuto(a.name,true)}));
+    d.appendChild(btns);el.appendChild(d);
+  }
+}
+async function importAuto(){
+  const src=document.getElementById("recipeSrc").value.trim();if(!src)return;
+  const r=await fetch("/api/automations/import",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({source:src})}).then(r=>r.json()).catch(()=>({error:"network error"}));
+  if(r.error)toast(r.error,true);else{toast("Imported “"+r.name+"” — review it");document.getElementById("recipeSrc").value="";load()}
+}
+async function approveAuto(name){
+  await fetch("/api/automations/approve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
+  toast("Approved “"+name+"”");load();
+}
+async function runAuto(name,go){
+  const r=await fetch("/api/automations/run",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({name,go})}).then(r=>r.json()).catch(()=>({error:"network error"}));
+  if(r.error)toast(r.error,true);
+  else if(r.status==="dry-run")alert(r.plan);
+  else toast("Ran “"+name+"”: "+(r.steps||0)+" step(s)");
 }
 function renderLife(areas){
   const el=document.getElementById("life");el.innerHTML="";
@@ -117,6 +166,7 @@ async function toggle(c,inp){
     body:JSON.stringify({key:c.key,on})}).then(r=>r.json()).catch(()=>({error:"network error"}));
   if(r.error){inp.checked=!on;toast(r.error,true)}else{toast(`${r.label}: ${r.on?"on":"off"}`);load()}
 }
+document.getElementById("recipeImport").addEventListener("click",importAuto);
 load();setInterval(load,15000);
 </script></body></html>"""
 
@@ -142,19 +192,47 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/controls":
             from . import controls
             self._json(200, {"controls": controls.snapshot()})
+        elif self.path == "/api/automations":
+            from .automations import recipe
+            self._json(200, {"automations": [
+                {"name": r.name, "description": r.description, "steps": len(r.steps),
+                 "approved": r.approved, "sensitive": r.sensitive,
+                 "targets": r.targets(), "review": recipe.review(r)}
+                for r in recipe.read_all()]})
         else:
             self._json(404, {"error": "not found"})
 
     def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        try:
+            data = json.loads(self.rfile.read(length) or b"{}") if length else {}
+        except json.JSONDecodeError:
+            data = {}
         if self.path == "/api/controls/set":
             from . import controls
-            length = int(self.headers.get("Content-Length", 0))
-            try:
-                data = json.loads(self.rfile.read(length) or b"{}")
-            except json.JSONDecodeError:
-                data = {}
             r = controls.set_control((data.get("key") or "").strip(), bool(data.get("on")))
             self._json(200 if "error" not in r else 400, r)
+        elif self.path == "/api/automations/import":
+            from .automations import recipe
+            try:
+                r = recipe.import_recipe((data.get("source") or "").strip())
+                self._json(200, {"ok": True, "name": r.name, "review": recipe.review(r)})
+            except recipe.RecipeError as e:
+                self._json(400, {"error": str(e)})
+            except Exception as e:
+                self._json(400, {"error": f"couldn't import: {e}"})
+        elif self.path == "/api/automations/approve":
+            from .automations import recipe
+            r = recipe.approve((data.get("name") or "").strip())
+            self._json(200 if r else 404, {"ok": bool(r)})
+        elif self.path == "/api/automations/run":
+            # Dry-run by default; only runs when go=true (an approved recipe).
+            from .automations import run
+            try:
+                r = run.run((data.get("name") or "").strip(), go=bool(data.get("go")))
+                self._json(200, r)
+            except run.RunError as e:
+                self._json(400, {"error": str(e)})
         else:
             self._json(404, {"error": "not found"})
 
