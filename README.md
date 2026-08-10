@@ -499,6 +499,35 @@ python -m cognitive_twin "give me thoughts of the day"
 `thoughts_of_the_day` connects today's tasks with your recurring interests and
 writes a short reflection in your own voice — all from local context.
 
+## Email intelligence — know your inbox, on-device
+
+Connect your Gmail and Vera keeps a **sealed, on-device index** of your mail
+(headers only, read-only — it never marks anything read). From that she can tell
+you which **accounts** you actually use versus the ones to close or unsubscribe
+from — the classic inbox cleanup, done privately.
+
+```bash
+python -m cognitive_twin.mail_store sync                # index your inbox (sealed)
+python -m cognitive_twin.account_inventory report        # mostly-used / unused / dormant / useless
+python -m cognitive_twin.account_inventory unused        # just the ones to close
+```
+
+Setup is ~5 minutes (a Gmail app password, stored in the Keychain, not a plaintext
+file): **[docs/EMAIL-SETUP.md](./docs/EMAIL-SETUP.md)**. Nothing leaves this Mac
+except the fetch to your own Gmail; Vera *suggests*, it never unsubscribes or
+closes anything itself.
+
+## Where you've been — location, on-device
+
+Opt-in, and Vera can answer "where did I go today?" from a **sealed** local index
+fed by your own data (Google Timeline export, Apple locations, an iOS Shortcut, or
+this Mac's Core Location). Off by default, pausable, encrypted at rest.
+
+```bash
+python -m cognitive_twin.places enable
+python -m cognitive_twin.places today
+```
+
 ## Multiple devices — without ever moving a key
 
 Vera is single-device today, but the memory model is built to grow to several of
