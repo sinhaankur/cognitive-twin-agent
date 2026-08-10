@@ -499,6 +499,27 @@ python -m cognitive_twin "give me thoughts of the day"
 `thoughts_of_the_day` connects today's tasks with your recurring interests and
 writes a short reflection in your own voice — all from local context.
 
+## No assistant required — the `life` app + command
+
+Don't want the voice/persona side? You don't need it. Everything runs as a
+standalone app and a plain command over the same sealed, on-device engine.
+
+```bash
+bash scripts/life/install.sh     # puts `life` on your PATH (one time)
+
+life            # opens a visual dashboard in your browser (for non-CLI folks)
+life status     # everything tracked, one screen (places, inbox, social, jobs, bookings)
+life doctor     # security check — "am I safe?"
+life accounts   # which email accounts are useless / unused / mostly-used
+life fit --posting job.txt        # resume fit for a job
+```
+
+`life` (with no argument) launches a **local dashboard** — a real clickable app at
+`127.0.0.1` that shows what's tracked and lets you flip every automation on/off,
+no terminal needed. It's its own tiny server (`cognitive_twin.dashboard`) that
+imports **none** of the voice/agent stack — verified by a test. The assistant is
+one optional front-end; this is the whole thing without it.
+
 ## Built as modules, not locked to one assistant
 
 Every capability here — email, location, social, careers, the control panel — is a

@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# life — the standalone launcher. No Vera app required.
+#
+# One command for everything tracked on this Mac. For people who don't live in a
+# terminal, `life` (or `life app`) opens a visual dashboard in the browser. Power
+# users get sub-commands. Everything runs the same sealed, on-device engine.
+#
+# Install:  bash scripts/life/install.sh   (puts `life` on your PATH)
+#
+# © Ankur Sinha. Personal use.
+set -euo pipefail
+
+# Locate the package root (two levels up from this script), overridable.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${LIFE_ROOT:-$(cd "$HERE/../.." && pwd)}"
+PY="${PYTHON:-python3}"
+
+run() { (cd "$ROOT" && "$PY" -m "cognitive_twin.$1" "${@:2}"); }
+
+cmd="${1:-app}"; shift || true
+case "$cmd" in
+  app|dashboard|"")   run dashboard "$@" ;;            # the visual app (default)
+  status)             run life status ;;                # everything, one screen
+  doctor)             run security doctor ;;            # "am I safe?"
+  # data areas
+  places)             run places "${@:-today}" ;;
+  email)              run mail_store "${@:-status}" ;;
+  accounts)           run account_inventory "${@:-report}" ;;
+  social)             run social "${@:-summary}" ;;
+  controls)           run controls "${@:-list}" ;;
+  # careers
+  job)                run careers.jobpost "$@" ;;
+  resumes)            run careers.resumes "${@:-list}" ;;
+  fit)                run careers.tailor fit "$@" ;;
+  cover)              run careers.tailor letter "$@" ;;
+  apply)              run careers.applications "$@" ;;
+  # secrets / email connect
+  secret)             run secrets_store "$@" ;;
+  help|-h|--help)
+    cat <<'USAGE'
+life — your on-device life tracker (no assistant required)
+
+  life                 open the visual dashboard (default)
+  life status          everything tracked, one screen
+  life doctor          security check — "am I safe?"
+
+  life places [today|week]        where you went
+  life email [status|sync]        inbox index
+  life accounts                   useless / unused / used accounts
+  life social [summary]           Facebook/Instagram activity
+  life controls [list|on KEY|off KEY]   toggle automations
+
+  life resumes [list|add FILE]    your resume database
+  life fit --posting FILE         resume fit for a job
+  life cover --posting FILE       cover-letter draft
+  life apply [list|add ...]       application tracker
+
+  life secret set IMAP_PASSWORD   store a credential in the Keychain
+USAGE
+    ;;
+  *)  echo "unknown command: $cmd  (try: life help)"; exit 2 ;;
+esac
