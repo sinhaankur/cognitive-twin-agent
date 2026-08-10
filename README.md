@@ -542,6 +542,23 @@ Each importer degrades honestly — if a source needs a permission or a download
 tells you exactly what, and never invents a place. Through Vera, the skill
 `import_places` (source = google/ios/apple/here) does the same.
 
+## Social — your Facebook & Instagram, from your own export
+
+Meta gives no private API to read your feed, and scraping gets you banned — so the
+honest, fully-yours path is Meta's **"Download Your Information"** export (JSON).
+Request it once, unzip it, and Vera parses it locally into a **sealed** index:
+your activity over time, the **sentiment of what you wrote** (scored on-device,
+labelled as inference), who you engage with most, and when you're active.
+
+```bash
+python -m cognitive_twin.social enable
+python -m cognitive_twin.importers.meta_export ~/Downloads/facebook-YOURNAME/   # unzipped folder
+python -m cognitive_twin.social summary
+```
+
+Periodic, not live (you re-export now and then) — the tradeoff for it being truly
+private. Nothing is scraped or uploaded; the sentiment model is on-device.
+
 ## Multiple devices — without ever moving a key
 
 Vera is single-device today, but the memory model is built to grow to several of

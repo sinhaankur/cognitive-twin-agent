@@ -143,6 +143,7 @@ LOG_STORES = [
     "activity.jsonl",
     "places.jsonl",
     "mail.jsonl",
+    "social.jsonl",
 ]
 
 
