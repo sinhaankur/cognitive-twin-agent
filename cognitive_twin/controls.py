@@ -33,7 +33,8 @@ class Control:
     group: str
     get: Callable[[], bool]
     set: Callable[[bool], None]
-    description: str = ""
+    # description may be a plain string or a callable → str (for live counts).
+    description: Any = ""
     available: Callable[[], bool] = lambda: True
     # Some controls are informational/read-only (e.g. "email connected") — no set.
     readonly: bool = False
@@ -47,9 +48,15 @@ class Control:
             avail = bool(self.available())
         except Exception:
             avail = False
+        desc = self.description
+        if callable(desc):
+            try:
+                desc = desc()
+            except Exception:
+                desc = ""
         return {"key": self.key, "label": self.label, "group": self.group,
                 "on": on, "available": avail, "readonly": self.readonly,
-                "description": self.description}
+                "description": desc}
 
 
 # ── lazy accessors (import modules only when touched, so a missing optional dep
@@ -122,6 +129,18 @@ def _registry() -> list[Control]:
         description="Gmail app password stored in the Keychain.",
     ))
 
+    # — Careers (the job search) —
+    controls.append(Control(
+        "careers_resumes", "Resumes on file", "Careers",
+        get=_careers_has_resumes, set=lambda on: None, readonly=True,
+        description=_careers_resumes_desc,
+    ))
+    controls.append(Control(
+        "careers_open_apps", "Open applications", "Careers",
+        get=_careers_has_open_apps, set=lambda on: None, readonly=True,
+        description=_careers_apps_desc,
+    ))
+
     # — The amenity booker (separate repo/script) —
     controls.append(Control(
         "booker_confirm", "Booker: real bookings", "Automations — amenity booker",
@@ -167,6 +186,43 @@ def _careers_ai_set(on: bool) -> None:
         f.write_text("1", encoding="utf-8")
     else:
         f.unlink(missing_ok=True)
+
+
+def _careers_has_resumes() -> bool:
+    try:
+        from .careers import resumes
+        return len(resumes.read_all()) > 0
+    except Exception:
+        return False
+
+
+def _careers_resumes_desc() -> str:
+    try:
+        from .careers import resumes
+        rs = resumes.read_all()
+        return (f"{len(rs)} resume variant(s): " + ", ".join(r.name for r in rs[:4])
+                if rs else "No resumes yet — add one (`resumes add <file.pdf>`).")
+    except Exception:
+        return "Resume database."
+
+
+def _careers_has_open_apps() -> bool:
+    try:
+        from .careers import applications
+        return len(applications.open_apps()) > 0
+    except Exception:
+        return False
+
+
+def _careers_apps_desc() -> str:
+    try:
+        from .careers import applications
+        apps = applications.read_all()
+        open_n = len(applications.open_apps())
+        return (f"{open_n} open of {len(apps)} tracked." if apps
+                else "No applications tracked yet.")
+    except Exception:
+        return "Application tracker."
 
 
 def _booker_available() -> bool:
