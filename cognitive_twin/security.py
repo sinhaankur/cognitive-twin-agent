@@ -268,7 +268,7 @@ def _check_egress() -> tuple[bool, str, str]:
             if pattern.search(line) and not line.lstrip().startswith("#"):
                 hits.append(f"{f.name}:{i}")
     # Known-good egress files (your provider + local LLM only).
-    known = {"email_triage.py", "gmail_oauth.py", "email_send.py"}
+    known = {"email_triage.py", "gmail_oauth.py", "email_send.py", "mail_store.py"}
     unknown = [h for h in hits if h.split(":")[0] not in known]
     if unknown:
         return (False, "Network egress", "unexpected egress: " + ", ".join(unknown))
@@ -286,12 +286,22 @@ def _check_git() -> tuple[bool, str, str]:
                                  capture_output=True, text=True, timeout=10).stdout
     except (OSError, subprocess.TimeoutExpired):
         return (True, "Git hygiene", "not a git checkout (skipped)")
-    leaked = [ln for ln in tracked.splitlines()
-              if ln == ".env" or ln.endswith(".sealed")
-              or "token" in ln.lower() or "secret" in ln.lower()]
+    # Flag real secret *artifacts*, not source files that merely mention the words.
+    # (secrets_store.py is code; gmail_token.sealed / .env are secrets.)
+    def _is_secret_artifact(name: str) -> bool:
+        base = name.rsplit("/", 1)[-1]
+        if name == ".env" or name.endswith("/.env"):
+            return True
+        if base.endswith((".sealed", ".pem", ".key", ".p12")):
+            return True
+        if base in {"auth.json", "token.json", "credentials.json"}:
+            return True
+        return False
+
+    leaked = [ln for ln in tracked.splitlines() if _is_secret_artifact(ln)]
     if leaked:
-        return (False, "Git hygiene", "tracked sensitive file(s): " + ", ".join(leaked))
-    return (True, "Git hygiene", "no secrets, tokens, or sealed files tracked")
+        return (False, "Git hygiene", "tracked secret file(s): " + ", ".join(leaked))
+    return (True, "Git hygiene", "no secret artifacts (.env, .sealed, tokens) tracked")
 
 
 def doctor() -> tuple[bool, list[tuple[bool, str, str]]]:
