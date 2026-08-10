@@ -499,6 +499,28 @@ python -m cognitive_twin "give me thoughts of the day"
 `thoughts_of_the_day` connects today's tasks with your recurring interests and
 writes a short reflection in your own voice — all from local context.
 
+## Set up automations without code — safely
+
+Anyone can add an automation two ways, and **nothing runs until you review + approve it**:
+
+- **Import a recipe** — a small JSON automation (a name + ordered steps) from a
+  link or file. You see exactly what it does (open / click / fill / read / notify —
+  no shell, no arbitrary logins; refuses ToS-hostile hosts like LinkedIn), then
+  approve it to run. Sensitive recipes (submit/pay/book) are flagged.
+- **Record a task** — demonstrate it once in a browser (`life record …`); it saves
+  the exact steps as a recipe you can edit. It replays **only** what you showed it —
+  it never watches your screen or acts on its own.
+
+```bash
+life automation import scripts/life/example-recipe.json   # import + review
+life automation approve example-read-headline              # allow it to run
+life record start book-court --url https://…              # demonstrate a task once
+```
+
+In the dashboard, an **Automations** panel does all of this with buttons —
+import, review, approve, dry-run, run — for people who don't touch a terminal.
+Every recipe is stored sealed on-device; runs are dry-run first.
+
 ## No assistant required — the `life` app + command
 
 Don't want the voice/persona side? You don't need it. Everything runs as a

@@ -282,6 +282,9 @@ def _check_egress() -> tuple[bool, str, str]:
         "ollama_client.py", "openai_client.py", "providers.py",
         # opt-in web research skill (documented, off by default)
         "builtin.py",
+        # importing an automation RECIPE (a JSON config file) from a URL you give —
+        # it's a config you review before it runs, not a site being driven.
+        "recipe.py",
     }
     unknown = [h for h in hits if h.split(":")[0].split("/")[-1] not in known]
     if unknown:

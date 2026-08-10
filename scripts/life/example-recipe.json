@@ -1,0 +1,9 @@
+{
+  "name": "example-read-headline",
+  "description": "Open a page and read its main heading — a safe, read-only demo recipe you can import to see how automations work.",
+  "steps": [
+    { "action": "open", "url": "https://example.com" },
+    { "action": "readText", "selector": "h1", "as": "headline" },
+    { "action": "notify", "text": "The page heading is: {headline}" }
+  ]
+}

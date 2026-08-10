@@ -34,6 +34,9 @@ case "$cmd" in
   fit)                run careers.tailor fit "$@" ;;
   cover)              run careers.tailor letter "$@" ;;
   apply)              run careers.applications "$@" ;;
+  # automations (import a link / record a task; review before it runs)
+  automation|automations) run automations.recipe "${@:-list}" ;;
+  record)             run automations.record start "$@" ;;
   # secrets / email connect
   secret)             run secrets_store "$@" ;;
   help|-h|--help)
