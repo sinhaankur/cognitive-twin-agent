@@ -499,6 +499,72 @@ python -m cognitive_twin "give me thoughts of the day"
 `thoughts_of_the_day` connects today's tasks with your recurring interests and
 writes a short reflection in your own voice — all from local context.
 
+## Multiple devices — without ever moving a key
+
+Vera is single-device today, but the memory model is built to grow to several of
+*your* devices safely. The rule that makes it safe: **every device has its own
+encryption key, and no key ever leaves a device.** Data moves as ciphertext; each
+device re-seals it under *its own* key on arrival. So "sync" never becomes "one
+stolen key opens all my devices."
+
+The primitive already ships — a portable, passphrase-encrypted bundle:
+
+```bash
+# On device A — export (you choose a passphrase; PBKDF2-SHA256, 600k rounds)
+python -m cognitive_twin vault export ~/vera.bundle
+
+# On device B — import with the same passphrase; it re-seals under B's own key
+python -m cognitive_twin vault import ~/vera.bundle
+```
+
+### How the two private transports work
+
+Vera will **never** use a third-party server. There are two ways your devices can
+exchange that bundle, and you can use either (or both):
+
+**1. iCloud private (your Apple account).** The encrypted bundle is written to
+*your* iCloud Drive. Apple syncs it between your devices, but it's already
+ciphertext when it leaves the Mac — Apple can't read it, and neither can we (there
+is no "we"; no Vera server exists). Best when devices aren't online at the same
+time: device A drops the bundle, device B picks it up whenever it next syncs.
+
+**2. Direct device-to-device.** No cloud at all — the devices hand the bundle to
+each other over your local network (AirDrop-style / a local paired link). Most
+private (nothing ever leaves your LAN), but both devices must be online and near
+each other for it to happen.
+
+```text
+  ┌──────────────────────────┐                         ┌──────────────────────────┐
+  │        Device A          │                         │        Device B          │
+  │  (this Mac)              │                         │  (your other Mac/phone)  │
+  │                          │                         │                          │
+  │  ~/.cognitive-twin/*     │                         │  ~/.cognitive-twin/*     │
+  │  sealed with KEY-A  ─────┼── decrypt with KEY-A    │  sealed with KEY-B       │
+  │  (Keychain, device A)    │   re-encrypt under      │  (Keychain, device B)    │
+  │                          │   your PASSPHRASE       │            ▲             │
+  │            │             │        │                │            │ re-seal     │
+  │            ▼             │        ▼                │            │ under KEY-B  │
+  │     vera.bundle  ────────┼────────┼────────────────┼──►  vera.bundle          │
+  │   (ciphertext only)      │        │                │   (ciphertext only)      │
+  └──────────────────────────┘        │                └──────────────────────────┘
+                                       │
+              ┌────────────────────────┴────────────────────────┐
+              │              two private transports              │
+              │                                                  │
+              │   ①  iCloud private        ②  Direct device-to-  │
+              │      (your Apple account,     device (local LAN/ │
+              │       E2E, offline-friendly)  AirDrop, no cloud) │
+              └──────────────────────────────────────────────────┘
+
+  KEY-A and KEY-B never move. Only the passphrase-encrypted bundle travels.
+```
+
+**What's built vs. what's next.** The export/import bundle (manual, snapshot) works
+today. Automatic *sync* — merging two devices' logs instead of overwriting, an
+iCloud/LAN transport, and a device-pairing step so only your devices join — is
+designed on top of this and doesn't require changing the security kernel. See
+[`SECURITY.md`](./SECURITY.md).
+
 ## Your day, shadowed — tasks caught from conversation
 
 Vera follows your day the way a person would: you *mention* a task, she holds
