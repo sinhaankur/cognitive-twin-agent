@@ -105,6 +105,14 @@ def _registry() -> list[Control]:
         set=lambda on: _mod("control").enable(on),
         description="See the screen + take named, confirmable actions.",
     ))
+    # Careers assistant AI switch — the tool works fully WITHOUT this (deterministic
+    # parsing + fit scoring); ON adds local-LLM phrasing for tailoring/cover letters.
+    controls.append(Control(
+        "careers_ai", "Careers: AI phrasing", "Vera — capabilities",
+        get=_careers_ai_get, set=_careers_ai_set,
+        description="Human-in-the-loop resume/job tools work without AI; switch on "
+                    "for smarter local-LLM phrasing (opt-in).",
+    ))
 
     # — Connections (read-only status) —
     controls.append(Control(
@@ -142,6 +150,23 @@ _BOOKER_DIR = Path(os.environ.get("BOOKER_DIR", Path.home() / "Documents" / "bui
 _BOOKER_CONFIG = _BOOKER_DIR / "src" / "config.mjs"
 _LAUNCHD_LABEL = "com.sinhaankur.buildinglink-booker"
 _LAUNCHD_PLIST = Path.home() / "Library" / "LaunchAgents" / f"{_LAUNCHD_LABEL}.plist"
+
+
+def _careers_ai_flag() -> Path:
+    from . import security
+    return security.home() / "careers.ai_enabled"
+
+
+def _careers_ai_get() -> bool:
+    return _careers_ai_flag().is_file()
+
+
+def _careers_ai_set(on: bool) -> None:
+    f = _careers_ai_flag()
+    if on:
+        f.write_text("1", encoding="utf-8")
+    else:
+        f.unlink(missing_ok=True)
 
 
 def _booker_available() -> bool:
