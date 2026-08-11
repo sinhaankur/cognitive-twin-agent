@@ -860,18 +860,59 @@ function stepTour(dt){
   });
 }
 
-/* at rest her mind still murmurs: every few seconds a faint spark rides one
-   REAL connection between two memories — pure ambience, drawn only on edges
-   that exist (same licence as the motes on the faculty wiring) */
+/* at rest her mind still murmurs — the brain's DEFAULT MODE: even idle, it never
+   goes quiet; activation wanders on its own (mind-wandering, the drift of one
+   thought into the next). Most murmurs are a single faint spark on one REAL
+   connection; now and then a memory spontaneously fires and a SMALL spreading
+   ripple drifts out from it — a passing thought she has unprompted. Quiet, and
+   only ever on edges that exist. Suppressed while she's actively thinking. */
 let synAt = 0;
 function synapse(now){
-  if (!gedges.length || now < synAt) return;
+  if (!gedges.length || now < synAt || thought) return;
   synAt = now + 2400 + Math.random() * 2800;
+  // ~1 in 4 murmurs becomes a wandering ripple from a random memory
+  if (Math.random() < 0.26){
+    const node = gnodes[(Math.random() * gnodes.length) | 0];
+    if (node && node.px !== undefined){
+      glow["node:" + node.idx] = Math.max(glow["node:" + node.idx] || 0, 0.5);
+      wanderFrom(node.idx, node.px, node.py);
+      return;
+    }
+  }
   const l = gedges[(Math.random() * gedges.length) | 0];
   const a = gindex["n" + l.a], b = gindex["n" + l.b];
   if (!a || !b || a.px === undefined) return;
   spawnStream({ x: a.px, y: a.py }, { x: b.px, y: b.py },
     { n: 5, color: hexRgb(a.color), spread: 10, stagger: 0.3 });
+}
+/* a gentler spreading-activation than a real recall: shorter reach, dimmer, so
+   idle wandering reads as a murmur, not a full thought. Reuses the real graph. */
+function wanderFrom(rootIdx, sx, sy){
+  const seen = new Set([rootIdx]);
+  let ring = [{ idx: rootIdx, x: sx, y: sy }];
+  for (let hop = 1; hop <= 2; hop++){                 // shallow drift, 2 rings
+    const act = Math.pow(0.5, hop);
+    const next = [];
+    for (const cur of ring){
+      const cand = [];
+      gedges.forEach(l => {
+        const oi = l.a === cur.idx ? l.b : (l.b === cur.idx ? l.a : null);
+        if (oi === null || seen.has(oi)) return;
+        const o = gindex["n" + oi];
+        if (o && o.px !== undefined) cand.push({ oi, o });
+      });
+      for (const { oi, o } of cand.slice(0, 2)){        // at most 2 onward
+        seen.add(oi);
+        firePulse({ x: cur.x, y: cur.y }, { x: o.px, y: o.py },
+          { color: hexRgb(o.color), dur: 0.7 + hop * 0.1, w: 0.9 + act,
+            delay: hop * 0.18, bow: 0.24, land: false });
+        glow["node:" + oi] = Math.max(glow["node:" + oi] || 0, act * 0.4);
+        next.push({ idx: oi, x: o.px, y: o.py });
+      }
+    }
+    if (!next.length) break;
+    ring = next;
+  }
 }
 
 let focusIdx = null;   // hovered memory (last frame): its neighbourhood lights
