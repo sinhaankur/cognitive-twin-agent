@@ -4,7 +4,8 @@ amenity_booking — a Vera skill that books a building amenity on BuildingLink.
 Vera shells out to the standalone Node/Playwright booker at
 ~/Documents/buildinglink-booker (Ankur's personal project) and returns its
 structured RESULT. The booker owns the browser automation + the rule that it
-picks a RANDOM afternoon/evening slot; this skill is just the bridge so Vera can
+picks a RANDOM open slot honouring each amenity's preferred window (Tennis now
+allows ANY time of day as fallback); this skill is just the bridge so Vera can
 run it on Ankur's behalf ("check availability and book it for me").
 
 Safety: mirrors the booker's own dry-run gate — Vera can CHECK availability
@@ -84,9 +85,9 @@ def _humanize(result_json: str) -> str:
     if status == "listed":
         rows = r.get("eligible", [])
         if not rows:
-            return "No eligible afternoon/evening slots found."
+            return "No eligible open slots found."
         lines = [f"- {x['amenity']} · {x['date']} · {x['time']}" for x in rows[:15]]
-        return "Open afternoon/evening slots:\n" + "\n".join(lines)
+        return "Open slots:\n" + "\n".join(lines)
     if status == "error":
         return f"The booker hit an error: {r.get('error')}"
     return result_json
