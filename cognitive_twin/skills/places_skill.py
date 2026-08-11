@@ -43,6 +43,22 @@ def places_week() -> str:
 
 
 @R.add(
+    "places_analysis",
+    "Analyse your movement across ALL logged history (or the last N days): the "
+    "places you return to most, how many places, how far you've travelled, active "
+    "days, and your busiest day. The 'where have I been, and what does my movement "
+    "look like' read-out. Read-only, on-device.",
+    {"type": "object", "properties": {
+        "days": {"type": "integer",
+                 "description": "optional: only analyse the last N days (omit for all time)"},
+    }},
+)
+def places_analysis(days: int = 0) -> str:
+    from .. import places
+    return places.summarize_analysis(since_days=days if days and days > 0 else None)
+
+
+@R.add(
     "places_status",
     "Whether location tracking is on, and how many visits are stored (all sealed "
     "on this Mac). Read-only.",
