@@ -269,6 +269,7 @@ def _reflect_command(rest: list[str]) -> int:
     import time
     try:
         while True:
+            _sense_once()          # opportunistic senses (music Now Playing, …)
             t = _reflect_once(quiet=False)
             if t is None:
                 print("  (waiting for something to think about…)")
@@ -276,6 +277,18 @@ def _reflect_command(rest: list[str]) -> int:
     except KeyboardInterrupt:
         print("\n  stopped. The thoughts I had are saved for next time. 🌅")
         return 0
+
+
+def _sense_once() -> None:
+    """One best-effort pass of the passive, opt-in senses that only need a poke
+    on a timer. Each honours its OWN enable + pause/snooze gate internally, so
+    this is safe to call unconditionally — a disabled sense is a no-op. Silent by
+    design (background loop); a failing sense never disturbs the reflection."""
+    try:
+        from . import music
+        music.sample()   # logs the current track only if it changed (gated inside)
+    except Exception:
+        pass
 
 
 def _viz_command(rest: list[str]) -> int:
