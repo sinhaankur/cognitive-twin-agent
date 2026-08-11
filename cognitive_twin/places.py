@@ -205,6 +205,151 @@ def haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
     return 2 * r * math.asin(math.sqrt(h))
 
 
+# ── movement analysis over the WHOLE history ──────────────────────────────────
+# "understand my movement, which places I've been" — not just today/this week,
+# but the shape of it across everything logged: the places you return to, how
+# far you range, how your movement is distributed. All derived from the sealed
+# log on this device; nothing inferred that the data doesn't support.
+def _dwell_hours(v: "Visit") -> float:
+    """Hours spent at a visit, if both ends are known (else 0 — a point sample)."""
+    if not v.end:
+        return 0.0
+    try:
+        s = _dt.datetime.fromisoformat(v.start)
+        e = _dt.datetime.fromisoformat(v.end)
+        return max(0.0, (e - s).total_seconds() / 3600.0)
+    except ValueError:
+        return 0.0
+
+
+@dataclass
+class PlaceStat:
+    """One place you return to, aggregated across all time."""
+    place: str
+    visits: int
+    hours: float                  # total dwell time (0 if the source gave no spans)
+    first: str                    # earliest visit day (YYYY-MM-DD)
+    last: str                     # most recent visit day
+    lat: float | None = None
+    lon: float | None = None
+    category: str | None = None
+
+
+def top_places(limit: int = 12, *, since_days: int | None = None) -> list[PlaceStat]:
+    """The places you go to most, across all logged history (or the last
+    `since_days`). Ranked by visit count, then by total dwell time — the spots
+    that actually anchor your life float to the top."""
+    visits = read_all()
+    if since_days is not None:
+        cutoff = _dt.date.today() - _dt.timedelta(days=max(1, since_days))
+        visits = [v for v in visits if _safe_day(v) and _safe_day(v) >= cutoff]
+    agg: dict[str, PlaceStat] = {}
+    for v in visits:
+        key = (v.place or "").strip() or "(unnamed stop)"
+        st = agg.get(key)
+        if st is None:
+            agg[key] = PlaceStat(place=key, visits=1, hours=_dwell_hours(v),
+                                 first=v.day(), last=v.day(), lat=v.lat, lon=v.lon,
+                                 category=v.category)
+        else:
+            st.visits += 1
+            st.hours += _dwell_hours(v)
+            st.first = min(st.first, v.day())
+            st.last = max(st.last, v.day())
+            if st.lat is None and v.lat is not None:
+                st.lat, st.lon = v.lat, v.lon
+            if st.category is None and v.category:
+                st.category = v.category
+    ranked = sorted(agg.values(), key=lambda s: (s.visits, s.hours), reverse=True)
+    return ranked[:limit]
+
+
+def _safe_day(v: "Visit") -> _dt.date | None:
+    try:
+        return _dt.date.fromisoformat(v.day())
+    except ValueError:
+        return None
+
+
+def movement_stats(*, since_days: int | None = None) -> dict[str, Any]:
+    """The shape of your movement: how many places, how many active days, the
+    date span, total distance travelled (chronological great-circle between
+    consecutive stops), and your busiest day. Honest about coverage — distance
+    only counts stops that carry coordinates."""
+    visits = sorted(read_all(), key=lambda v: v.start)
+    if since_days is not None:
+        cutoff = _dt.date.today() - _dt.timedelta(days=max(1, since_days))
+        visits = [v for v in visits if _safe_day(v) and _safe_day(v) >= cutoff]
+    if not visits:
+        return {"visits": 0}
+    days = sorted({v.day() for v in visits})
+    per_day: dict[str, int] = {}
+    for v in visits:
+        per_day[v.day()] = per_day.get(v.day(), 0) + 1
+    busiest = max(per_day.items(), key=lambda kv: kv[1]) if per_day else (None, 0)
+    # total distance: chain great-circle hops between consecutive geo-tagged stops
+    dist = 0.0
+    prev: tuple[float, float] | None = None
+    geo = 0
+    for v in visits:
+        if v.lat is None or v.lon is None:
+            continue
+        geo += 1
+        if prev is not None:
+            dist += haversine_km(prev, (v.lat, v.lon))
+        prev = (v.lat, v.lon)
+    unique_places = len({(v.place or "").strip().lower() for v in visits})
+    span_days = (_dt.date.fromisoformat(days[-1]) - _dt.date.fromisoformat(days[0])).days + 1
+    return {
+        "visits": len(visits),
+        "unique_places": unique_places,
+        "active_days": len(days),
+        "span_days": span_days,
+        "first_day": days[0],
+        "last_day": days[-1],
+        "distance_km": round(dist, 1),
+        "geo_tagged": geo,
+        "busiest_day": busiest[0],
+        "busiest_day_stops": busiest[1],
+    }
+
+
+def summarize_analysis(*, since_days: int | None = None, top: int = 8) -> str:
+    """Human read-out of your movement — the answer to 'which places have I been,
+    and what does my movement look like'. Read-only, from the sealed log."""
+    if not is_enabled():
+        return ("I'm not tracking your places yet — turn it on with "
+                "`python3 -m cognitive_twin.places enable` and import a source "
+                "(e.g. a Google Timeline/Takeout export).")
+    stats = movement_stats(since_days=since_days)
+    if not stats.get("visits"):
+        window = f"the last {since_days} days" if since_days else "your history"
+        return f"No places logged across {window} yet — import a Timeline export first."
+    scope = f"last {since_days} days" if since_days else "all time"
+    lines = [f"Your movement — {scope}:"]
+    lines.append(
+        f"  {stats['visits']} stops across {stats['unique_places']} places, "
+        f"on {stats['active_days']} day(s) "
+        f"({stats['first_day']} → {stats['last_day']})."
+    )
+    if stats.get("distance_km", 0) > 0.1:
+        lines.append(f"  ~{stats['distance_km']:.0f} km travelled between stops "
+                     f"({stats['geo_tagged']} geo-tagged).")
+    if stats.get("busiest_day"):
+        lines.append(f"  Busiest day: {stats['busiest_day']} "
+                     f"({stats['busiest_day_stops']} stops).")
+    places = top_places(limit=top, since_days=since_days)
+    if places:
+        lines.append("")
+        lines.append("Where you keep going back:")
+        for i, p in enumerate(places, 1):
+            hrs = f", ~{p.hours:.0f}h total" if p.hours >= 1 else ""
+            cat = f" · {p.category}" if p.category else ""
+            span = "" if p.first == p.last else f" · {p.first}→{p.last}"
+            lines.append(f"  {i}. {p.place} — {p.visits}× visit(s){hrs}{cat}{span}")
+    return "\n".join(lines)
+
+
 # ── human summary (what Vera says back) ────────────────────────────────────────
 def _fmt_time(iso: str) -> str:
     try:
@@ -262,6 +407,12 @@ def _main(argv: list[str]) -> int:
         print(status()); return 0
     if cmd == "today":
         print(summarize_day(today(), label="today")); return 0
+    if cmd in ("analysis", "analyse", "analyze", "movement", "places"):
+        # optional: a trailing number of days to scope the window
+        days = None
+        if len(argv) > 1 and argv[1].isdigit():
+            days = int(argv[1])
+        print(summarize_analysis(since_days=days)); return 0
     if cmd == "week":
         wk = week()
         if not is_enabled():
@@ -272,7 +423,7 @@ def _main(argv: list[str]) -> int:
             print(summarize_day(vs, label=day)); print()
         return 0
     print("usage: python3 -m cognitive_twin.places "
-          "[today|week|status|enable|pause|resume|clear]")
+          "[today|week|analysis [days]|status|enable|pause|resume|clear]")
     return 2
 
 
