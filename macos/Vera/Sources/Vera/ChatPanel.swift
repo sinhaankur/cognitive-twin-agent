@@ -197,21 +197,26 @@ private struct ThinkingDots: View {
 
 private struct TurnBubble: View {
     let turn: ChatTurn
-    private var amber: Color { Color(red: 0.81, green: 0.60, blue: 0.17) }
+    private var amber: Color { Color(red: 0.95, green: 0.74, blue: 0.36) }
 
     var body: some View {
         Text(turn.text)
             .font(.system(size: 13))
+            .lineSpacing(2)                          // her words breathe — easier to read
             .textSelection(.enabled)                 // let the user copy replies
-            .foregroundStyle(turn.isUser ? Color.white : Color.primary)
-            .padding(.horizontal, 13).padding(.vertical, 9)
+            // legible on the dark window: user text is white on accent; her text
+            // is a warm off-white on a real amber glass, not near-invisible grey
+            .foregroundStyle(turn.isUser ? Color.white
+                             : Color(red: 0.97, green: 0.95, blue: 0.90))
+            .padding(.horizontal, 14).padding(.vertical, 10)
             .background(bubbleFill)
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(turn.isUser ? .clear : amber.opacity(0.22), lineWidth: 1)
+                    .strokeBorder(turn.isUser ? .clear : amber.opacity(0.35), lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: .black.opacity(turn.isUser ? 0.18 : 0.06), radius: 3, y: 1)
+            .shadow(color: turn.isUser ? Color.accentColor.opacity(0.28)
+                          : amber.opacity(0.18), radius: 5, y: 2)
             .frame(maxWidth: 300, alignment: turn.isUser ? .trailing : .leading)
             .frame(maxWidth: .infinity, alignment: turn.isUser ? .trailing : .leading)
             .padding(.horizontal, 12)
@@ -221,11 +226,14 @@ private struct TurnBubble: View {
                 removal: .opacity))
     }
 
-    // The user speaks in the accent; Vera speaks in a soft amber-tinted glass —
-    // her replies read as "hers" (matching the hexagon mark) without shouting.
+    // The user speaks in the accent; Vera speaks in a warm amber glass — her
+    // replies read as "hers" (matching the hexagon mark), warm and legible, a
+    // soft top-to-bottom gradient so the bubble has depth instead of a flat wash.
     private var bubbleFill: some ShapeStyle {
         turn.isUser
             ? AnyShapeStyle(Color.accentColor)
-            : AnyShapeStyle(amber.opacity(0.10))
+            : AnyShapeStyle(LinearGradient(
+                colors: [amber.opacity(0.26), amber.opacity(0.15)],
+                startPoint: .top, endPoint: .bottom))
     }
 }

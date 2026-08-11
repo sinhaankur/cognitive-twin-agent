@@ -928,8 +928,15 @@ function drawGraph(now){
   });
   ctx.restore();
   // nodes far-to-near: sized by connectedness (an Obsidian instinct), depth-lit,
-  // warm when fresh, labels by level of detail
-  const named = new Set(gnodes.slice().sort((a, b) => b.deg - a.deg).slice(0, 10));
+  // warm when fresh, labels by level of detail. Fewer permanent labels (was 10)
+  // so the constellation reads clean instead of a wall of overlapping pills.
+  const named = new Set(gnodes.slice().sort((a, b) => b.deg - a.deg).slice(0, 6));
+  // pills placed THIS frame — a new pill that would collide with one already
+  // drawn is skipped (unless it's hovered/firing, which always wins). Kills the
+  // stacked, repeated labels ("From my Photos…") piling up in one corner.
+  const placed = [];
+  const collides = (r) => r && placed.some(q =>
+    r.x < q.x + q.w + 3 && r.x + r.w + 3 > q.x && r.y < q.y + q.h + 3 && r.y + r.h + 3 > q.y);
   gnodes.slice().sort((a, b) => a.pz - b.pz).forEach(n => {
     const P = S(n.px, n.py);
     const dp = depthOf(n) * dimmed(n);
@@ -952,9 +959,19 @@ function drawGraph(now){
     // come close and she shows you what's written: past ~1.7× zoom, everything
     // near the centre of your gaze is named (level of detail by travel)
     const gazed = cam.zoom > 1.7 && Math.hypot(P.X - W/2, P.Y - H/2) < R0() * 0.3;
-    n.hit = ((named.has(n) && dp > 0.72) || near || gazed || hot > 0.1 || nbr.has(n.idx))
-      ? pill(P, nodeShort(n), n.color, hot > 0.1 || focusIdx === n.idx, n.px < 0 ? -1 : 1)
-      : null;
+    // hovered / firing / neighbourhood pills ALWAYS show; the ambient "named"
+    // ones yield if they'd collide with a pill already placed this frame
+    const forced = near || hot > 0.1 || nbr.has(n.idx);
+    const wants = forced || (named.has(n) && dp > 0.72) || gazed;
+    let hit = null;
+    if (wants){
+      const r = pill(P, nodeShort(n), n.color, hot > 0.1 || focusIdx === n.idx, n.px < 0 ? -1 : 1, false, true);
+      if (r && (forced || !collides(r))){
+        hit = pill(P, nodeShort(n), n.color, hot > 0.1 || focusIdx === n.idx, n.px < 0 ? -1 : 1);
+        placed.push(hit);
+      }
+    }
+    n.hit = hit;
     ctx.globalAlpha = 1;
     if (near || inRect(n.hit, mouse.x, mouse.y)) hover = { n, P };
   });
@@ -1018,7 +1035,19 @@ function buildNodes(){
     return n;
   });
 }
-function nodeShort(n){ return n.label.length > 26 ? n.label.slice(0, 25) + "…" : n.label; }
+/* A memory's short label. Strips shared source prefixes ("From my Photos:",
+   "From my calendar:", etc.) so several memories from the same source don't all
+   truncate to the SAME text and stack up as visual noise — each pill shows its
+   own DISTINCTIVE part. Truncates from the middle so the tail stays visible. */
+function nodeShort(n){
+  let s = (n.label || "").replace(/^(from my |from your )?(photos|calendar|mail|email|messages|contacts)\s*[:—-]\s*/i, "");
+  s = s.replace(/^(the album |every year around |every year |the |a )/i, "");
+  s = s.trim() || n.label;
+  s = s.charAt(0).toUpperCase() + s.slice(1);
+  if (s.length <= 26) return s;
+  // middle-truncate: keep the start AND the end so near-identical heads still read apart
+  return s.slice(0, 15) + "…" + s.slice(-8);
+}
 
 /* ---------- the faculties — labeled stations (how it works) ------------------ */
 const P_COLOR = { memory:"#7fd1b9", persona:"#ffd9a0", soul:"#c98bff", mood:"#ff7eb6",
@@ -1418,12 +1447,14 @@ const bgStars = Array.from({length: 260}, (_, i) => ({
   c: BG_PAL[(rnd(i*13+5)*3)|0] }));
 
 /* ---------- label pill (canvas) ------------------------------------------------- */
-function pill(P, text, color, hot, side, edged){
+function pill(P, text, color, hot, side, edged, measure){
   ctx.font = "10px ui-monospace, Menlo, monospace";
   // snapped to whole pixels: a 1px border on a fractional coordinate blurs
   const w = Math.ceil(ctx.measureText(text).width + (edged ? 16 : 12)), h = 16;
   const x = Math.round(side < 0 ? P.X - 10 - w : P.X + 10);
   const y = Math.round(P.Y - h/2);
+  // measure-only: return the rect for collision testing without drawing anything
+  if (measure) return { x, y, w, h };
   ctx.fillStyle = hot ? "rgba(14,20,34,0.95)" : "rgba(7,9,16,0.82)";
   ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = hot ? color : "rgba(170,190,230,0.22)";
