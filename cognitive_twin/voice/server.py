@@ -163,6 +163,13 @@ class _Handler(BaseHTTPRequestHandler):
                 "observing": activity.observing(),
                 "status": activity.status(),
             })
+        elif self.path == "/api/music/status":
+            from .. import music
+            self._json(200, {
+                "enabled": music.is_enabled(),
+                "paused": music.is_paused(),
+                "status": music.status(),
+            })
         elif self.path == "/api/portrait/status":
             # "See a loved one in 3D": is a face built, and is the pipeline ready?
             # Includes a "building" flag so the app can show progress while the
@@ -335,6 +342,23 @@ class _Handler(BaseHTTPRequestHandler):
                              "observing": activity.observing(),
                              "private": activity.is_private(),
                              "enabled": activity.is_enabled()})
+        elif self.path == "/api/music":
+            # control music (Now Playing) tracking. action: enable|disable|
+            # sample|clear. Pause/resume ride the shared activity private mode.
+            from .. import music
+            data = self._read_json()
+            action = (data.get("action") or "").strip()
+            if action == "enable":
+                music.enable()
+            elif action == "disable":
+                music.disable()
+            elif action == "sample":
+                music.sample()          # gated inside; no-op if off/paused
+            elif action == "clear":
+                music.clear()
+            self._json(200, {"ok": True, "status": music.status(),
+                             "paused": music.is_paused(),
+                             "enabled": music.is_enabled()})
         elif self.path == "/api/council":
             # Ask every twin the same question and return each one's take. The
             # council builds a fresh agent per twin (pointing storage at that
@@ -480,10 +504,14 @@ def _start_activity_sampler() -> None:
     privacy gate is checked inside activity.sample(), so this loop is always safe."""
     def loop():
         import time
-        from .. import activity
+        from .. import activity, music
         while True:
             try:
                 activity.sample()   # no-op unless observing() is true
+            except Exception:
+                pass
+            try:
+                music.sample()      # no-op unless music tracking is enabled
             except Exception:
                 pass
             time.sleep(90)

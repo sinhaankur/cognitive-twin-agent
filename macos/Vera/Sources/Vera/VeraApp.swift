@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var earItem: NSMenuItem?     // the Hear-the-room switch (opt-in)
     private var wakeItem: NSMenuItem?    // the Wake-on-name switch (opt-in)
     private var photosItem: NSMenuItem?  // the Read-my-Photos switch (opt-in)
+    private var musicItem: NSMenuItem?   // the Hear-my-music switch (opt-in)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // one of her per device: if another copy is already running (e.g. a
@@ -57,6 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.syncMenuChecks() }
         photosItem?.state = UserDefaults.standard.bool(forKey: "photosOn") ? .on : .off
         wakeItem?.state = UserDefaults.standard.bool(forKey: "wakeOn") ? .on : .off
+        // music state lives server-side (music.py) — ask once the server is up
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            self.model.refreshMusic { on in self.musicItem?.state = on ? .on : .off }
+        }
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -152,6 +157,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 action: #selector(menuPhotos), keyEquivalent: "")
         photosItem?.image = symbol("photo.on.rectangle")
         photosItem?.target = self; menu.addItem(photosItem!)
+        musicItem = NSMenuItem(title: "Let her hear my music (on/off)",
+                               action: #selector(menuMusic), keyEquivalent: "")
+        musicItem?.image = symbol("music.note")
+        musicItem?.target = self; menu.addItem(musicItem!)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit \(model.assistantName)", action: #selector(menuQuit), keyEquivalent: "q")
         quit.image = symbol("power")
@@ -178,7 +187,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wakeItem?.state = model.wakeOn ? .on : .off
     }
     @objc private func menuPhotos() { togglePhotos() }
+    @objc private func menuMusic() { toggleMusic() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
+
+    /// The Hear-my-music switch. Strictly opt-in: nothing reads Now Playing until
+    /// this is ON. ON tells the local server to enable music tracking (Apple Music
+    /// / Spotify + the frontmost YouTube tab title); OFF stops it. The checkmark
+    /// reflects the real server state.
+    private func toggleMusic() {
+        let want = !(musicItem?.state == .on)
+        musicItem?.state = want ? .on : .off        // optimistic; corrected by the server's real state
+        model.setMusicEnabled(want) { [weak self] on in
+            self?.musicItem?.state = on ? .on : .off
+        }
+    }
 
     /// The Read-my-Photos switch. Strictly opt-in: nothing touches the photo
     /// library until the user flips this ON (macOS asks its own permission on
@@ -543,6 +565,20 @@ final class AppModel: ObservableObject {
         Task {
             let s = await agent.activityAction(on ? "private" : "resume")
             await MainActor.run { self.activityPrivate = s.isPrivate }
+        }
+    }
+    /// Music (Now Playing) tracking — opt-in, mirrors setActivityEnabled. Returns
+    /// the real server state via the completion so the menu checkmark stays honest.
+    func setMusicEnabled(_ on: Bool, then done: @escaping (Bool) -> Void) {
+        Task {
+            let enabled = await agent.musicAction(on ? "enable" : "disable")
+            await MainActor.run { done(enabled) }
+        }
+    }
+    func refreshMusic(then done: @escaping (Bool) -> Void) {
+        Task {
+            let enabled = await agent.musicEnabled()
+            await MainActor.run { done(enabled) }
         }
     }
     func snooze(_ minutes: Int) {
