@@ -1084,6 +1084,67 @@ function stepStreams(dt){
   ctx.restore();
 }
 
+/* ---------- firing pulses — thinking as discrete signals (manim motion) ------- */
+/* A pulse is a single bright point that TRACES a real connection with eased,
+   deliberate pacing — the manim "write-on" feel: it accelerates off the source,
+   draws a comet tail as it flies, and blooms where it lands. Unlike the fluid
+   streams (a soft pour), a pulse reads as one signal firing along one real edge.
+   Every pulse is spawned from real state — a recalled memory, or a real link
+   between two related memories — so the honesty rule holds: what fires, fired. */
+let pulses = [];
+// manim's smootherstep — the pacing that makes motion feel considered, not linear
+function smooth(t){ t = Math.max(0, Math.min(1, t)); return t*t*t*(t*(t*6-15)+10); }
+function firePulse(from, to, opts){
+  const o = opts || {};
+  pulses.push({ p0: {x:from.x, y:from.y}, p1: {x:to.x, y:to.y},
+                // a gentle arc so a firing bends like a real signal, not a ruler line
+                bow: (o.bow ?? 0.16) * (Math.random() < 0.5 ? -1 : 1),
+                t: -(o.delay || 0), dur: o.dur || 0.7,
+                c: o.color || [150,205,255], w: o.w || 2.2,
+                land: o.land !== false });   // bloom on arrival
+}
+function stepPulses(now, dt){
+  if (!pulses.length) return;
+  pulses = pulses.filter(p => p.t < 1.02);
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  pulses.forEach(p => {
+    p.t += dt / p.dur;
+    if (p.t < 0) return;
+    const e = smooth(p.t);                    // eased position along the edge
+    const nx = -(p.p1.y - p.p0.y), ny = (p.p1.x - p.p0.x);   // perpendicular
+    const bend = Math.sin(e * Math.PI) * p.bow;               // 0 at ends, max mid
+    const at = (u) => {
+      const uu = Math.max(0, Math.min(1, u));
+      return { x: p.p0.x + (p.p1.x - p.p0.x) * uu + nx * bend,
+               y: p.p0.y + (p.p1.y - p.p0.y) * uu + ny * bend };
+    };
+    const head = S(at(e).x, at(e).y);
+    // a short eased tail behind the head — the comet streak
+    const tail = S(at(e - 0.16).x, at(e - 0.16).y);
+    const col = p.c[0] + "," + p.c[1] + "," + p.c[2];
+    const fade = Math.sin(Math.min(1, p.t) * Math.PI);
+    ctx.strokeStyle = "rgba(" + col + "," + (0.55 * fade) + ")";
+    ctx.lineWidth = p.w * Math.max(0.7, Math.sqrt(cam.zoom));
+    ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(tail.X, tail.Y); ctx.lineTo(head.X, head.Y); ctx.stroke();
+    // the bright head
+    ctx.fillStyle = "rgba(" + col + "," + (0.9 * fade) + ")";
+    ctx.beginPath(); ctx.arc(head.X, head.Y, p.w * 0.9, 0, 7); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255," + (0.8 * fade) + ")";
+    ctx.beginPath(); ctx.arc(head.X, head.Y, p.w * 0.4, 0, 7); ctx.fill();
+    // arrival bloom — the signal lands and the memory it reached lights up
+    if (p.land && p.t >= 1 && !p.bloomed){
+      p.bloomed = true;
+      const end = S(p.p1.x, p.p1.y);
+      let g = ctx.createRadialGradient(end.X, end.Y, 0, end.X, end.Y, 22);
+      g.addColorStop(0, "rgba(" + col + ",0.5)"); g.addColorStop(1, "rgba(" + col + ",0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(end.X, end.Y, 22, 0, 7); ctx.fill();
+    }
+  });
+  ctx.restore();
+}
+
 /* ---------- the thought (thinks) --------------------------------------------- */
 let thought = null;   // {t, recall:[node], path:[chipId], route, fired:{}}
 async function think(q){
@@ -1111,6 +1172,18 @@ async function think(q){
   // the prompt enters: a stream from the ask bar up into the cloud
   const start = toWorld(W/2, H - 84);
   spawnStream(start, {x: 0, y: cloudR() * 0.4}, { n: 70, color: [126,200,255], spread: 90, stagger: 0.8 });
+  // a considered camera settle while she thinks (manim pacing): unless you're
+  // holding the view (dragging / visiting a memory), lean in a touch and drift
+  // a few degrees, then the thought's end glides it home. Never yanks the frame.
+  if (!cam.drag && follow === null && !fly){
+    const dur = 0.6 + recall.length * 0.35 + path.length * 0.35 + 1.0;
+    flyTo({ yaw: cam.yaw + 0.28, pitch: Math.max(0.2, cam.pitch - 0.06),
+            zoom: Math.min(1.5, cam.zoom * 1.14), cx: 0, cy: 0 }, dur * 0.5);
+    // when the flight lands mid-thought, ease back home so the frame resolves
+    setTimeout(() => { if (follow === null && !cam.drag)
+      flyTo({ yaw: HOME.yaw, pitch: HOME.pitch, zoom: 1, cx: 0, cy: 0 }, 1.4); },
+      dur * 500 + 400);
+  }
 }
 document.getElementById("go").onclick = () => { const q = document.getElementById("q").value.trim(); if (q) think(q); };
 document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter") document.getElementById("go").click(); });
@@ -1135,6 +1208,22 @@ function stepThought(dt){
         MODE === "simple"
           ? { n: 48, color: hexRgb(n.color), spread: 26, stagger: 0.55 }
           : { n: 30, color: hexRgb(n.color), spread: 40, stagger: 0.4 });
+      // a discrete SIGNAL fires from the recalled memory into her heart — the
+      // thing you can point at and say "that memory just fired"
+      firePulse({x: sx, y: sy}, {x: 0, y: 0}, { color: hexRgb(n.color), dur: 0.62, w: 2.4 });
+      // …and the thought SPREADS: real neighbours of this memory ignite in a
+      // brief cascade (recall is associative — related memories light too).
+      // Only real graph edges are followed; nothing invented.
+      let hops = 0;
+      gedges.forEach(l => {
+        const o = l.a === n.idx ? gindex["n" + l.b]
+                : l.b === n.idx ? gindex["n" + l.a] : null;
+        if (!o || o.px === undefined || hops >= 3) return;
+        hops++;
+        firePulse({x: sx, y: sy}, {x: o.px, y: o.py},
+          { color: hexRgb(o.color), dur: 0.5, w: 1.7, delay: 0.12 + hops * 0.06, bow: 0.22 });
+        glow["node:" + o.idx] = Math.max(glow["node:" + o.idx] || 0, 0.55);
+      });
     }
   });
   // then the faculties light along the real path (details view only —
@@ -1150,6 +1239,8 @@ function stepThought(dt){
         ripples.push({ x: c.x, y: c.y, r: 6, a: 0.7 });
         const prev = i > 0 ? chips.find(x => x.id === T.path[i-1]) : null;
         spawnStream(prev || {x:0, y:0}, c, { n: 26, color: hexRgb(c.color), spread: 50, stagger: 0.3 });
+        // a signal fires between the faculties on the real routed path, in order
+        firePulse(prev || {x:0, y:0}, c, { color: hexRgb(c.color), dur: 0.55, w: 2.2 });
       }
     }
   });
@@ -1542,8 +1633,9 @@ function frame(now){
   });
   }   // end expert-only drawing
 
-  // flowing thought particles + ripples
+  // flowing thought particles + firing pulses + ripples
   stepStreams(dt);
+  stepPulses(now, dt);
   ripples = ripples.filter(r => r.a > 0.02);
   ripples.forEach(r => {
     r.r += 60 * dt; r.a *= 0.93;

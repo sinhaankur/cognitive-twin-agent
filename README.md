@@ -254,6 +254,31 @@ The **Siri-style orb** breathes at rest and shifts state as she works —
   <img src="docs/screenshots/orb-states.png" alt="Vera orb states — idle, listening, speaking" width="520">
 </p>
 
+### A look inside
+
+Vera lives in your menu bar — one presence, always within reach. Everything below
+is drawn from *your* real on-device state; nothing is fabricated, nothing leaves
+the machine.
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/menu-bar.png" alt="Vera's macOS menu-bar menu — Open, Chat, Private mode, Learn how I work, See how she thinks, and opt-in senses (see me, hear the room, wake on her name, read my Photos)" width="380"><br>
+      <sub><b>Always at hand.</b> The menu-bar menu — chat, a one-click <b>Private mode</b> that pauses learning, and every sense (seeing, hearing, wake-word, Photos) an explicit opt-in toggle.</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/soul-orb.png" alt="Vera's presence orb — a soft aurora-lit sphere that breathes and shifts colour with her state" width="300"><br>
+      <sub><b>Her presence.</b> A quiet, breathing orb — the face of the twin, shifting colour with her mood and state.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/screenshots/mind-brain.png" alt="The Mind — Anita Sinha: her memories rendered as a living galaxy of typed stars orbiting a core, faculties on an inner ring, and a comet tracing the real recall to router thought-path" width="760"><br>
+      <sub><b>See how she thinks.</b> <em>The Mind</em> — her memories as a living galaxy of typed stars; ask her something and watch a real thought move (recall → faculties → the model the policy actually routes to). Every labelled point is real local state.</sub>
+    </td>
+  </tr>
+</table>
+
 ### Capabilities at a glance
 
 | She can… | How | Local? |
