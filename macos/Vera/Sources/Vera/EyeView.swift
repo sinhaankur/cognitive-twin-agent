@@ -56,18 +56,31 @@ struct EyeView: View {
 
     private var meters: some View {
         HStack(spacing: 0) {
-            Text("smile ").foregroundStyle(.secondary)
-            Text(Self.bar(engine.readSmile))
-                .foregroundStyle(engine.readSmile > 0.5
-                                 ? Color(red: 1, green: 0.85, blue: 0.45) : .secondary)
-            Text("  brow ").foregroundStyle(.secondary)
-            Text(Self.bar(engine.readBrow))
-                .foregroundStyle(engine.readBrow > 0.5
-                                 ? Color(red: 0.94, green: 0.5, blue: 0.8) : .secondary)
-            Text("  blink \(Int(engine.readBlink))/m")
-                .foregroundStyle(.secondary)
+            meter("smile", engine.readSmile, Color(red: 1, green: 0.85, blue: 0.45))
+            Text("   ")
+            meter("brow", engine.readBrow, Color(red: 0.94, green: 0.5, blue: 0.8))
+            Text("   blink ")
+                .foregroundStyle(Color(red: 0.55, green: 0.6, blue: 0.72))
+            Text("\(Int(engine.readBlink))")
+                .foregroundStyle(Color(red: 0.75, green: 0.82, blue: 0.95))
+            Text("/m").foregroundStyle(Color(red: 0.55, green: 0.6, blue: 0.72))
         }
         .font(.system(size: 9, design: .monospaced))
+    }
+
+    /// One labelled meter. Filled segments carry the reading's colour; empty
+    /// ones sit very dim so a resting face reads as calm, not broken/zeroed.
+    private func meter(_ label: String, _ v: Double, _ hot: Color) -> some View {
+        let n = Int((max(0, min(1, v)) * 5).rounded())
+        let active = v > 0.5
+        return HStack(spacing: 0) {
+            Text("\(label) ")
+                .foregroundStyle(Color(red: 0.55, green: 0.6, blue: 0.72))
+            Text(String(repeating: "▮", count: n))
+                .foregroundStyle(active ? hot : Color(red: 0.62, green: 0.68, blue: 0.82))
+            Text(String(repeating: "▯", count: 5 - n))
+                .foregroundStyle(Color(red: 0.34, green: 0.38, blue: 0.48).opacity(0.7))
+        }
     }
 
     // ---- drawing -------------------------------------------------------------
@@ -76,35 +89,56 @@ struct EyeView: View {
         func at(_ d: FaceEngine.Dot) -> CGPoint {
             CGPoint(x: d.x * size.width, y: d.y * size.height)
         }
+        // a soft focus behind the face — gives the frame depth and pulls the eye
+        // to center instead of the dots floating in flat black
+        if let mesh = Self.faceBounds(engine.dots) {
+            let cx = (mesh.minX + mesh.maxX) / 2 * size.width
+            let cy = (mesh.minY + mesh.maxY) / 2 * size.height
+            let rad = max(mesh.width * size.width, mesh.height * size.height) * 0.95
+            let focus = GraphicsContext.Shading.radialGradient(
+                Gradient(colors: [Color(red: 0.32, green: 0.44, blue: 0.66).opacity(0.16),
+                                  .clear]),
+                center: CGPoint(x: cx, y: cy), startRadius: 0, endRadius: rad)
+            g.fill(Path(ellipseIn: CGRect(x: cx - rad, y: cy - rad,
+                                          width: rad * 2, height: rad * 2)),
+                   with: focus)
+        }
         let groups = Dictionary(grouping: engine.dots, by: \.group)
         for (group, dots) in groups where group >= 0 && dots.count > 2 {
             let pts = dots.map(at)
             let path = Self.smoothPath(pts, closed: dots[0].closes)
             let color = dots[0].color
-            // the thread
-            g.stroke(path, with: .color(color.opacity(0.28)),
-                     style: StrokeStyle(lineWidth: 0.8, lineJoin: .round))
+            // a soft outer glow so each feature reads as a lit contour, not a hairline
+            g.stroke(path, with: .color(color.opacity(0.22)),
+                     style: StrokeStyle(lineWidth: 3.2, lineJoin: .round))
+            // the thread — brighter + a touch thicker so the face actually reads
+            g.stroke(path, with: .color(color.opacity(0.6)),
+                     style: StrokeStyle(lineWidth: 1.3, lineJoin: .round))
             // expression glow: features re-stroke brighter as their reading rises
             let hot: Double = group >= 6 ? max(engine.readSmile, engine.readFrown)
                             : (group == 4 || group == 5) ? engine.readBrow : 0
             if hot > 0.25 {
-                g.stroke(path, with: .color(color.opacity(hot * 0.7)),
-                         style: StrokeStyle(lineWidth: 1.4, lineJoin: .round))
+                g.stroke(path, with: .color(color.opacity(hot * 0.85)),
+                         style: StrokeStyle(lineWidth: 2.0, lineJoin: .round))
             }
             // a spark of light travels each thread (dash ring, phase = time)
-            g.stroke(path, with: .color(.white.opacity(0.35)),
-                     style: StrokeStyle(lineWidth: 1.0, lineCap: .round,
+            g.stroke(path, with: .color(.white.opacity(0.45)),
+                     style: StrokeStyle(lineWidth: 1.1, lineCap: .round,
                                         dash: [2, 34],
                                         dashPhase: CGFloat(-t * 26).truncatingRemainder(dividingBy: 36)))
         }
-        // the dots, each a point of light with a soft halo
+        // the dots, each a point of light with a soft halo (brighter + larger halo)
         for d in engine.dots {
             let p = at(d)
-            let halo = CGRect(x: p.x - d.r * 3.2, y: p.y - d.r * 3.2,
-                              width: d.r * 6.4, height: d.r * 6.4)
-            g.fill(Path(ellipseIn: halo), with: .color(d.color.opacity(d.alpha * 0.14)))
+            let halo = CGRect(x: p.x - d.r * 3.8, y: p.y - d.r * 3.8,
+                              width: d.r * 7.6, height: d.r * 7.6)
+            g.fill(Path(ellipseIn: halo), with: .color(d.color.opacity(d.alpha * 0.22)))
             let core = CGRect(x: p.x - d.r, y: p.y - d.r, width: d.r * 2, height: d.r * 2)
-            g.fill(Path(ellipseIn: core), with: .color(d.color.opacity(d.alpha)))
+            g.fill(Path(ellipseIn: core), with: .color(d.color.opacity(min(1, d.alpha * 1.15))))
+            // a crisp white pinpoint centre — reads as a live sensor point
+            let pin = CGRect(x: p.x - d.r * 0.4, y: p.y - d.r * 0.4,
+                             width: d.r * 0.8, height: d.r * 0.8)
+            g.fill(Path(ellipseIn: pin), with: .color(.white.opacity(d.alpha * 0.8)))
         }
         for c in engine.captions {
             g.draw(Text(c.text)
@@ -138,6 +172,19 @@ struct EyeView: View {
             p.addLine(to: CGPoint(x: x, y: y + sy * l))
         }
         g.stroke(p, with: .color(.white.opacity(0.14)), lineWidth: 1)
+    }
+
+    /// Normalized bounding box of the landmark cloud (0…1 space) — used to place
+    /// the soft focus glow behind wherever the face actually is.
+    private static func faceBounds(_ dots: [FaceEngine.Dot]) -> CGRect? {
+        let real = dots.filter { $0.group >= 0 }
+        guard let first = real.first else { return nil }
+        var minX = first.x, maxX = first.x, minY = first.y, maxY = first.y
+        for d in real {
+            minX = min(minX, d.x); maxX = max(maxX, d.x)
+            minY = min(minY, d.y); maxY = max(maxY, d.y)
+        }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
     /// Midpoint-quadratic smoothing: a soft curve through jittery landmarks.
