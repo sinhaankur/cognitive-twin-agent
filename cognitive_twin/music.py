@@ -9,6 +9,11 @@ side, opt-in and explicit: when you turn it on, Vera reads macOS **Now Playing**
 a sealed local log of the tracks you play. From that she can tell you your top
 artists, your most-played tracks, and how your listening shifts over time.
 
+YouTube too: macOS 26 gates the system Now-Playing framework for third parties,
+so for music the app-scripting can't see (YouTube / YouTube Music in a browser) we
+read the frontmost browser tab title ("Artist - Track - YouTube") and parse it —
+only YouTube tabs, only while that tab is frontmost, never other browsing.
+
 It mirrors places.py exactly — one sealed log, the same opt-in + pause/snooze
 gates, the same device-bound sealing:
   - OFF by default. You opt in (``enable()``).
@@ -136,7 +141,74 @@ def _now_playing() -> Play | None:
             if title:
                 return Play(title=title, artist=artist.strip(), album=album.strip(),
                             app=app, at=_dt.datetime.now().isoformat(timespec="seconds"))
-    return None
+    # Nothing from the music apps → try YouTube-in-the-browser. macOS 26 gates the
+    # system Now Playing framework for third parties, so we read what we CAN see:
+    # the frontmost browser window's title, which for a playing YouTube tab is
+    # "Track - Artist - YouTube" (or "(NN) Track - YouTube"). Best-effort + honest —
+    # only captured while that tab is frontmost; parsed conservatively.
+    return _now_playing_browser()
+
+
+# Browser window/tab title → a Play, for YouTube (and YouTube Music) audio the
+# music apps can't see. Read via System Events (no per-browser scripting perms).
+_BROWSERS = ("Google Chrome", "Brave Browser", "Safari", "Microsoft Edge", "Arc", "Firefox")
+
+
+def _now_playing_browser() -> Play | None:
+    if sys.platform != "darwin":
+        return None
+    script = (
+        'tell application "System Events"\n'
+        '  set p to first application process whose frontmost is true\n'
+        '  set appName to name of p\n'
+        '  set winTitle to ""\n'
+        '  try\n'
+        '    set winTitle to name of front window of p\n'
+        '  end try\n'
+        '  return appName & "||" & winTitle\n'
+        'end tell'
+    )
+    try:
+        r = subprocess.run(["osascript", "-e", script],
+                           capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    app, _, title = (r.stdout or "").strip().partition("||")
+    app, title = app.strip(), title.strip()
+    if app not in _BROWSERS or not title:
+        return None
+    parsed = _parse_youtube_title(title)
+    if not parsed:
+        return None
+    track, artist = parsed
+    return Play(title=track, artist=artist, album="", app=app,
+                at=_dt.datetime.now().isoformat(timespec="seconds"),
+                meta={"via": "browser-title"})
+
+
+def _parse_youtube_title(title: str) -> tuple[str, str] | None:
+    """Pull (track, artist) out of a browser title. Returns None when the tab
+    isn't a YouTube media page (so we never log random browsing as 'music')."""
+    import re
+
+    t = title.strip()
+    # Only treat YouTube tabs as plays — other sites' titles aren't music.
+    if not re.search(r"-\s*YouTube(\s+Music)?\s*$", t, re.I):
+        return None
+    # Drop the trailing " - YouTube" / " - YouTube Music"
+    t = re.sub(r"\s*-\s*YouTube(\s+Music)?\s*$", "", t, flags=re.I).strip()
+    # Drop a leading unread/notification count like "(3) " Chrome adds
+    t = re.sub(r"^\(\d+\)\s*", "", t).strip()
+    if not t:
+        return None
+    # "Artist - Track" is the common music convention on YouTube; split on the
+    # FIRST " - ". If there's no dash, we keep the whole thing as the track.
+    if " - " in t:
+        left, _, right = t.partition(" - ")
+        return (right.strip(), left.strip())   # (track, artist)
+    return (t, "")
 
 
 # ── append (sealed) + change-detection ─────────────────────────────────────────
