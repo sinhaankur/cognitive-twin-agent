@@ -1217,6 +1217,53 @@ async function think(q){
 document.getElementById("go").onclick = () => { const q = document.getElementById("q").value.trim(); if (q) think(q); };
 document.getElementById("q").addEventListener("keydown", e => { if (e.key === "Enter") document.getElementById("go").click(); });
 
+/* Spreading activation (the real brain move): from a recalled memory, activation
+   flows OUTWARD through the real edge graph in rings — a breadth-first wavefront.
+   Each ring fires a touch later and dimmer (distance decay); it stops when the
+   activation falls below threshold, or a small hop cap, so a dense graph doesn't
+   flood. Every hop follows a real edge — this is the associative network lighting
+   up, not decoration. */
+function spreadActivation(rootIdx, sx, sy){
+  const DECAY = 0.55;      // activation kept per hop — 1 → 0.55 → 0.30 → 0.17…
+  const FLOOR = 0.16;      // below this, the wave dies (nothing left to fire)
+  const MAX_HOPS = 4;      // hard cap so huge graphs still settle
+  const FANOUT = 3;        // at most N onward edges per node (the strongest few)
+  const seen = new Set([rootIdx]);
+  // ring 0 = the recalled node itself; walk outward ring by ring
+  let ring = [{ idx: rootIdx, x: sx, y: sy, act: 1 }];
+  for (let hop = 1; hop <= MAX_HOPS; hop++){
+    const act = Math.pow(DECAY, hop);
+    if (act < FLOOR) break;
+    const next = [];
+    for (const cur of ring){
+      // this node's real neighbours, strongest links first, capped at FANOUT
+      const nbrs = [];
+      gedges.forEach(l => {
+        const oi = l.a === cur.idx ? l.b : (l.b === cur.idx ? l.a : null);
+        if (oi === null || seen.has(oi)) return;
+        const o = gindex["n" + oi];
+        if (!o || o.px === undefined) return;
+        nbrs.push({ oi, o, w: l.w || 0 });
+      });
+      nbrs.sort((a, b) => b.w - a.w);
+      for (const { oi, o } of nbrs.slice(0, FANOUT)){
+        seen.add(oi);
+        firePulse({ x: cur.x, y: cur.y }, { x: o.px, y: o.py },
+          { color: hexRgb(o.color),
+            dur: 0.42 + hop * 0.05,
+            w: 1.1 + act * 1.6,                    // outer rings draw thinner
+            delay: 0.12 + hop * 0.14,              // each ring a beat later
+            bow: 0.22,
+            land: act > 0.3 });                    // faint outer hops skip the bloom
+        glow["node:" + oi] = Math.max(glow["node:" + oi] || 0, act * 0.7);
+        next.push({ idx: oi, x: o.px, y: o.py, act });
+      }
+    }
+    if (!next.length) break;
+    ring = next;
+  }
+}
+
 function stepThought(dt){
   if (!thought) return;
   thought.t += dt;
@@ -1240,19 +1287,13 @@ function stepThought(dt){
       // a discrete SIGNAL fires from the recalled memory into her heart — the
       // thing you can point at and say "that memory just fired"
       firePulse({x: sx, y: sy}, {x: 0, y: 0}, { color: hexRgb(n.color), dur: 0.62, w: 2.4 });
-      // …and the thought SPREADS: real neighbours of this memory ignite in a
-      // brief cascade (recall is associative — related memories light too).
-      // Only real graph edges are followed; nothing invented.
-      let hops = 0;
-      gedges.forEach(l => {
-        const o = l.a === n.idx ? gindex["n" + l.b]
-                : l.b === n.idx ? gindex["n" + l.a] : null;
-        if (!o || o.px === undefined || hops >= 3) return;
-        hops++;
-        firePulse({x: sx, y: sy}, {x: o.px, y: o.py},
-          { color: hexRgb(o.color), dur: 0.5, w: 1.7, delay: 0.12 + hops * 0.06, bow: 0.22 });
-        glow["node:" + o.idx] = Math.max(glow["node:" + o.idx] || 0, 0.55);
-      });
+      // …and the thought SPREADS — the real brain move: spreading activation with
+      // distance decay. Activation flows OUTWARD through the real edge graph, one
+      // ring at a time, each hop firing later and dimmer than the last, until it
+      // fades below threshold. A recalled memory doesn't just light its immediate
+      // neighbours — it sends a wavefront through the associative network, exactly
+      // how one thought pulls the next. Only real edges; nothing invented.
+      spreadActivation(n.idx, sx, sy);
     }
   });
   // then the faculties light along the real path (details view only —
