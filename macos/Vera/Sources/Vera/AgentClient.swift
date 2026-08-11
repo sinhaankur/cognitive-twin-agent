@@ -113,6 +113,33 @@ final class AgentClient {
         } catch { return ActivityState() }
     }
 
+    /// GET /api/music/status — is music (Now Playing) tracking on?
+    func musicEnabled() async -> Bool {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/music/status"))
+        req.timeoutInterval = 5
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let o = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (o["enabled"] as? Bool) ?? false
+        } catch { return false }
+    }
+
+    /// POST /api/music — control music tracking (enable/disable/sample/clear).
+    /// Returns whether it's enabled afterwards.
+    @discardableResult
+    func musicAction(_ action: String) async -> Bool {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/music"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["action": action])
+        req.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let o = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (o["enabled"] as? Bool) ?? false
+        } catch { return false }
+    }
+
     /// GET /api/portrait/status — is a 3D likeness built, still building, and is
     /// the local pipeline present. Returns the raw dict for the model to read.
     func portraitStatus() async -> [String: Any] {
