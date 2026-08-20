@@ -32,7 +32,7 @@ from typing import Any
 _DEFAULT_POLICY: dict[str, Any] = {
     "version": "0-default",
     "models": {
-        "primary": {"provider": "ollama", "name": "llama3.2", "role": "default_reasoning"},
+        "primary": {"provider": "ollama", "name": "qwen2.5:7b", "role": "default_reasoning"},
     },
     "routingRules": [
         {"id": "rule_default", "when": {}, "useModel": "primary"},
@@ -99,8 +99,19 @@ def load_policy(path: Path | None = None) -> dict[str, Any]:
     return _DEFAULT_POLICY
 
 
-def classify(prompt: str) -> tuple[str, str, list[str]]:
-    """Heuristically estimate (taskComplexity, riskLevel, reasons) for a prompt.
+# Emotional / companionship cues — route these to the warm companion model. Kept
+# narrow on purpose: a genuine feeling/check-in turn, NOT anything with a task in
+# it (reasoning cues below always win, so "I'm stressed, help me plan X" reasons).
+_COMPANION = re.compile(
+    r"\b(feel(ing)?|lonely|overwhelmed|anxious|sad|tired|exhausted|stressed|"
+    r"miss you|talk to me|just talk|check in|how are you|comfort|vent|"
+    r"proud of me|cheer me)\b",
+    re.IGNORECASE,
+)
+
+
+def classify(prompt: str) -> tuple[str, str, str, list[str]]:
+    """Heuristically estimate (taskComplexity, riskLevel, intent, reasons).
 
     Transparent by design: length + a few keyword cues. Returns the reasons so
     the decision is inspectable (``--route-explain``).
@@ -128,7 +139,20 @@ def classify(prompt: str) -> tuple[str, str, list[str]]:
     else:
         complexity = "low"
 
-    return complexity, risk, reasons
+    # intent — companion ONLY when there's an emotional cue AND no reasoning/task
+    # cue and it's not a high-complexity/high-risk turn (those need a real brain).
+    if (
+        _COMPANION.search(text)
+        and not _HIGH_COMPLEXITY.search(text)
+        and complexity != "high"
+        and risk == "low"
+    ):
+        intent = "companion"
+        reasons.append("emotional/check-in cue → companion")
+    else:
+        intent = "task"
+
+    return complexity, risk, intent, reasons
 
 
 def _device_state() -> str | None:
@@ -139,14 +163,26 @@ def _device_state() -> str | None:
     return val or None
 
 
-def _rule_matches(when: dict[str, Any], complexity: str, risk: str, device: str | None) -> bool:
+_KNOWN_CONDITIONS = {"taskComplexity", "riskLevel", "deviceState", "intent"}
+
+
+def _rule_matches(
+    when: dict[str, Any], complexity: str, risk: str, device: str | None, intent: str
+) -> bool:
     """A rule matches if every condition it specifies is satisfied. An empty
-    ``when`` is a catch-all."""
+    ``when`` is a catch-all. A rule that references a condition the router does
+    NOT understand can never match — otherwise an unknown key would be silently
+    ignored and the rule would behave like a catch-all (the bug that sent every
+    request to the companion model)."""
     if not when:
         return True
+    if any(k not in _KNOWN_CONDITIONS for k in when):
+        return False
     if "taskComplexity" in when and complexity not in when["taskComplexity"]:
         return False
     if "riskLevel" in when and risk not in when["riskLevel"]:
+        return False
+    if "intent" in when and intent not in when["intent"]:
         return False
     if "deviceState" in when:
         if device is None or device not in when["deviceState"]:
@@ -166,7 +202,7 @@ class Router:
 
     def _resolve_model_name(self, model_key: str) -> tuple[str, str]:
         """Map a policy model key (e.g. 'primary') to its concrete name. Falls
-        back to the first defined model, then to llama3.2."""
+        back to the first defined model, then to an installed safe default."""
         models = self.policy.get("models", {})
         entry = models.get(model_key)
         if entry and entry.get("name"):
@@ -175,16 +211,16 @@ class Router:
         for k, v in models.items():
             if v.get("name"):
                 return k, v["name"]
-        return "default", "llama3.2"
+        return "default", "qwen2.5:7b"
 
     def route(self, prompt: str, *, device_state: str | None = None) -> RouteDecision:
-        complexity, risk, reasons = classify(prompt)
+        complexity, risk, intent, reasons = classify(prompt)
         device = device_state if device_state is not None else _device_state()
 
         chosen_key = None
         fired_rule = "none"
         for rule in self.policy.get("routingRules", []):
-            if _rule_matches(rule.get("when", {}), complexity, risk, device):
+            if _rule_matches(rule.get("when", {}), complexity, risk, device, intent):
                 chosen_key = rule.get("useModel")
                 fired_rule = rule.get("id", "unnamed")
                 break

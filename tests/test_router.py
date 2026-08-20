@@ -43,23 +43,33 @@ POLICY = {
 
 
 def test_classify_low_simple():
-    complexity, risk, _ = classify("what's the date?")
+    complexity, risk, _intent, _ = classify("what's the date?")
     assert complexity == "low", complexity
     assert risk == "low", risk
     print("✓ classify: short factual → low/low")
 
 
 def test_classify_high_risk_verb():
-    _, risk, reasons = classify("delete the production database backups")
+    _, risk, _intent, reasons = classify("delete the production database backups")
     assert risk == "high", risk
     assert any("risk" in r for r in reasons)
     print("✓ classify: destructive verb → high risk")
 
 
 def test_classify_high_complexity_cue():
-    complexity, _, _ = classify("analyze the trade-offs and design a migration plan")
+    complexity, _, _intent, _ = classify("analyze the trade-offs and design a migration plan")
     assert complexity == "high", complexity
     print("✓ classify: planning cue → high complexity")
+
+
+def test_classify_companion_intent():
+    # An emotional check-in with no task → companion; but a task with feelings
+    # attached must still reason (not go to the tiny companion model).
+    _, _, intent, _ = classify("i'm feeling overwhelmed today, can we just talk")
+    assert intent == "companion", intent
+    _, _, intent2, _ = classify("i'm stressed, help me plan and refactor the engine")
+    assert intent2 == "task", intent2
+    print("✓ classify: emotional→companion, but task-with-feelings→task")
 
 
 def test_route_fast_path():
@@ -122,11 +132,13 @@ def test_route_never_falls_through():
 
 
 def test_missing_policy_file_uses_default():
-    # Router with no models defined should still resolve to a safe default.
+    # Router with no models defined should still resolve to an INSTALLED safe
+    # default. Was llama3.2 (never installed → every route failed, the root cause
+    # of "Vera doesn't understand"); now qwen2.5:7b, which is present.
     r = Router({"models": {}, "routingRules": []})
     d = r.route("hello")
-    assert d.model == "llama3.2", d.model
-    print("✓ route: empty policy → safe default model")
+    assert d.model == "qwen2.5:7b", d.model
+    print("✓ route: empty policy → safe installed default model")
 
 
 def test_no_cloud_fallback_by_default():
