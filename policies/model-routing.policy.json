@@ -4,24 +4,41 @@
   "models": {
     "primary": {
       "provider": "ollama",
-      "name": "qwen3:14b",
+      "name": "qwen2.5:7b",
       "role": "default_reasoning",
+      "comment": "Installed + instruct-tuned. Was qwen3:14b (NOT installed) — that mismatch made every route fail and is why Vera 'didn't understand'. Repoint to a real model.",
       "targetLatencyMs": 3500
     },
     "fastFallback": {
       "provider": "ollama",
-      "name": "qwen3:8b",
+      "name": "qwen2.5:3b",
       "role": "low_latency_and_battery",
       "targetLatencyMs": 1800
     },
     "deepPlanner": {
       "provider": "ollama",
-      "name": "deepseek-r1-distill-qwen-14b",
+      "name": "llama3.1:8b",
       "role": "high_complexity_planning",
+      "comment": "Strong general reasoner for planning/drive. Upgrade to qwen2.5:14b when disk allows (needs ~9GB free).",
       "targetLatencyMs": 8000
+    },
+    "companion": {
+      "provider": "ollama",
+      "name": "empathia-tiny:latest",
+      "role": "emotional_companion",
+      "comment": "Ankur's own 1.1B Empatheia model — warmth + reflection, the 'companion' hat. Fast + tiny; used ONLY for emotional/check-in turns, never for reasoning/planning/drive (it can't).",
+      "targetLatencyMs": 900
     }
   },
   "routingRules": [
+    {
+      "id": "rule_companion",
+      "comment": "Emotional / check-in / companionship turns go to the warm Empatheia model — the 'companion' hat. Reasoning, planning, and VS Code drive never route here.",
+      "when": {
+        "intent": ["companion", "emotional", "check_in", "reflect"]
+      },
+      "useModel": "companion"
+    },
     {
       "id": "rule_low_power",
       "comment": "Device constraints win first — a throttled/low-battery device must not run the big model.",
