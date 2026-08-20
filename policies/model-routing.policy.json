@@ -24,10 +24,10 @@
     },
     "companion": {
       "provider": "ollama",
-      "name": "empathia-tiny:latest",
+      "name": "qwen2.5:7b",
       "role": "emotional_companion",
-      "comment": "Ankur's own 1.1B Empatheia model — warmth + reflection, the 'companion' hat. Fast + tiny; used ONLY for emotional/check-in turns, never for reasoning/planning/drive (it can't).",
-      "targetLatencyMs": 900
+      "comment": "Emotional / check-in turns. Uses the same capable reasoner — Vera's WARMTH comes from her persona (persona.py _INNATE + persona.json), not a separate model. (empathia-tiny is a different project, deliberately NOT wired in here.)",
+      "targetLatencyMs": 3500
     }
   },
   "routingRules": [
