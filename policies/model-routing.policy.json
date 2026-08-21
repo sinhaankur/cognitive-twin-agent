@@ -17,10 +17,10 @@
     },
     "deepPlanner": {
       "provider": "ollama",
-      "name": "llama3.1:8b",
+      "name": "qwen2.5:14b",
       "role": "high_complexity_planning",
-      "comment": "Strong general reasoner for planning/drive. Upgrade to qwen2.5:14b when disk allows (needs ~9GB free).",
-      "targetLatencyMs": 8000
+      "comment": "The heavy brain for genuinely complex/high-risk planning + drive. Loaded ON DEMAND by Ollama only when a rule escalates here — everyday turns stay on the light 7B, so Vera is powerful WITHOUT being heavy by default. (Ollama unloads it after idle, freeing RAM.)",
+      "targetLatencyMs": 9000
     },
     "companion": {
       "provider": "ollama",
