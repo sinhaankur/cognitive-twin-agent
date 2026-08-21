@@ -23,12 +23,12 @@ warnings.filterwarnings("ignore")
 # value caused. text splitting keeps long replies from drifting partway through.
 # (language is chosen per-utterance — see _detect_language.)
 GEN_KWARGS = dict(
-    temperature=0.65,          # natural prosody, still faithful to the reference
+    temperature=0.80,          # more prosodic life — the main lever against "robotic"
     length_penalty=1.0,
-    repetition_penalty=2.0,    # curb artefacts without flattening the voice
+    repetition_penalty=1.3,    # was 2.0 — high values flatten/clip the delivery; low = warm
     top_k=50,
-    top_p=0.85,
-    speed=1.0,
+    top_p=0.90,                # a touch wider → natural intonation range
+    speed=0.97,                # a hair slower reads as calmer/more human than metronomic 1.0
     enable_text_splitting=True,  # synthesize long replies in stable chunks
 )
 
