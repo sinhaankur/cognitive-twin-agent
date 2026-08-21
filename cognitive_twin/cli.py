@@ -52,6 +52,13 @@ def _load_config() -> dict:
 
 def build_agent(model: str | None = None, *, route: bool = True,
                 interactive_confirm: bool = True) -> Agent:
+    # Vera keeps herself light: compact the projects catalog + report footprint,
+    # once per launch. Fail-soft — maintenance never breaks a start.
+    try:
+        from . import maintenance
+        maintenance.run_once()
+    except Exception:
+        pass
     cfg = _load_config()
     model = (
         model
