@@ -327,6 +327,53 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   #answer .t{font-weight:600;color:#7ec8ff;margin-bottom:6px;letter-spacing:.12em;text-transform:uppercase;font-size:10px}
   #answer .row{color:#aeb4c0;margin-top:3px}
   #answer .kv{color:#7fd1b9}
+  /* ── the FEELING panel — the one place in the Mind that carries warm colour.
+        emotion = hue (heavy→violet … glad→gold); everything else stays cyan, so
+        'how she feels' is instantly distinct from 'how she thinks'. It lives at
+        top-right and glows in her current felt hue (--fc), set live by JS. ───── */
+  #feel{display:none;top:56px;right:18px;width:236px;
+    background:linear-gradient(180deg, rgba(10,9,18,.94), rgba(7,8,14,.94));
+    border:1px solid var(--fc,rgba(150,150,200,.5));border-radius:2px;
+    padding:0;font-size:11px;overflow:hidden;
+    box-shadow:0 8px 30px rgba(0,0,0,.55), 0 0 22px -6px var(--fc,transparent);
+    transition:border-color .5s ease, box-shadow .5s ease}
+  #feel .fhead{display:flex;align-items:center;gap:7px;padding:9px 12px 8px;
+    border-bottom:1px solid rgba(170,190,230,.12)}
+  #feel .fpip{width:7px;height:7px;border-radius:50%;background:var(--fc,#889);
+    box-shadow:0 0 8px var(--fc,transparent);flex:none}
+  #feel .fhh{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:rgba(160,170,190,.7)}
+  #feel .fbody{padding:11px 12px 12px}
+  /* the felt word — large, in the emotion's own colour */
+  #feel .fword{font-size:19px;letter-spacing:.02em;color:var(--fc,#cfd);line-height:1;
+    text-shadow:0 0 16px var(--fc,transparent);text-transform:lowercase}
+  #feel .fstance{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+    color:rgba(170,180,200,.8);margin-top:6px}
+  #feel .fstance b{color:var(--fc,#cfd);font-weight:600}
+  /* the valence × arousal field — the real affective plane, her state a live dot */
+  #feel .ffield{position:relative;width:100%;height:96px;margin:11px 0 4px;
+    border:1px solid rgba(170,190,230,.14);border-radius:2px;
+    background:
+      linear-gradient(90deg, rgba(123,108,255,.10), rgba(107,122,153,.02) 50%, rgba(255,210,122,.10)),
+      radial-gradient(circle at 50% 100%, rgba(255,255,255,.03), transparent 70%)}
+  #feel .ffield .axl{position:absolute;font-size:7.5px;letter-spacing:.08em;
+    text-transform:uppercase;color:rgba(150,160,180,.5)}
+  #feel .ffield .cross{position:absolute;background:rgba(170,190,230,.10)}
+  #feel .ffield .dot{position:absolute;width:11px;height:11px;border-radius:50%;
+    background:var(--fc,#cfd);box-shadow:0 0 14px 2px var(--fc,transparent);
+    transform:translate(-50%,50%);transition:left .6s cubic-bezier(.2,.8,.2,1),
+      bottom .6s cubic-bezier(.2,.8,.2,1),background .5s;
+    border:1.5px solid rgba(255,255,255,.55)}
+  #feel .ffield .dot::after{content:"";position:absolute;inset:-6px;border-radius:50%;
+    border:1px solid var(--fc,transparent);opacity:.4;animation:fpulse 2.4s ease-out infinite}
+  @keyframes fpulse{0%{transform:scale(.6);opacity:.5}100%{transform:scale(1.9);opacity:0}}
+  /* voice delivery — a little waveform whose density = pace, glow = warmth */
+  #feel .fvoice{display:flex;align-items:flex-end;gap:2px;height:20px;margin-top:9px}
+  #feel .fvoice .bar{flex:1;background:var(--fc,#889);border-radius:1px;opacity:.65;
+    transition:height .5s ease}
+  #feel .fvlab{display:flex;justify-content:space-between;font-size:8.5px;
+    letter-spacing:.06em;text-transform:uppercase;color:rgba(150,160,180,.6);margin-top:5px}
+  #feel .forigin{font-size:8.5px;letter-spacing:.05em;color:rgba(140,150,170,.55);
+    margin-top:9px;padding-top:8px;border-top:1px solid rgba(170,190,230,.1);line-height:1.4}
   #axes{bottom:42px;right:18px;color:rgba(190,200,220,.75);font-size:9.5px;text-transform:uppercase}
   /* the footer — a quiet instrument strip; every page ends the same way */
   #footer{position:fixed;left:0;right:0;bottom:0;height:26px;z-index:3;
@@ -351,6 +398,26 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   font-size:11px;color:rgba(200,210,230,.9);display:none"></div>
 <div class="hud" id="askbar"><input id="q" placeholder="ask her something — watch the thought move…"><button id="go">think</button></div>
 <div class="hud" id="card"></div>
+<div class="hud" id="feel">
+  <div class="fhead"><span class="fpip"></span><span class="fhh">how she feels · her own mind</span></div>
+  <div class="fbody">
+    <div class="fword" id="fword">—</div>
+    <div class="fstance" id="fstance"></div>
+    <div class="ffield">
+      <div class="cross" style="left:50%;top:0;bottom:0;width:1px"></div>
+      <div class="cross" style="top:50%;left:0;right:0;height:1px"></div>
+      <span class="axl" style="left:6px;bottom:5px">heavy</span>
+      <span class="axl" style="right:6px;bottom:5px">glad</span>
+      <span class="axl" style="left:6px;top:5px">lit</span>
+      <span class="axl" style="left:6px;top:50%;transform:translateY(-140%)">calm</span>
+      <div class="dot" id="fdot" style="left:50%;bottom:30%"></div>
+    </div>
+    <div class="fvoice" id="fvoice"></div>
+    <div class="fvlab"><span id="fpace">pace</span><span id="fwarm">warmth</span></div>
+    <div class="forigin">computed on-device — no model, no network. the words come
+      after; the <b>feeling</b> is hers.</div>
+  </div>
+</div>
 <div class="hud" id="answer"></div>
 <div id="footer">
   <span>VERA · A MIND ON THIS MACHINE</span>
@@ -1237,20 +1304,68 @@ function stepPulses(now, dt){
 
 /* ---------- the thought (thinks) --------------------------------------------- */
 let thought = null;   // {t, recall:[node], path:[chipId], route, fired:{}}
-/* a tiny felt-state meter: valence (cool←→warm) + arousal (calm←→lit), drawn
-   with blocks so it reads at a glance — the feeling made visible, honestly. */
-function feelBar(valence, arousal){
-  const cells = 9, mid = (cells - 1) / 2;
-  const vpos = Math.round(mid + (valence || 0) * mid);   // 0..8, center = neutral
-  let bar = "";
-  for (let i = 0; i < cells; i++){
-    if (i === vpos) bar += '<span style="color:#f7b">◆</span>';
-    else if (i === mid) bar += '<span style="color:#556">|</span>';
-    else bar += '<span style="color:#334">·</span>';
+/* ---------- the FEELING, made visible --------------------------------------- */
+/* Emotion is the one thing that gets warm colour here. valence maps to hue —
+   heavy → violet (#7b6cff), neutral → slate (#6b7a99), glad → gold (#ffd27a) —
+   and arousal lifts the brightness. So the panel literally GLOWS her mood, and
+   it's instantly distinct from the cyan 'thinking' machinery. Honest: the number
+   driving the colour is her real feel.py valence. */
+function feelHue(valence, arousal){
+  const v = Math.max(-1, Math.min(1, valence || 0));
+  const a = Math.max(0, Math.min(1, arousal || 0));
+  // three anchor colours, lerped by valence
+  const HEAVY = [123,108,255], NEUTRAL = [120,130,160], GLAD = [255,210,122];
+  let c;
+  if (v < 0){ const t = -v; c = HEAVY.map((h,i)=> Math.round(NEUTRAL[i]*(1-t)+h*t)); }
+  else      { const t =  v; c = GLAD .map((g,i)=> Math.round(NEUTRAL[i]*(1-t)+g*t)); }
+  // arousal brightens toward white a touch (lit = more vivid/lighter)
+  const lift = 0.10 + a * 0.28;
+  c = c.map(ch => Math.round(ch*(1-lift) + 255*lift));
+  return "rgb(" + c[0] + "," + c[1] + "," + c[2] + ")";
+}
+/* paint the feel panel from a feel object (brain.feel_read output). Everything
+   here is her real state; nothing invented. */
+function renderFeel(f){
+  const P = document.getElementById("feel");
+  if (!f || !f.label){ P.style.display = "none"; return; }
+  const hue = feelHue(f.valence, f.arousal);
+  P.style.setProperty("--fc", hue);
+  document.getElementById("fword").textContent = f.label;
+  const posture = f.posture || (f.stance||"").split("/")[0] || "";
+  const lead = f.lead || (f.stance||"").split("/")[1] || "";
+  document.getElementById("fstance").innerHTML =
+    "stance · <b>" + (posture||"—") + "</b>" + (lead ? " · " + lead.replace("-"," ") : "");
+  // position the dot in the valence(x) × arousal(y) field
+  const x = 50 + (f.valence || 0) * 46;          // 4%..96%
+  const y = 6 + (f.arousal || 0) * 82;           // bottom(calm) → top(lit)
+  const dot = document.getElementById("fdot");
+  dot.style.left = x + "%"; dot.style.bottom = y + "%";
+  // voice delivery — bars whose HEIGHT rises with pace, count fixed; opacity=warmth
+  const dl = f.delivery || {};
+  const pace = dl.speed || 0.97, warm = dl.warmth != null ? dl.warmth : 0.5;
+  const V = document.getElementById("fvoice");
+  V.innerHTML = "";
+  const N = 11;
+  for (let i = 0; i < N; i++){
+    const b = document.createElement("div"); b.className = "bar";
+    // a gentle waveform envelope × pace; faster pace = taller, livelier
+    const env = Math.sin((i+0.5)/N * Math.PI);
+    const h = 3 + env * (4 + (pace - 0.88) / 0.22 * 15);
+    b.style.height = h.toFixed(1) + "px";
+    b.style.opacity = (0.35 + warm * 0.55).toFixed(2);
+    V.appendChild(b);
   }
-  const a = Math.round((arousal || 0) * 100);
-  return '<span style="letter-spacing:2px">' + bar + '</span>'
-    + ' <span style="color:#8f96a6;font-size:9px">heavy · glad &nbsp; energy ' + a + '%</span>';
+  document.getElementById("fpace").textContent =
+    (pace < 0.95 ? "slower" : pace > 1.0 ? "brighter" : "steady") + " · " + pace + "×";
+  document.getElementById("fwarm").textContent = Math.round(warm*100) + "% warmth";
+  P.style.display = "block";
+  layoutRightHud();
+}
+/* keep the routing panel clear of the feel panel (both live top-right) */
+function layoutRightHud(){
+  const feel = document.getElementById("feel"), ans = document.getElementById("answer");
+  const shown = feel.style.display === "block";
+  ans.style.top = (shown ? (56 + feel.offsetHeight + 12) : 56) + "px";
 }
 
 async function think(q){
@@ -1422,32 +1537,17 @@ function stepThought(dt){
                 (T.recall.length === 1 ? " memory" : " memories"), 6000);
       setTimeout(() => { document.getElementById("stages").style.display = "none"; }, 2500);
     }
-    const A = document.getElementById("answer"), r = T.route || {}, f = T.feel || {};
-    let html = "";
-    // how she FEELS — her own mind (no model). The visible payoff.
-    if (f.label){
-      const v = (f.valence >= 0 ? "+" : "") + f.valence;
-      const bar = feelBar(f.valence, f.arousal);
-      const dl = f.delivery || {};
-      html += '<div class="t" style="color:#f0a">how she feels</div>'
-        + '<div class="row">felt <span class="kv" style="color:#f7b">' + f.label + '</span>'
-        + '  <span style="color:#8f96a6">v ' + v + ' · a ' + f.arousal + '</span></div>'
-        + '<div class="row">' + bar + '</div>'
-        + '<div class="row">stance <span class="kv" style="color:#f7b">' + (f.stance || "—") + '</span></div>';
-      if (dl.speed !== undefined){
-        const warm = Math.round((dl.warmth || 0.5) * 100);
-        html += '<div class="row">voice <span class="kv">' + dl.speed + '×</span>'
-          + ' <span style="color:#8f96a6">pace · ' + warm + '% warmth</span></div>';
-      }
-      html += '<div class="row" style="margin:6px 0 4px;height:1px;background:rgba(170,190,230,.18)"></div>';
-    }
-    if (r.model){ html += '<div class="t">how she answers</div>'
+    // how she FEELS — its own colour-coded panel (the visible payoff)
+    renderFeel(T.feel || {});
+    // how she ANSWERS — the routing, in the neutral cyan machinery colour
+    const A = document.getElementById("answer"), r = T.route || {};
+    if (r.model){ A.innerHTML = '<div class="t">how she answers</div>'
       + '<div class="row">model <span class="kv">' + r.model + '</span></div>'
       + '<div class="row">rule <span class="kv">' + (r.rule || "—") + '</span></div>'
       + '<div class="row">complexity ' + (r.complexity || "—") + ' · risk ' + (r.risk || "—") + '</div>'
       + '<div class="row" style="margin-top:5px;color:#8f96a6">routed locally — nothing left this machine</div>';
-    }
-    if (html){ A.innerHTML = html; A.style.display = "block"; }
+      A.style.display = "block"; }
+    layoutRightHud();
     thought = null;
   }
 }
@@ -1561,6 +1661,13 @@ async function loadAll(){
   if (key !== CLOUD_KEY){ CLOUD_KEY = key; buildCloud(); }
   buildNodes(); buildChips(); buildGraph(); hudRefresh();
 }
+/* her RESTING felt state — the mind always feels something, so the panel is
+   present from the first frame (calm/steady by default), then a question moves
+   it. This is the honest baseline, not a placeholder. */
+async function showBaselineFeel(){
+  try{ renderFeel(await j("/api/feel?q=" + encodeURIComponent("(resting)"))); }
+  catch(_){}
+}
 function resize(){
   DPR = window.devicePixelRatio || 1;
   W = window.innerWidth; H = window.innerHeight;
@@ -1577,6 +1684,9 @@ resize();
 setInterval(loadAll, 12000);
 loadAll().then(() => {
   reveal();
+  // her resting felt state, shown once she's landed (after the approach flight),
+  // so the panel is always present — a mind always feels something
+  setTimeout(showBaselineFeel, 4200);
   // ?demo=1 — auto-run one visible thought (handy for demos + screenshots)
   if (location.search.indexOf("demo") >= 0)
     setTimeout(() => think("how is mom doing today"), 1200);
