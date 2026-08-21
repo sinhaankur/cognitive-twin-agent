@@ -33,18 +33,22 @@ _FACULTIES = [
     ("persona", "Persona", "Who the twin is — the character you shaped."),
     ("soul", "Soul", "An evolving personality + reflections it has while you're away."),
     ("mood", "Mood", "Colors tone and how warm/measured the answer feels."),
+    ("feel", "Feeling", "Reads the emotion of what you said + takes a stance — her own mind, no model (limbic + frontal)."),
     ("rhythms", "Rhythms", "Time-of-day + life-rhythm awareness (sleep/work)."),
     ("activity", "Activity", "Learns how you work by watching your active app (opt-in)."),
     ("shadow", "Shadow", "Follows your day — tasks you mention, tracked to done (local ledger)."),
-    ("voice", "Voice", "Speaks the answer in a loved one's cloned voice, on-device."),
+    ("voice", "Voice", "Speaks the answer in a loved one's cloned voice — paced + warmed by the feeling (cerebellum)."),
     ("router", "Model router", "Picks the local model that reasons the reply."),
 ]
 
 # How faculties feed one another to form a reply (designed wiring — always true).
+# Feeling is the connective tissue: it reads the moment, colours the reply's
+# stance (→ router), and shapes the voice's delivery (→ voice).
 _WIRING = [
     ("memory", "router"), ("persona", "router"), ("soul", "router"),
     ("mood", "router"), ("rhythms", "router"), ("activity", "memory"),
     ("memory", "shadow"), ("shadow", "router"),
+    ("feel", "router"), ("feel", "voice"), ("memory", "feel"),
     ("router", "voice"), ("soul", "mood"), ("rhythms", "mood"),
 ]
 
@@ -135,6 +139,31 @@ def snapshot() -> dict[str, Any]:
     }
 
 
+def feel_read(prompt: str) -> dict[str, Any]:
+    """The live felt state + stance + voice delivery for a prompt — computed by
+    Vera's own on-device logic (no model). This is what makes her felt mind
+    VISIBLE: valence/arousal, the word for how she feels, the stance she takes,
+    and how the voice will be paced. Honest: it's her real feel.py output."""
+    try:
+        from . import feel
+        f = feel.read(prompt)
+        d = feel.delivery(prompt)
+        posture, _, lead = f.stance.partition("/")
+        return {
+            "label": f.label,
+            "valence": f.valence,
+            "arousal": f.arousal,
+            "stance": f.stance,
+            "posture": posture,
+            "lead": lead,
+            "is_light": f.is_light,
+            "is_heavy": f.is_heavy,
+            "delivery": d,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def thought_path(prompt: str) -> dict[str, Any]:
     """
     A best-effort 'how would this answer form?' — the ordered faculties a prompt
@@ -142,7 +171,10 @@ def thought_path(prompt: str) -> dict[str, Any]:
     an actual model run. The UI highlights these nodes/edges in order.
     """
     p = (prompt or "").lower()
-    path = ["memory", "persona"]
+    # feeling runs EVERY turn (limbic + frontal, no model) — it's how she takes a
+    # stance and paces the voice. Placed right after memory, per the brain's
+    # anatomical order (memory → feel → reason → voice).
+    path = ["memory", "feel", "persona"]
     if any(w in p for w in ("feel", "sad", "miss", "love", "tired", "happy")):
         path.append("mood")
     if any(w in p for w in ("today", "now", "tonight", "morning", "sleep", "work")):
