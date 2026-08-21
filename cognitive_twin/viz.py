@@ -146,8 +146,24 @@ def _thought(q: str) -> dict[str, Any]:
         out["path"] = brain.thought_path(q).get("path", [])
     except Exception:
         out["path"] = []
+    # the felt state she computes for THIS prompt — her own mind, no model. This
+    # is what makes the feeling visible: the word for it, the stance, the pacing.
+    try:
+        from . import brain
+        out["feel"] = brain.feel_read(q)
+    except Exception:
+        out["feel"] = {}
     out["route"] = _route(q)
     return out
+
+
+def _feel(q: str) -> dict[str, Any]:
+    """Just the live felt state for a prompt (see brain.feel_read). Local only."""
+    try:
+        from . import brain
+        return brain.feel_read(q)
+    except Exception as e:
+        return {"error": str(e)}
 
 
 # ---- page (self-contained: HTML+CSS+JS in one string) ------------------------
@@ -225,6 +241,10 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import urlparse, parse_qs
             q = parse_qs(urlparse(self.path).query).get("q", [""])[0]
             self._json(200, _thought(q or "what should I focus on today?"))
+        elif self.path.startswith("/api/feel"):
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query).get("q", [""])[0]
+            self._json(200, _feel(q or "how are you"))
         else:
             self._json(404, {"error": "not found"})
 
@@ -1217,6 +1237,22 @@ function stepPulses(now, dt){
 
 /* ---------- the thought (thinks) --------------------------------------------- */
 let thought = null;   // {t, recall:[node], path:[chipId], route, fired:{}}
+/* a tiny felt-state meter: valence (cool←→warm) + arousal (calm←→lit), drawn
+   with blocks so it reads at a glance — the feeling made visible, honestly. */
+function feelBar(valence, arousal){
+  const cells = 9, mid = (cells - 1) / 2;
+  const vpos = Math.round(mid + (valence || 0) * mid);   // 0..8, center = neutral
+  let bar = "";
+  for (let i = 0; i < cells; i++){
+    if (i === vpos) bar += '<span style="color:#f7b">◆</span>';
+    else if (i === mid) bar += '<span style="color:#556">|</span>';
+    else bar += '<span style="color:#334">·</span>';
+  }
+  const a = Math.round((arousal || 0) * 100);
+  return '<span style="letter-spacing:2px">' + bar + '</span>'
+    + ' <span style="color:#8f96a6;font-size:9px">heavy · glad &nbsp; energy ' + a + '%</span>';
+}
+
 async function think(q){
   const A = document.getElementById("answer"); A.style.display = "none";
   let d; try{ d = await j("/api/thought?q=" + encodeURIComponent(q)); }catch(_){ return; }
@@ -1226,19 +1262,26 @@ async function think(q){
     if (n) recall.push(n);
   });
   const path = (d.path || []).filter(id => chips.find(c => c.id === id));
+  // her felt state for THIS prompt — computed by her own mind (no model)
+  const feel = d.feel || {};
   // the plain-words stages (the isometric-pipeline idea, told in captions):
-  // timed to the REAL events — recall flashes, then the answer forms
+  // timed to the REAL events — recall flashes, feeling reads, answer forms
   const model = (d.route || {}).model;
+  const feltStage = feel.label
+    ? { at: 0.55 + 0.25, label: "feeling — " + feel.label
+          + (feel.posture ? ", " + feel.posture : "") }
+    : null;
   const stages = [
     { at: 0.0, label: "heard you" },
     { at: 0.55, label: recall.length
         ? "remembering — " + recall.length + (recall.length === 1 ? " memory surfaces" : " memories surface")
         : "nothing familiar — thinking fresh" },
+    ...(feltStage ? [feltStage] : []),
     { at: 0.6 + recall.length * 0.35 + 0.3, label: "connecting what she knows" },
     { at: 0.6 + recall.length * 0.35 + 0.3 + path.length * 0.4,
       label: "choosing words" + (model ? " — " + model : "") },
   ];
-  thought = { t: 0, recall, path, route: d.route || {}, fired: {}, stages };
+  thought = { t: 0, recall, path, route: d.route || {}, feel, fired: {}, stages };
   // the prompt enters: a stream from the ask bar up into the cloud
   const start = toWorld(W/2, H - 84);
   spawnStream(start, {x: 0, y: cloudR() * 0.4}, { n: 70, color: [126,200,255], spread: 90, stagger: 0.8 });
@@ -1379,13 +1422,32 @@ function stepThought(dt){
                 (T.recall.length === 1 ? " memory" : " memories"), 6000);
       setTimeout(() => { document.getElementById("stages").style.display = "none"; }, 2500);
     }
-    const A = document.getElementById("answer"), r = T.route || {};
-    if (r.model){ A.innerHTML = '<div class="t">how she answers</div>'
+    const A = document.getElementById("answer"), r = T.route || {}, f = T.feel || {};
+    let html = "";
+    // how she FEELS — her own mind (no model). The visible payoff.
+    if (f.label){
+      const v = (f.valence >= 0 ? "+" : "") + f.valence;
+      const bar = feelBar(f.valence, f.arousal);
+      const dl = f.delivery || {};
+      html += '<div class="t" style="color:#f0a">how she feels</div>'
+        + '<div class="row">felt <span class="kv" style="color:#f7b">' + f.label + '</span>'
+        + '  <span style="color:#8f96a6">v ' + v + ' · a ' + f.arousal + '</span></div>'
+        + '<div class="row">' + bar + '</div>'
+        + '<div class="row">stance <span class="kv" style="color:#f7b">' + (f.stance || "—") + '</span></div>';
+      if (dl.speed !== undefined){
+        const warm = Math.round((dl.warmth || 0.5) * 100);
+        html += '<div class="row">voice <span class="kv">' + dl.speed + '×</span>'
+          + ' <span style="color:#8f96a6">pace · ' + warm + '% warmth</span></div>';
+      }
+      html += '<div class="row" style="margin:6px 0 4px;height:1px;background:rgba(170,190,230,.18)"></div>';
+    }
+    if (r.model){ html += '<div class="t">how she answers</div>'
       + '<div class="row">model <span class="kv">' + r.model + '</span></div>'
       + '<div class="row">rule <span class="kv">' + (r.rule || "—") + '</span></div>'
       + '<div class="row">complexity ' + (r.complexity || "—") + ' · risk ' + (r.risk || "—") + '</div>'
       + '<div class="row" style="margin-top:5px;color:#8f96a6">routed locally — nothing left this machine</div>';
-      A.style.display = "block"; }
+    }
+    if (html){ A.innerHTML = html; A.style.display = "block"; }
     thought = null;
   }
 }
@@ -1925,6 +1987,7 @@ __LOG__
   ├─ /api/landscape               <i>every memory, typed and related</i>
   ├─ /api/brain                   <i>faculties + real wiring</i>
   ├─ /api/thought?q=              <i>what a thought would really touch</i>
+  ├─ /api/feel?q=                 <i>how she feels + the stance + voice pacing (her own mind, no model)</i>
   └─ /api/route?q=                <i>the model the policy picks</i>
 
 <b>the app</b>  Vera (macOS · iOS)     <i>Brain window = this Mind · voice at :7878</i></pre>
