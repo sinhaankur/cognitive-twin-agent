@@ -190,6 +190,17 @@ class Agent:
                     parts.append(m)
             except Exception:
                 pass
+            # the limbic + frontal read of THIS message: Vera's own felt state and
+            # the stance she takes, decided by her own deterministic logic (not the
+            # model). The model writes within it — this is what makes her feel like
+            # a mind, not a context-follower. Works with or without a model.
+            try:
+                from .. import feel as _feel
+                d = _feel.directive(user_input)
+                if d:
+                    parts.append(d)
+            except Exception:
+                pass
             # Recall memories relevant to *this* message (falls back to the
             # standing habit summary when nothing specific matches). This is what
             # makes the twin feel like it remembers you, not just your stats.
