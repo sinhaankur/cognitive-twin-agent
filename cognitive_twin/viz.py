@@ -166,6 +166,26 @@ def _feel(q: str) -> dict[str, Any]:
         return {"error": str(e)}
 
 
+def _tone_get() -> dict[str, Any]:
+    """Your current tone dial (tone.py) — the human's control over her delivery."""
+    try:
+        from . import tone
+        t = tone.get()
+        return {"bluntness": t.bluntness, "warmth": t.warmth, "default": t.is_default}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _tone_set(bluntness: float | None, warmth: float | None) -> dict[str, Any]:
+    """Set the dial (explicit user action). Never called automatically."""
+    try:
+        from . import tone
+        t = tone.set(bluntness=bluntness, warmth=warmth)
+        return {"bluntness": t.bluntness, "warmth": t.warmth, "default": t.is_default}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ---- page (self-contained: HTML+CSS+JS in one string) ------------------------
 def _git(args: list[str]) -> str:
     """Ask the repo itself — the changelog and version are real history, not
@@ -245,6 +265,18 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import urlparse, parse_qs
             q = parse_qs(urlparse(self.path).query).get("q", [""])[0]
             self._json(200, _feel(q or "how are you"))
+        elif self.path.startswith("/api/tone/set"):
+            from urllib.parse import urlparse, parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            def _f(k):
+                v = qs.get(k, [None])[0]
+                try:
+                    return float(v) if v is not None else None
+                except ValueError:
+                    return None
+            self._json(200, _tone_set(_f("bluntness"), _f("warmth")))
+        elif self.path.startswith("/api/tone"):
+            self._json(200, _tone_get())
         else:
             self._json(404, {"error": "not found"})
 
@@ -372,6 +404,26 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
     transition:height .5s ease}
   #feel .fvlab{display:flex;justify-content:space-between;font-size:8.5px;
     letter-spacing:.06em;text-transform:uppercase;color:rgba(150,160,180,.6);margin-top:5px}
+  /* YOUR dial — the human's control over her delivery (never automatic). Two
+     sliders themed in the felt hue; a quiet 'your dial' header sets them apart
+     from her own read above. */
+  #feel .fdial{margin-top:10px;padding-top:9px;border-top:1px solid rgba(170,190,230,.12)}
+  #feel .fdh{display:flex;justify-content:space-between;align-items:center;
+    font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:rgba(160,170,190,.7);margin-bottom:8px}
+  #feel .fdh a{color:rgba(150,175,220,.7);text-decoration:none;text-transform:none;
+    letter-spacing:.04em;cursor:pointer;pointer-events:auto}
+  #feel .fdh a:hover{color:#bfe3ff}
+  #feel .drow{margin:7px 0}
+  #feel .drow .dlab{display:flex;justify-content:space-between;font-size:8.5px;
+    letter-spacing:.06em;text-transform:uppercase;color:rgba(150,160,180,.65);margin-bottom:3px}
+  #feel input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;
+    background:rgba(170,190,230,.18);border-radius:3px;outline:none;pointer-events:auto;cursor:pointer}
+  #feel input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:13px;height:13px;border-radius:50%;background:var(--fc,#cfd);
+    box-shadow:0 0 8px var(--fc,transparent);border:1.5px solid rgba(255,255,255,.6);cursor:grab}
+  #feel input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;
+    background:var(--fc,#cfd);border:1.5px solid rgba(255,255,255,.6);cursor:grab}
   #feel .forigin{font-size:8.5px;letter-spacing:.05em;color:rgba(140,150,170,.55);
     margin-top:9px;padding-top:8px;border-top:1px solid rgba(170,190,230,.1);line-height:1.4}
   #axes{bottom:42px;right:18px;color:rgba(190,200,220,.75);font-size:9.5px;text-transform:uppercase}
@@ -414,8 +466,19 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
     </div>
     <div class="fvoice" id="fvoice"></div>
     <div class="fvlab"><span id="fpace">pace</span><span id="fwarm">warmth</span></div>
-    <div class="forigin">computed on-device — no model, no network. the words come
-      after; the <b>feeling</b> is hers.</div>
+    <div class="fdial">
+      <div class="fdh"><span>your dial</span><a id="dreset">reset to her own</a></div>
+      <div class="drow">
+        <div class="dlab"><span>gentle</span><span>blunt</span></div>
+        <input type="range" id="dblunt" min="-1" max="1" step="0.1" value="0">
+      </div>
+      <div class="drow">
+        <div class="dlab"><span>reserved</span><span>warm</span></div>
+        <input type="range" id="dwarm" min="-1" max="1" step="0.1" value="0">
+      </div>
+    </div>
+    <div class="forigin">the feeling is <b>hers</b> — computed on-device, no model.
+      the dial is <b>yours</b>: it never moves on its own.</div>
   </div>
 </div>
 <div class="hud" id="answer"></div>
@@ -1368,7 +1431,40 @@ function layoutRightHud(){
   ans.style.top = (shown ? (56 + feel.offsetHeight + 12) : 56) + "px";
 }
 
+/* ---------- YOUR dial — control how she delivers (explicit, never automatic) -- */
+let lastFeelQ = "(resting)";           // re-read the same prompt after a dial change
+let dialTimer = null;
+async function loadTone(){
+  try{
+    const t = await j("/api/tone");
+    document.getElementById("dblunt").value = t.bluntness || 0;
+    document.getElementById("dwarm").value = t.warmth || 0;
+  }catch(_){}
+}
+async function applyDial(){
+  const b = document.getElementById("dblunt").value;
+  const w = document.getElementById("dwarm").value;
+  try{
+    await j("/api/tone/set?bluntness=" + b + "&warmth=" + w);
+    // re-read her felt state under the new dial so the change is VISIBLE at once
+    renderFeel(await j("/api/feel?q=" + encodeURIComponent(lastFeelQ)));
+    setStatus("your dial set — she'll deliver that way", 2600);
+  }catch(_){}
+}
+function wireDial(){
+  const onSlide = () => { clearTimeout(dialTimer); dialTimer = setTimeout(applyDial, 180); };
+  document.getElementById("dblunt").addEventListener("input", onSlide);
+  document.getElementById("dwarm").addEventListener("input", onSlide);
+  document.getElementById("dreset").addEventListener("click", async () => {
+    document.getElementById("dblunt").value = 0;
+    document.getElementById("dwarm").value = 0;
+    await applyDial();
+    setStatus("dial reset — back to her own read", 2400);
+  });
+}
+
 async function think(q){
+  lastFeelQ = q;   // so a later dial change re-reads THIS prompt's feeling
   const A = document.getElementById("answer"); A.style.display = "none";
   let d; try{ d = await j("/api/thought?q=" + encodeURIComponent(q)); }catch(_){ return; }
   const recall = [];
@@ -1665,7 +1761,8 @@ async function loadAll(){
    present from the first frame (calm/steady by default), then a question moves
    it. This is the honest baseline, not a placeholder. */
 async function showBaselineFeel(){
-  try{ renderFeel(await j("/api/feel?q=" + encodeURIComponent("(resting)"))); }
+  lastFeelQ = "(resting)";
+  try{ renderFeel(await j("/api/feel?q=" + encodeURIComponent(lastFeelQ))); }
   catch(_){}
 }
 function resize(){
@@ -1682,10 +1779,12 @@ function resize(){
 window.addEventListener("resize", resize);
 resize();
 setInterval(loadAll, 12000);
+wireDial();
 loadAll().then(() => {
   reveal();
   // her resting felt state, shown once she's landed (after the approach flight),
   // so the panel is always present — a mind always feels something
+  loadTone();
   setTimeout(showBaselineFeel, 4200);
   // ?demo=1 — auto-run one visible thought (handy for demos + screenshots)
   if (location.search.indexOf("demo") >= 0)

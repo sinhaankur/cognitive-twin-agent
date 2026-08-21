@@ -72,8 +72,22 @@ def _label(valence: float) -> str:
     return "heavy"
 
 
-def read(text: str) -> Felt:
-    """Read the felt state + choose a stance from what the user said. Pure logic."""
+def _tone():
+    """Your dial (tone.py), read fresh each turn. Fail-soft to neutral so feel
+    never breaks if the store is missing."""
+    try:
+        from . import tone
+        return tone.get()
+    except Exception:
+        return None
+
+
+def read(text: str, *, apply_tone: bool = True) -> Felt:
+    """Read the felt state + choose a stance from what the user said. Pure logic.
+
+    If you've set a tone dial (tone.py), it nudges the stance here — YOUR explicit
+    control over how blunt/gentle she is, layered on top of her own read. Pass
+    ``apply_tone=False`` to see her unbiased read (the UI uses this for 'her own')."""
     words = re.findall(r"[a-z']+", text.lower())
     vals = ars = 0.0
     hits = 0
@@ -111,6 +125,17 @@ def read(text: str) -> Felt:
     else:
         lead = "engage"
 
+    # YOUR dial overrides the posture: strong bluntness sharpens to 'direct'
+    # (or 'blunt' at the extreme); strong gentleness softens to 'gentle'. Only
+    # when you've actually set it — otherwise her own read stands.
+    if apply_tone:
+        t = _tone()
+        if t and not t.is_default:
+            if t.bluntness >= 0.55:
+                posture = "blunt" if t.bluntness >= 0.85 else "direct"
+            elif t.bluntness <= -0.55:
+                posture = "gentle"
+
     return Felt(valence=round(valence, 3), arousal=round(arousal, 3),
                 label=label, stance=f"{posture}/{lead}")
 
@@ -119,7 +144,10 @@ def delivery(text: str) -> dict[str, float]:
     """Cerebellum: turn the felt state into VOICE delivery params (speed, warmth,
     pause) so the actual voice slows + warms in a hard moment and brightens in a
     glad one. Pure math, no model — this is emotion finally reaching the voice.
-    Mirrors the Human Brain Engine's MotorEngine so the two stay consistent."""
+    Mirrors the Human Brain Engine's MotorEngine so the two stay consistent.
+
+    YOUR tone dial (tone.py) shifts warmth (and, via bluntness, pace) — the human
+    holds the last knob on how she sounds."""
     f = read(text)
     speed, warmth, pause = 0.97, 0.5, 0.3
     speed += (f.arousal - 0.4) * 0.12          # arousal quickens
@@ -129,7 +157,17 @@ def delivery(text: str) -> dict[str, float]:
     elif f.is_light:
         warmth = 0.65
     warmth = min(1.0, warmth + abs(f.valence) * 0.15)
-    speed = round(max(0.88, min(1.06, speed)), 3)
+
+    # your dial: warmth axis shifts warmth directly; bluntness clips pace/pause
+    # (blunter = a touch quicker, less lingering; gentler = slower, warmer)
+    t = _tone()
+    if t and not t.is_default:
+        warmth = max(0.0, min(1.0, warmth + t.warmth * 0.35))
+        speed = speed + t.bluntness * 0.04
+        if t.bluntness > 0:
+            pause = max(0.15, pause - t.bluntness * 0.15)
+
+    speed = round(max(0.85, min(1.08, speed)), 3)
     return {"speed": speed, "warmth": round(warmth, 2), "pause": round(pause, 2)}
 
 
@@ -140,12 +178,14 @@ def directive(text: str) -> str:
     felt = read(text)
     posture, _, lead = felt.stance.partition("/")
 
-    tone = {
+    posture_line = {
         "gentle": "Be gentle and unhurried. Meet the weight of it; listen before "
                   "fixing. Warmth over cleverness.",
         "playful": "Match their up energy — a little light and quick, still real.",
         "direct": "Be clear and warm — a real point of view, not hedging.",
-    }[posture]
+        "blunt": "Be blunt and economical. Say the true thing plainly, skip the "
+                 "cushioning — they've asked you to cut to it.",
+    }.get(posture, "Be clear and warm — a real point of view, not hedging.")
     move = {
         "recommend": "They're deciding something: give an actual recommendation "
                      "('I'd do X because Y'), not a menu of options.",
@@ -154,12 +194,30 @@ def directive(text: str) -> str:
         "engage": "Engage naturally and move it forward.",
     }[lead]
 
+    # your dial, if set, is an explicit instruction from the human — honour it
+    dial = ""
+    t = _tone()
+    if t and not t.is_default:
+        bits = []
+        if t.bluntness >= 0.55:
+            bits.append("be blunter than usual")
+        elif t.bluntness <= -0.55:
+            bits.append("be gentler than usual")
+        if t.warmth >= 0.55:
+            bits.append("be warmer")
+        elif t.warmth <= -0.55:
+            bits.append("be more reserved")
+        if bits:
+            dial = "\nThe user has set your tone: " + ", ".join(bits) + ". Honour it."
+
     # stay quiet for genuinely flat, neutral turns (don't manufacture emotion)
-    if felt.label == "steady" and lead == "engage":
+    # — UNLESS the user set a dial, which is an explicit instruction to carry.
+    if felt.label == "steady" and lead == "engage" and not dial:
         return ""
 
     return (
         "# HOW YOU FEEL RIGHT NOW (decided by your own mind, not the model)\n"
-        f"Felt state: {felt.label} (valence {felt.valence:+.2f}). {tone} {move}\n"
+        f"Felt state: {felt.label} (valence {felt.valence:+.2f}). {posture_line} {move}"
+        f"{dial}\n"
         "This feeling is yours — let it colour the words. Never announce it; live it."
     )
