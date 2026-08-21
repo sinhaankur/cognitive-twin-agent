@@ -129,6 +129,20 @@ class Agent:
         # editable persona profile (who they are) + a private summary of how they
         # actually behave. Together: the twin reasons + speaks as this person.
         parts = [self.persona]
+        # Tool-use directive — small models otherwise answer facts from thin air
+        # (e.g. "you have no projects" when list_projects would return 15). Make it
+        # explicit: for anything about the user's real state, CALL the tool first,
+        # never guess or say you don't know when a tool can tell you.
+        parts.append(
+            "# USING YOUR TOOLS\n"
+            "You have tools that read the user's real, on-device data. When a "
+            "question is about their PROJECTS, tasks, day, files, screen, or "
+            "anything a tool can answer, CALL the tool first — do not answer from "
+            "memory and never say they have nothing when a tool would show "
+            "otherwise. Examples: 'my projects / what am I building' → list_projects; "
+            "'what should I focus on / think across my work' → think_routes; "
+            "'my day / tasks' → my_day. Ground every factual claim in a tool result."
+        )
         if self.use_memory:
             who = _persona.to_prompt()
             if who:
@@ -208,7 +222,11 @@ class Agent:
             ChatMessage(role="system", content=system_content),
             ChatMessage(role="user", content=user_input),
         ]
-        tools = self.registry.tool_specs()
+        # Local models choke when handed all ~60 tools at once — they get
+        # decision paralysis and call NOTHING (the "you have no projects" bug even
+        # though list_projects works). Send only the tools RELEVANT to this
+        # message. This makes tool-calling reliable and keeps each turn light.
+        tools = _relevant_tools(self.registry.tool_specs(), user_input)
         used: list[tuple[str, dict[str, Any]]] = []
 
         for step in range(1, self.max_steps + 1):
@@ -248,6 +266,42 @@ class Agent:
         answer = (last.content.strip() if last and last.content else
                   "[stopped] reached the step limit before finishing.")
         return AgentResult(answer=answer, steps=self.max_steps, tool_calls=used, route=decision)
+
+
+import re as _re
+
+# A few tools worth offering on almost any turn (cheap, broadly useful) so the
+# model always has a sensible fallback even when scoring finds little.
+_ALWAYS = {"now", "list_projects", "my_day", "web_search"}
+_MAX_TOOLS = 12  # a focused set — enough to be useful, small enough to choose from
+
+
+def _relevant_tools(specs: list[dict[str, Any]], query: str) -> list[dict[str, Any]]:
+    """Return the tools most relevant to `query` (by word overlap with each tool's
+    name + description), capped to a small set. Local models pick reliably from a
+    handful but freeze when given dozens. Always includes a few staples."""
+    if len(specs) <= _MAX_TOOLS:
+        return specs
+    words = set(_re.findall(r"[a-z]{3,}", query.lower()))
+    scored: list[tuple[int, dict[str, Any]]] = []
+    for s in specs:
+        fn = s.get("function", {})
+        name = fn.get("name", "")
+        hay = (name + " " + fn.get("description", "")).lower()
+        # score: query-word hits in the tool's text, +bump for a staple
+        score = sum(1 for w in words if w in hay)
+        if name in _ALWAYS:
+            score += 1
+        scored.append((score, s))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    top = [s for score, s in scored if score > 0][:_MAX_TOOLS]
+    # guarantee the staples are present even if they scored 0
+    have = {t.get("function", {}).get("name") for t in top}
+    for s in specs:
+        n = s.get("function", {}).get("name")
+        if n in _ALWAYS and n not in have and len(top) < _MAX_TOOLS:
+            top.append(s); have.add(n)
+    return top or specs[:_MAX_TOOLS]
 
 
 def _parse_tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
