@@ -115,6 +115,24 @@ def read(text: str) -> Felt:
                 label=label, stance=f"{posture}/{lead}")
 
 
+def delivery(text: str) -> dict[str, float]:
+    """Cerebellum: turn the felt state into VOICE delivery params (speed, warmth,
+    pause) so the actual voice slows + warms in a hard moment and brightens in a
+    glad one. Pure math, no model — this is emotion finally reaching the voice.
+    Mirrors the Human Brain Engine's MotorEngine so the two stay consistent."""
+    f = read(text)
+    speed, warmth, pause = 0.97, 0.5, 0.3
+    speed += (f.arousal - 0.4) * 0.12          # arousal quickens
+    if f.is_heavy:
+        speed -= 0.05                          # slow down, let it breathe
+        warmth, pause = 0.85, 0.6
+    elif f.is_light:
+        warmth = 0.65
+    warmth = min(1.0, warmth + abs(f.valence) * 0.15)
+    speed = round(max(0.88, min(1.06, speed)), 3)
+    return {"speed": speed, "warmth": round(warmth, 2), "pause": round(pause, 2)}
+
+
 def directive(text: str) -> str:
     """A short system-prompt block that hands the model Vera's felt state + stance.
     The model only writes WITHIN this; the feeling itself is decided here, not by

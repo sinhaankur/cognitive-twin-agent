@@ -45,3 +45,41 @@ def test_directive_is_deterministic_offline():
     a = feel.directive("I'm proud of what we built")
     b = feel.directive("I'm proud of what we built")
     assert a == b
+
+
+# -- cerebellum: felt state reaches the VOICE ------------------------------
+def test_delivery_slows_and_warms_when_heavy():
+    d = feel.delivery("I feel exhausted and everything is hard")
+    assert d["speed"] <= 0.95        # slower — let it breathe
+    assert d["warmth"] >= 0.85       # warmer for a hard moment
+    assert d["pause"] >= 0.5
+
+
+def test_delivery_brightens_when_glad():
+    d = feel.delivery("we finally shipped it, so excited!")
+    assert d["speed"] >= 1.0         # a touch quicker/brighter
+    assert d["warmth"] > 0.5
+
+
+def test_delivery_neutral_matches_baseline():
+    d = feel.delivery("what is the date")
+    assert d["warmth"] == 0.5        # no manufactured warmth on a flat turn
+    assert 0.9 <= d["speed"] <= 1.0
+
+
+def test_xtts_gen_kwargs_merges_delivery():
+    # the synthesis worker must turn a delivery cue into real XTTS knobs
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location(
+        "_xtts_say",
+        Path(__file__).resolve().parents[1] / "cognitive_twin" / "_xtts_say.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    base = mod._gen_kwargs(None)
+    assert base == mod.GEN_KWARGS                 # no cue → tuned base, unchanged
+
+    heavy = mod._gen_kwargs({"speed": 0.91, "warmth": 0.9})
+    assert heavy["speed"] == 0.91                 # slower delivery applied
+    assert heavy["temperature"] > base["temperature"]  # warmer = more prosodic life

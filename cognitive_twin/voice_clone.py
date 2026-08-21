@@ -192,9 +192,13 @@ def is_ready() -> bool:
 
 
 # --- synthesis ----------------------------------------------------------------
-def synthesize(text: str) -> Path | None:
+def synthesize(text: str, delivery: dict | None = None) -> Path | None:
     """Render `text` in the cloned voice to a wav file; return its path, or None
-    if not ready (caller should fall back to the built-in voice)."""
+    if not ready (caller should fall back to the built-in voice).
+
+    `delivery` is an optional per-utterance cue from the brain's cerebellum
+    (feel.delivery → {speed, warmth}) so the voice matches the felt state. XTTS
+    only; F5 ignores it."""
     if not text.strip() or not is_ready():
         return None
     engine = detect_engine()
@@ -211,6 +215,8 @@ def synthesize(text: str) -> Path | None:
         # next to this module so the venv python can run it.
         worker = Path(__file__).resolve().parent / "_xtts_say.py"
         cmd = [py, str(worker), text, ref_arg, str(out)]
+        if delivery:
+            cmd.append(json.dumps(delivery))
     else:  # f5
         code = (
             "import sys;from f5_tts.api import F5TTS;"
@@ -261,22 +267,26 @@ def _ensure_worker():
     return _worker
 
 
-def synthesize_fast(text: str) -> Path | None:
-    """Render via the warm worker if possible; else fall back to one-shot."""
+def synthesize_fast(text: str, delivery: dict | None = None) -> Path | None:
+    """Render via the warm worker if possible; else fall back to one-shot.
+    `delivery` = the cerebellum's per-utterance voice cue (see `synthesize`)."""
     if not text.strip() or not is_ready():
         return None
     w = _ensure_worker()
     out = _voice_dir() / OUT
     if w is not None and w.poll() is None:
         try:
-            w.stdin.write(json.dumps({"text": text, "out": str(out)}) + "\n")
+            req = {"text": text, "out": str(out)}
+            if delivery:
+                req["delivery"] = delivery
+            w.stdin.write(json.dumps(req) + "\n")
             w.stdin.flush()
             resp = json.loads(w.stdout.readline() or "{}")
             if resp.get("ok") and out.is_file():
                 return out
         except (OSError, ValueError):
             pass
-    return synthesize(text)  # cold fallback
+    return synthesize(text, delivery)  # cold fallback
 
 
 # barge-in bookkeeping: the live afplay process, plus generation counters so a
@@ -287,14 +297,24 @@ _speak_gen = 0
 _stop_gen = -1
 
 
-def speak(text: str) -> bool:
+def speak(text: str, delivery: dict | None = None) -> bool:
     """Render in the cloned voice and play it. Returns True if it played (or
     was deliberately silenced by a barge-in); False means the caller should
-    fall back to the built-in voice."""
+    fall back to the built-in voice.
+
+    If `delivery` is not given, it's computed from the text's felt state
+    (feel.delivery) so the voice matches the feeling by default — the cerebellum
+    always coordinates delivery, even when the caller doesn't think to."""
     global _play_proc, _speak_gen
     _speak_gen += 1
     gen = _speak_gen
-    out = synthesize_fast(text)
+    if delivery is None:
+        try:
+            from . import feel as _feel
+            delivery = _feel.delivery(text)
+        except Exception:
+            delivery = None
+    out = synthesize_fast(text, delivery)
     if out is None:
         return False
     if _stop_gen >= gen:

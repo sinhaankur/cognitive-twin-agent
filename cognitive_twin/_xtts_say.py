@@ -70,11 +70,33 @@ def _refs(speaker_wav):
     return parts if len(parts) > 1 else (parts[0] if parts else speaker_wav)
 
 
-def _render(tts, text, speaker_wav, out_wav, lang=None):
+def _gen_kwargs(delivery=None):
+    """Base synthesis knobs, optionally modulated by a per-utterance delivery cue
+    from the brain's cerebellum (feel/emotion → voice). `delivery` may carry:
+      speed  — absolute speaking rate (~0.88..1.06); overrides the base
+      warmth — 0..1; higher = a touch more prosodic life (nudges temperature)
+    Missing keys fall back to the tuned base — a hard moment slows + warms, a
+    glad one brightens, and a neutral turn sounds exactly as before."""
+    kw = dict(GEN_KWARGS)
+    if not delivery:
+        return kw
+    try:
+        if delivery.get("speed") is not None:
+            kw["speed"] = max(0.85, min(1.10, float(delivery["speed"])))
+        warmth = delivery.get("warmth")
+        if warmth is not None:
+            # warmth 0.5 = neutral; map to a small temperature bump for life
+            kw["temperature"] = max(0.6, min(0.95, 0.80 + (float(warmth) - 0.5) * 0.3))
+    except (TypeError, ValueError):
+        pass
+    return kw
+
+
+def _render(tts, text, speaker_wav, out_wav, lang=None, delivery=None):
     speaker_wav = _refs(speaker_wav)
     language = lang or _detect_language(text)
     tts.tts_to_file(text=text, speaker_wav=speaker_wav, file_path=out_wav,
-                    language=language, **GEN_KWARGS)
+                    language=language, **_gen_kwargs(delivery))
 
 
 def main():
@@ -89,16 +111,23 @@ def main():
                 continue
             try:
                 req = json.loads(line)
-                _render(tts, req["text"], speaker, req["out"])
+                _render(tts, req["text"], speaker, req["out"],
+                        delivery=req.get("delivery"))
                 print(json.dumps({"ok": True, "out": req["out"]}), flush=True)
             except Exception as e:  # never kill the worker on one bad line
                 print(json.dumps({"ok": False, "error": str(e)}), flush=True)
         return
 
-    # one-shot
+    # one-shot; optional 4th arg = JSON delivery cue {"speed":..,"warmth":..}
     text, speaker_wav, out_wav = sys.argv[1], sys.argv[2], sys.argv[3]
+    delivery = None
+    if len(sys.argv) >= 5 and sys.argv[4].strip():
+        try:
+            delivery = json.loads(sys.argv[4])
+        except json.JSONDecodeError:
+            delivery = None
     tts = _load()
-    _render(tts, text, speaker_wav, out_wav)
+    _render(tts, text, speaker_wav, out_wav, delivery=delivery)
 
 
 if __name__ == "__main__":
