@@ -49,32 +49,38 @@ def _path() -> Path:
 
 
 def get() -> Tone:
-    """The current dial. Defaults to neutral (Vera's own read) if never set."""
-    p = _path()
-    if p.is_file():
+    """The current dial. Defaults to neutral (Vera's own read) if never set.
+    Read through the security kernel — the dial is personal state, so it lives
+    SEALED on disk (encrypted, owner-only), never plaintext."""
+    try:
+        from . import security
+        data = security.read_state(_path(), default=None)
+    except Exception:
+        data = None
+    if isinstance(data, dict):
         try:
-            data = json.loads(p.read_text(encoding="utf-8"))
             return Tone(bluntness=data.get("bluntness", 0.0),
                         warmth=data.get("warmth", 0.0)).clamp()
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        except (TypeError, ValueError):
             pass
     return Tone()
 
 
 def set(*, bluntness: float | None = None, warmth: float | None = None) -> Tone:
-    """Set the dial (explicit user action). Only the axes you pass change."""
+    """Set the dial (explicit user action). Only the axes you pass change.
+    Persisted via the security kernel (sealed, atomic, owner-only)."""
     t = get()
     if bluntness is not None:
         t.bluntness = float(bluntness)
     if warmth is not None:
         t.warmth = float(warmth)
     t.clamp()
-    p = _path()
     try:
+        from . import security
+        p = _path()
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(asdict(t), indent=2), encoding="utf-8")
-        os.chmod(p, 0o600)
-    except OSError:
+        security.write_state(p, asdict(t))    # sealed — the only way state hits disk
+    except Exception:
         pass
     return t
 

@@ -73,3 +73,18 @@ def test_reset_restores_her_own(tmp_store):
     tmp_store.reset()
     assert feel.read(q).stance == own
     assert tmp_store.get().is_default
+
+
+def test_dial_is_sealed_on_disk_not_plaintext(tmp_store, tmp_path):
+    """SECURITY: the dial is personal state — it must hit disk SEALED (encrypted,
+    owner-only), never as readable JSON. Guards against a kernel-bypass leak."""
+    import os
+    tmp_store.set(bluntness=0.8, warmth=-0.4)
+    f = tmp_path / "tone.json"
+    assert f.is_file()
+    raw = f.read_bytes()
+    assert not raw.lstrip().startswith(b"{")     # not plaintext JSON
+    assert oct(os.stat(f).st_mode)[-3:] == "600"  # owner-only
+    # and it's registered in the kernel's audit surface
+    from cognitive_twin import security
+    assert "tone.json" in security.STATE_STORES
