@@ -138,6 +138,8 @@ STATE_STORES = [
     "rhythms.json",
     "soul.json",
     "persona.json",
+    "tone.json",            # tone.py — your delivery dial (personal preference)
+    "style_profile.json",   # mirror.py — how you speak (learned, personal)
 ]
 LOG_STORES = [
     "activity.jsonl",

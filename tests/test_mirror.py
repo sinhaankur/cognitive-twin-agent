@@ -77,3 +77,18 @@ def test_default_profile_is_neutral_noop(store):
     # never observed → lean is ~0 on every axis (she's fully herself)
     lean = store.lean()
     assert all(abs(lean[k]) < 1e-6 for k in ("energy", "brevity", "formality", "warmth"))
+
+
+def test_style_profile_is_sealed_on_disk(store, tmp_path):
+    """SECURITY: how you speak is personal — the learned profile must be SEALED
+    on disk (encrypted, owner-only), never plaintext. Guards a kernel-bypass leak."""
+    import os
+    for _ in range(3):
+        store.observe("yeah lets go dude, so cool!!")
+    f = tmp_path / "style_profile.json"
+    assert f.is_file()
+    raw = f.read_bytes()
+    assert not raw.lstrip().startswith(b"{")     # not plaintext JSON
+    assert oct(os.stat(f).st_mode)[-3:] == "600"
+    from cognitive_twin import security
+    assert "style_profile.json" in security.STATE_STORES

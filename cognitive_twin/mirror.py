@@ -70,33 +70,38 @@ def _path() -> Path:
 
 
 def profile() -> SpeechStyle:
-    """The learned rolling profile of how you speak (neutral until learned)."""
-    p = _path()
-    if p.is_file():
+    """The learned rolling profile of how you speak (neutral until learned).
+    How you speak is personal — read it through the security kernel (SEALED on
+    disk, encrypted + owner-only), never plaintext."""
+    try:
+        from . import security
+        d = security.read_state(_path(), default=None)
+    except Exception:
+        d = None
+    if isinstance(d, dict):
         try:
-            d = json.loads(p.read_text(encoding="utf-8"))
             return SpeechStyle(**{k: float(v) for k, v in d.items()
                                   if k in SpeechStyle().__dict__})
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        except (TypeError, ValueError):
             pass
     return SpeechStyle()
 
 
 def observe(text: str) -> SpeechStyle:
     """Fold this utterance into the rolling profile (slow) + persist. Called once
-    per real user turn. Returns the updated profile."""
+    per real user turn. Persisted via the security kernel (sealed, atomic)."""
     now = measure(text)
     p, r = profile(), LEARN_RATE
     p.energy = round(p.energy * (1 - r) + now.energy * r, 3)
     p.brevity = round(p.brevity * (1 - r) + now.brevity * r, 3)
     p.formality = round(p.formality * (1 - r) + now.formality * r, 3)
     p.warmth = round(p.warmth * (1 - r) + now.warmth * r, 3)
-    fp = _path()
     try:
+        from . import security
+        fp = _path()
         fp.parent.mkdir(parents=True, exist_ok=True)
-        fp.write_text(json.dumps(asdict(p), indent=2), encoding="utf-8")
-        os.chmod(fp, 0o600)
-    except OSError:
+        security.write_state(fp, asdict(p))   # sealed — no plaintext style on disk
+    except Exception:
         pass
     return p
 
