@@ -266,17 +266,50 @@ class _Handler(BaseHTTPRequestHandler):
             q = parse_qs(urlparse(self.path).query).get("q", [""])[0]
             self._json(200, _feel(q or "how are you"))
         elif self.path.startswith("/api/tone/set"):
+            # a GET must NEVER change state — that's a CSRF hole (any page you
+            # visit could fire <img src=".../api/tone/set?bluntness=1">). Setting
+            # the dial is a POST, same-origin only. Tell the client clearly.
+            self._json(405, {"error": "use POST for /api/tone/set"})
+        elif self.path.startswith("/api/tone"):
+            self._json(200, _tone_get())
+        else:
+            self._json(404, {"error": "not found"})
+
+    # ── the ONE guarded mutation path (kernel discipline for the HTTP surface) ──
+    def _same_origin(self) -> bool:
+        """Reject cross-site writes. A browser always sends Origin/Referer on a
+        cross-origin request and cannot be told to forge them, so requiring them
+        to be absent or our own host blocks CSRF from any other page you visit."""
+        for h in ("Origin", "Referer"):
+            v = self.headers.get(h)
+            if v and f"//{HOST}:" not in v and not v.startswith(f"http://{HOST}"):
+                return False
+        return True
+
+    def do_POST(self) -> None:
+        # every mutation flows through here, and every mutation is same-origin
+        # checked in one place — no per-endpoint CSRF to remember (the same
+        # 'one guarded path' rule the security kernel uses for disk writes).
+        if not self._same_origin():
+            self._json(403, {"error": "cross-site request refused"})
+            return
+        if self.path.startswith("/api/tone/set"):
             from urllib.parse import urlparse, parse_qs
             qs = parse_qs(urlparse(self.path).query)
             def _f(k):
                 v = qs.get(k, [None])[0]
                 try:
                     return float(v) if v is not None else None
-                except ValueError:
+                except (ValueError, TypeError):
                     return None
+            # drain any body so the socket closes cleanly
+            try:
+                n = int(self.headers.get("Content-Length", 0) or 0)
+                if n > 0:
+                    self.rfile.read(min(n, 4096))
+            except (ValueError, OSError):
+                pass
             self._json(200, _tone_set(_f("bluntness"), _f("warmth")))
-        elif self.path.startswith("/api/tone"):
-            self._json(200, _tone_get())
         else:
             self._json(404, {"error": "not found"})
 
@@ -1473,7 +1506,9 @@ async function applyDial(){
   const b = document.getElementById("dblunt").value;
   const w = document.getElementById("dwarm").value;
   try{
-    await j("/api/tone/set?bluntness=" + b + "&warmth=" + w);
+    // POST (not GET) — setting the dial changes state, so it must not be
+    // triggerable by a cross-site <img>/link. Same-origin POST only.
+    await fetch("/api/tone/set?bluntness=" + b + "&warmth=" + w, {method: "POST"});
     // re-read her felt state under the new dial so the change is VISIBLE at once
     renderFeel(await j("/api/feel?q=" + encodeURIComponent(lastFeelQ)));
     setStatus("your dial set — she'll deliver that way", 2600);

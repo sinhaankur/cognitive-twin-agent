@@ -43,7 +43,7 @@ that's the whole contract.
 python3 -m cognitive_twin.security doctor      # "am I safe?" — one verdict
 ```
 
-The doctor runs five checks and prints ✓/✗ for each, then a single verdict:
+The doctor runs six checks and prints ✓/✗ for each, then a single verdict:
 
 1. **Data sealed at rest** — every personal store sealed + owner-only.
 2. **Secrets in Keychain** — no plaintext credentials in the environment.
@@ -52,6 +52,9 @@ The doctor runs five checks and prints ✓/✗ for each, then a single verdict:
    Google OAuth, nothing else. The LLM stays local. Any new/unknown egress is
    flagged for review.
 5. **Git hygiene** — no secret, token, or sealed file is tracked by git.
+6. **Local HTTP surface** — the Mind/Brain viz server binds `127.0.0.1` only
+   (never off-machine), and state-changing endpoints are **POST + same-origin**
+   so no page you visit can change Vera behind your back (CSRF closed).
 
 Finer-grained tools:
 

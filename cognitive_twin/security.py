@@ -324,6 +324,33 @@ def _check_git() -> tuple[bool, str, str]:
     return (True, "Git hygiene", "no secret artifacts (.env, .sealed, tokens) tracked")
 
 
+def _check_local_http() -> tuple[bool, str, str]:
+    """The local viz/Brain server is a segment too — audit it. It must (a) bind
+    to 127.0.0.1 only (never 0.0.0.0), and (b) never mutate state on a GET (that
+    would be CSRF-triggerable by any page you visit). Static check of the source."""
+    pkg = Path(__file__).resolve().parent
+    problems: list[str] = []
+    for name in ("viz.py",):
+        f = pkg / name
+        if not f.is_file():
+            continue
+        try:
+            text = f.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if '"0.0.0.0"' in text or "'0.0.0.0'" in text:
+            problems.append(f"{name}: binds 0.0.0.0 (off-machine reachable)")
+        # a mutation endpoint (/set, /delete, …) reachable from do_GET is a hole
+        gseg = text.split("def do_GET", 1)[-1].split("def do_POST", 1)[0]
+        for verb in ("/set", "/delete", "/reset", "/clear"):
+            if verb in gseg and "405" not in gseg:
+                problems.append(f"{name}: mutation '{verb}' reachable via GET")
+    if problems:
+        return (False, "Local HTTP surface", "; ".join(problems))
+    return (True, "Local HTTP surface",
+            "127.0.0.1 only; mutations are POST + same-origin (no CSRF)")
+
+
 def doctor() -> tuple[bool, list[tuple[bool, str, str]]]:
     checks = [
         _check_at_rest(),
@@ -331,6 +358,7 @@ def doctor() -> tuple[bool, list[tuple[bool, str, str]]]:
         _check_key_binding(),
         _check_egress(),
         _check_git(),
+        _check_local_http(),
     ]
     return (all(ok for ok, _, _ in checks), checks)
 
