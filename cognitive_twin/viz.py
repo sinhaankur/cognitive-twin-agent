@@ -404,6 +404,15 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
     transition:height .5s ease}
   #feel .fvlab{display:flex;justify-content:space-between;font-size:8.5px;
     letter-spacing:.06em;text-transform:uppercase;color:rgba(150,160,180,.6);margin-top:5px}
+  /* speech accommodation — a quiet line showing she's leaning toward how you
+     talk (bounded; she stays herself). Only shows once she's learned something. */
+  #feel .fmirror{margin-top:9px;font-size:8.5px;letter-spacing:.05em;
+    color:rgba(150,160,180,.7);line-height:1.5;display:none}
+  #feel .fmirror b{color:var(--fc,#cfd);font-weight:600}
+  #feel .fmirror .fmbar{display:inline-block;height:3px;width:34px;vertical-align:middle;
+    background:rgba(170,190,230,.18);border-radius:3px;position:relative;margin:0 5px}
+  #feel .fmirror .fmfill{position:absolute;left:0;top:0;bottom:0;border-radius:3px;
+    background:var(--fc,#cfd);opacity:.8}
   /* YOUR dial — the human's control over her delivery (never automatic). Two
      sliders themed in the felt hue; a quiet 'your dial' header sets them apart
      from her own read above. */
@@ -466,6 +475,7 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
     </div>
     <div class="fvoice" id="fvoice"></div>
     <div class="fvlab"><span id="fpace">pace</span><span id="fwarm">warmth</span></div>
+    <div class="fmirror" id="fmirror"></div>
     <div class="fdial">
       <div class="fdh"><span>your dial</span><a id="dreset">reset to her own</a></div>
       <div class="drow">
@@ -1421,6 +1431,24 @@ function renderFeel(f){
   document.getElementById("fpace").textContent =
     (pace < 0.95 ? "slower" : pace > 1.0 ? "brighter" : "steady") + " · " + pace + "×";
   document.getElementById("fwarm").textContent = Math.round(warm*100) + "% warmth";
+  // speech accommodation — a quiet line: she's leaning toward how you talk (bounded)
+  const M = document.getElementById("fmirror"), mir = f.mirror;
+  if (mir && mir.lean){
+    const L = mir.lean, amt = Math.round((L.amount || 0.3) * 100);
+    // strongest axis she's leaning on, in plain words
+    const axes = [["energy","livelier","calmer"],["brevity","shorter","fuller"],
+                  ["formality","more formal","more casual"],["warmth","warmer","cooler"]];
+    let best = null, bv = 0.08;
+    axes.forEach(([k,hi,lo]) => { const v = L[k]||0;
+      if (Math.abs(v) > Math.abs(bv)){ bv = v; best = v>0?hi:lo; } });
+    const fillPct = Math.min(100, amt / 0.5 * 100);   // 0.5 = the hard floor
+    M.innerHTML = "adapting to how you speak "
+      + '<span class="fmbar"><span class="fmfill" style="width:' + fillPct + '%"></span></span> '
+      + '<b>' + amt + '%</b> you'
+      + (best ? " · leaning <b>" + best + "</b>" : "")
+      + '<br><span style="opacity:.7">…but she stays herself — the floor holds at 50%.</span>';
+    M.style.display = "block";
+  } else { M.style.display = "none"; }
   P.style.display = "block";
   layoutRightHud();
 }

@@ -190,10 +190,20 @@ class Agent:
                     parts.append(m)
             except Exception:
                 pass
+            # speech accommodation: learn how YOU speak (rolling, on-device) so her
+            # delivery + wording can lean toward you — only on real user turns
+            # (record), never her own internal prompts. Bounded; she stays herself.
+            if record:
+                try:
+                    from .. import mirror as _mirror
+                    _mirror.observe(user_input)
+                except Exception:
+                    pass
             # the limbic + frontal read of THIS message: Vera's own felt state and
             # the stance she takes, decided by her own deterministic logic (not the
             # model). The model writes within it — this is what makes her feel like
             # a mind, not a context-follower. Works with or without a model.
+            # (feel.directive reads the mirror lean too — voice + wording adapt.)
             try:
                 from .. import feel as _feel
                 d = _feel.directive(user_input)
