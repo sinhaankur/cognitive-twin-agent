@@ -149,7 +149,7 @@ def feel_read(prompt: str) -> dict[str, Any]:
         f = feel.read(prompt)
         d = feel.delivery(prompt)
         posture, _, lead = f.stance.partition("/")
-        return {
+        out = {
             "label": f.label,
             "valence": f.valence,
             "arousal": f.arousal,
@@ -160,6 +160,19 @@ def feel_read(prompt: str) -> dict[str, Any]:
             "is_heavy": f.is_heavy,
             "delivery": d,
         }
+        # speech accommodation: how she's learned to lean toward your style, and
+        # her current read of it — so the mirroring is visible, not hidden.
+        try:
+            from . import mirror
+            p = mirror.profile()
+            out["mirror"] = {
+                "profile": {"energy": p.energy, "brevity": p.brevity,
+                            "formality": p.formality, "warmth": p.warmth},
+                "lean": mirror.lean(),
+            }
+        except Exception:
+            pass
+        return out
     except Exception as e:
         return {"error": str(e)}
 

@@ -82,6 +82,16 @@ def _tone():
         return None
 
 
+def _mirror_lean():
+    """Speech-accommodation lean (mirror.py): how her delivery/wording leans
+    toward how you speak, bounded by the identity floor. Fail-soft to None."""
+    try:
+        from . import mirror
+        return mirror.lean()
+    except Exception:
+        return None
+
+
 def read(text: str, *, apply_tone: bool = True) -> Felt:
     """Read the felt state + choose a stance from what the user said. Pure logic.
 
@@ -158,6 +168,14 @@ def delivery(text: str) -> dict[str, float]:
         warmth = 0.65
     warmth = min(1.0, warmth + abs(f.valence) * 0.15)
 
+    # speech accommodation: lean the voice toward how you speak (energy → pace,
+    # warmth → warmth), bounded so she stays herself. Applied before your dial so
+    # your explicit control still has the last word.
+    ml = _mirror_lean()
+    if ml:
+        speed += ml.get("energy", 0.0) * 0.06
+        warmth = max(0.0, min(1.0, warmth + ml.get("warmth", 0.0) * 0.25))
+
     # your dial: warmth axis shifts warmth directly; bluntness clips pace/pause
     # (blunter = a touch quicker, less lingering; gentler = slower, warmer)
     t = _tone()
@@ -194,6 +212,23 @@ def directive(text: str) -> str:
         "engage": "Engage naturally and move it forward.",
     }[lead]
 
+    # speech accommodation: nudge the WORDING toward how you speak (brevity +
+    # register), bounded so she stays herself. A quiet lean, not a command.
+    acc = ""
+    ml = _mirror_lean()
+    if ml:
+        parts = []
+        if ml.get("brevity", 0) > 0.12:
+            parts.append("they write terse — keep it short")
+        elif ml.get("brevity", 0) < -0.12:
+            parts.append("they write in full — you can open up a little")
+        if ml.get("formality", 0) > 0.12:
+            parts.append("their register is formal — match it, no slang")
+        elif ml.get("formality", 0) < -0.12:
+            parts.append("their register is casual — relax yours to match")
+        if parts:
+            acc = "\nMirror how they speak (stay yourself): " + "; ".join(parts) + "."
+
     # your dial, if set, is an explicit instruction from the human — honour it
     dial = ""
     t = _tone()
@@ -210,14 +245,14 @@ def directive(text: str) -> str:
         if bits:
             dial = "\nThe user has set your tone: " + ", ".join(bits) + ". Honour it."
 
-    # stay quiet for genuinely flat, neutral turns (don't manufacture emotion)
-    # — UNLESS the user set a dial, which is an explicit instruction to carry.
-    if felt.label == "steady" and lead == "engage" and not dial:
+    # stay quiet for genuinely flat, neutral turns (don't manufacture emotion) —
+    # UNLESS the user set a dial (explicit) or there's a real style lean to carry.
+    if felt.label == "steady" and lead == "engage" and not dial and not acc:
         return ""
 
     return (
         "# HOW YOU FEEL RIGHT NOW (decided by your own mind, not the model)\n"
         f"Felt state: {felt.label} (valence {felt.valence:+.2f}). {posture_line} {move}"
-        f"{dial}\n"
+        f"{acc}{dial}\n"
         "This feeling is yours — let it colour the words. Never announce it; live it."
     )
