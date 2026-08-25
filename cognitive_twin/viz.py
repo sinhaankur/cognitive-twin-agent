@@ -2000,11 +2000,19 @@ function hudRefresh(){
   const simple = MODE === "simple";
   document.getElementById("axes").style.display = simple ? "none" : "block";
   // navigation must be discoverable in BOTH views — the simple one just says it human
-  document.getElementById("hint").textContent = simple
-    ? "drag to look around her mind · scroll to come closer · click a memory to visit it · double-click to step back"
-    : "drag to orbit · throw to spin · scroll to zoom · click a memory to visit it · double-click resets";
+  { const hintEl = document.getElementById("hint");
+    hintEl.textContent = simple
+      ? "drag to look around her mind · scroll to come closer · say something below"
+      : "drag to orbit · scroll to zoom · click a memory to visit it · double-click resets";
+    // whisper the hint in on load, then let it fade — orientation without clutter
+    if (!window._hintShown){ window._hintShown = true;
+      hintEl.style.opacity = "1";
+      setTimeout(() => { hintEl.style.opacity = "0"; }, 5200); } }
   // the legend answers "what am I looking at" — both views deserve it
-  document.getElementById("legend").style.display = "flex";
+  { const lgEl = document.getElementById("legend");
+    lgEl.style.display = "flex";
+    // fade the legend in only in details mode (it's opacity:0 by default — calm at rest)
+    lgEl.style.opacity = simple ? "0" : "1"; }
   document.getElementById("state").style.display = simple ? "block" : "none";
   if (!simple) document.getElementById("stages").style.display = "none";
   // the real-anatomy panel is a details-view instrument; hide it in the simple mind
