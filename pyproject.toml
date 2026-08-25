@@ -1,0 +1,43 @@
+# -----------------------------------------------------------------------------
+# Vera / Cognitive Twin — packaging.
+# Copyright (c) 2026 Ankur Sinha. All rights reserved.
+# -----------------------------------------------------------------------------
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cognitive-twin-agent"
+version = "0.1.0"
+description = "Vera — a local-first personal AI twin. A mind built like a brain (the Human Brain Engine), private and on-device by design."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Ankur Sinha", email = "sinhaankur@ymail.com" }]
+keywords = ["personal-ai", "digital-twin", "local-first", "on-device", "private", "agent"]
+
+# The agent CORE runs on the Python standard library alone. Its one first-party
+# dependency is the brain. The three third-party libs below power OPTIONAL layers
+# (secure storage, OAuth connectors) and are not needed to run the agent — the
+# core imports cleanly without them (see requirements.txt).
+dependencies = [
+  "human-brain-engine",   # Vera's brain — installed editable from ../human-brain-engine
+]
+
+[project.optional-dependencies]
+# Optional subsystems (secure vault export, mail/OAuth connectors).
+secure = ["cryptography>=43.0.0", "keyring>=25.0.0", "requests>=2.32.0"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+ctwin = "cognitive_twin.cli:main"
+
+[project.urls]
+Homepage = "https://www.sinhaankur.com"
+
+[tool.setuptools.packages.find]
+# auto-discover cognitive_twin and its subpackages (agent, skills, voice, …)
+include = ["cognitive_twin*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
