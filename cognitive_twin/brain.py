@@ -270,6 +270,36 @@ def engine_flow(prompt: str) -> dict[str, Any]:
             "delivery": sig.delivery,
             "notes": notes,
         }
+        # HOW THE AI WORKS (honest): the model is ONE organ — the cortex — and it's
+        # optional. Show which local model the router would pick (by rule, no cloud),
+        # or that she'd run on her own words if none is present.
+        try:
+            from .agent.router import Router
+            d = Router().route(prompt)
+            out["active"]["ai"] = {
+                "model": getattr(d, "model", None),
+                "rule": getattr(d, "rule_id", None),
+                "note": "the model only writes the words, within the stance her own "
+                        "mind already chose. it's an organ, not the mind — pull it "
+                        "out and she still feels, decides, and speaks.",
+            }
+        except Exception:
+            out["active"]["ai"] = {"model": None,
+                "note": "no model needed — she composes from her own stance + feeling."}
+        # HOW MEMORY WORKS: how many real memories she holds, and how many this
+        # prompt recalled (reconsolidation = the ones she reuses grow stronger).
+        try:
+            from . import memory as _mem
+            pats = _safe(_mem.patterns, {"count": 0})
+            out["active"]["memory"] = {
+                "held": pats.get("count", 0),
+                "recalled": len(sig.memories),
+                "note": "memories are stored on-device and sealed. related ones "
+                        "cluster; the ones she actually reuses grow stronger and "
+                        "drift toward her core (reconsolidation).",
+            }
+        except Exception:
+            pass
     except Exception as e:
         out["active"] = {"error": str(e)}
     return out

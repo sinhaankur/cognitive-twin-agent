@@ -356,9 +356,24 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vera · The Mind</title>
 <style>
-  :root{ --mono: ui-monospace, "SF Mono", Menlo, monospace; }
-  html,body{margin:0;height:100%;overflow:hidden;background:#04050a;color:#dfe4ee;
-    font-family:var(--mono);-webkit-font-smoothing:antialiased}
+  :root{
+    /* a real type system (all system fonts — nothing to download, works offline):
+       serif = her human/felt moments · sans = quiet labels · mono = technical readouts */
+    --serif: ui-serif, "New York", "Iowan Old Style", Georgia, "Times New Roman", serif;
+    --sans: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    /* ambient feeling colour — JS shifts this with her felt state; everything soft-tints to it */
+    --feel: 180, 190, 215;                 /* r,g,b, neutral steady */
+    --ink: #e7ebf3; --ink-dim: rgba(190,200,218,.62); --ink-faint: rgba(160,172,196,.4);
+    --line: rgba(170,190,230,.14);
+  }
+  html,body{margin:0;height:100%;overflow:hidden;background:#04050a;color:var(--ink);
+    font-family:var(--sans);-webkit-font-smoothing:antialiased;
+    /* the whole scene breathes a hint of her current feeling from the edges inward */
+    transition:background 1.2s ease}
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:1;
+    background:radial-gradient(120% 90% at 50% 58%, transparent 55%,
+      rgba(var(--feel), .05) 100%);transition:background 1.2s ease}
   /* a canvas does NOT stretch with inset:0 (replaced element keeps its
      intrinsic size) — on a 2× display the backing store is twice the window
      and the centred heart lands in the bottom-right corner. Pin the box. */
@@ -367,25 +382,46 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   .hud{position:fixed;pointer-events:none;z-index:2}
   .box{background:rgba(7,9,16,.78);border:1px solid rgba(170,190,230,.22);
     backdrop-filter:blur(6px);padding:6px 10px;font-size:10.5px;letter-spacing:.08em}
-  #topbar{top:14px;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center}
-  #topbar .live{color:#7fd1b9}
-  #topbar .box{text-transform:uppercase}
-  #who{top:14px;left:18px}
-  #who .name{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#eef2fa}
-  #who .sub{color:#77809466;color:rgba(150,160,180,.75);font-size:10px;margin-top:3px;letter-spacing:.06em}
-  #legend{bottom:42px;left:18px;display:flex;flex-direction:column;gap:6px;font-size:10px}
-  #legend .chip{display:inline-flex;align-items:center;gap:7px;background:rgba(7,9,16,.7);
-    border:1px solid rgba(170,190,230,.16);padding:3px 8px;letter-spacing:.08em;text-transform:uppercase}
-  #legend .dot{width:7px;height:7px;border-radius:50%}
-  #askbar{bottom:44px;left:50%;transform:translateX(-50%);pointer-events:auto;display:flex;gap:0}
-  #askbar input{width:380px;background:rgba(7,9,16,.85);border:1px solid rgba(170,190,230,.28);
-    color:#dfe4ee;padding:10px 14px;font-size:12px;outline:none;font-family:var(--mono)}
-  #askbar input:focus{border-color:rgba(126,200,255,.65)}
-  #askbar button{background:rgba(126,200,255,.16);border:1px solid rgba(126,200,255,.5);
-    color:#bfe3ff;padding:10px 16px;font-size:11px;cursor:pointer;letter-spacing:.12em;
-    text-transform:uppercase;font-family:var(--mono)}
-  #askbar button:hover{background:rgba(126,200,255,.3)}
-  #hint{bottom:90px;left:50%;transform:translateX(-50%);color:rgba(150,160,180,.55);font-size:10px;letter-spacing:.06em;white-space:nowrap}
+  /* CINEMATIC MINIMAL: the nebula is the hero. At rest only her name (a whisper),
+     the felt word, and one soft ask-bar show. Everything analytical fades in on a
+     thought, then dissolves. z-index 3 keeps chrome above the feeling vignette. */
+  .hud{z-index:3}
+  /* her name — a quiet mark, top-left, not a shouty uppercase box */
+  #topbar{display:none}
+  #who{top:22px;left:26px}
+  #who .name{font-family:var(--serif);font-size:17px;letter-spacing:.01em;
+    color:var(--ink);font-weight:400;font-style:italic}
+  #who .sub{font-family:var(--sans);color:var(--ink-faint);font-size:10.5px;margin-top:2px;
+    letter-spacing:.04em}
+  /* the ambient FELT WORD — floats low-centre, above the ask-bar; her mood as language */
+  #felt-word{position:fixed;left:50%;bottom:118px;transform:translateX(-50%);z-index:3;
+    pointer-events:none;font-family:var(--serif);font-style:italic;font-size:15px;
+    color:rgba(var(--feel), .9);letter-spacing:.02em;opacity:0;transition:opacity 1s ease,color 1.2s ease;
+    text-shadow:0 0 20px rgba(var(--feel), .35)}
+  #legend{bottom:34px;left:26px;display:flex;flex-direction:column;gap:5px;font-size:9.5px;
+    opacity:0;transition:opacity .6s ease}          /* only in details mode */
+  #legend .chip{display:inline-flex;align-items:center;gap:7px;background:transparent;
+    border:0;padding:2px 0;letter-spacing:.06em;color:var(--ink-dim);font-family:var(--sans);
+    text-transform:none}
+  #legend .dot{width:6px;height:6px;border-radius:50%}
+  /* THE one always-on surface: a soft, inviting ask-bar (pill, not a hard box) */
+  #askbar{bottom:44px;left:50%;transform:translateX(-50%);pointer-events:auto;
+    display:flex;align-items:center;gap:6px;
+    background:rgba(10,13,22,.55);backdrop-filter:blur(14px) saturate(1.2);
+    border:1px solid rgba(var(--feel), .22);border-radius:999px;padding:4px 4px 4px 6px;
+    box-shadow:0 10px 40px -12px rgba(0,0,0,.7), inset 0 0 0 1px rgba(255,255,255,.02);
+    transition:border-color 1.2s ease}
+  #askbar input{width:min(46vw,420px);background:transparent;border:0;
+    color:var(--ink);padding:11px 16px;font-size:14px;outline:none;font-family:var(--serif)}
+  #askbar input::placeholder{color:var(--ink-faint);font-style:italic}
+  #askbar button{background:rgba(var(--feel), .16);border:0;border-radius:999px;
+    color:rgba(var(--feel), 1);width:38px;height:38px;cursor:pointer;font-size:15px;
+    display:flex;align-items:center;justify-content:center;font-family:var(--sans);
+    transition:background .3s ease,transform .2s ease}
+  #askbar button:hover{background:rgba(var(--feel), .3);transform:scale(1.06)}
+  #hint{bottom:96px;left:50%;transform:translateX(-50%);color:var(--ink-faint);
+    font-size:10px;letter-spacing:.03em;white-space:nowrap;font-family:var(--sans);
+    opacity:0;transition:opacity .6s ease}         /* whispered, and only when useful */
   /* the thought chain — numbered stations joined by links that fill as it moves */
   #stages .stgh{font-size:9px;letter-spacing:.14em;text-transform:uppercase;
     color:rgba(150,160,180,.7);margin-bottom:9px}
@@ -424,16 +460,19 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
     box-shadow:0 0 8px var(--fc,transparent);flex:none}
   #feel .fhh{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:rgba(160,170,190,.7)}
   #feel .fbody{padding:11px 12px 12px}
-  /* the real-anatomy panel — nine regions, in order, with live per-region notes */
-  #anatomy{display:none;top:56px;left:18px;width:272px;
-    background:linear-gradient(180deg, rgba(10,9,18,.94), rgba(7,8,14,.94));
-    border:1px solid rgba(150,160,210,.4);border-radius:2px;padding:0;overflow:hidden;
-    box-shadow:0 8px 30px rgba(0,0,0,.55)}
-  #anatomy .fhead{display:flex;align-items:center;gap:7px;padding:9px 12px 8px;
-    border-bottom:1px solid rgba(170,190,230,.12)}
-  #anatomy .fpip{width:7px;height:7px;border-radius:50%;background:#8ea;
-    box-shadow:0 0 8px #8ea;flex:none}
-  #anatomy .fhh{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:rgba(160,170,190,.7)}
+  /* the real-anatomy panel — nine regions, in order, with live per-region notes.
+     soft glass, no hard border — matches the cinematic language; fades in on a thought */
+  #anatomy{display:none;top:74px;left:26px;width:290px;max-height:calc(100vh - 200px);
+    overflow-y:auto;background:rgba(9,11,19,.62);backdrop-filter:blur(16px) saturate(1.15);
+    border:1px solid rgba(var(--feel), .16);border-radius:14px;padding:0;
+    box-shadow:0 20px 60px -18px rgba(0,0,0,.75);opacity:0;transition:opacity .5s ease}
+  #anatomy.show{opacity:1}
+  #anatomy .fhead{display:flex;align-items:center;gap:8px;padding:12px 15px 10px;
+    border-bottom:1px solid var(--line)}
+  #anatomy .fpip{width:6px;height:6px;border-radius:50%;background:rgba(var(--feel),1);
+    box-shadow:0 0 9px rgba(var(--feel),.8);flex:none}
+  #anatomy .fhh{font-family:var(--serif);font-style:italic;font-size:12px;letter-spacing:0;
+    text-transform:none;color:var(--ink-dim)}
   #anatomy .anbody{padding:9px 12px 11px}
   #anatomy .ansub{font-size:8.5px;letter-spacing:.03em;color:rgba(150,160,180,.6);
     line-height:1.4;margin-bottom:8px}
@@ -452,6 +491,12 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
     color:rgba(150,160,185,.6);margin-left:5px}
   #anatomy .rnote{font-size:9px;color:rgba(150,200,175,.85);line-height:1.35;margin-top:1px}
   #anatomy .rrole{font-size:8.5px;color:rgba(140,150,170,.55);line-height:1.35;margin-top:1px}
+  /* the how-memory / how-AI story, shown at the hippocampus + cortex */
+  #anatomy .rsys{font-size:9px;color:rgba(190,200,225,.82);line-height:1.4;margin-top:3px;
+    padding:4px 7px;background:rgba(var(--feel), .07);border-radius:5px;
+    border-left:2px solid rgba(var(--feel), .5)}
+  #anatomy .rsys b{color:rgba(var(--feel), 1);font-weight:600}
+  #anatomy .rdim{font-size:8px;color:rgba(150,160,180,.55);margin-top:2px;line-height:1.35}
   #anatomy .anorigin{font-size:8px;letter-spacing:.04em;color:rgba(140,150,170,.5);
     line-height:1.4;margin-top:9px;border-top:1px solid rgba(170,190,230,.1);padding-top:7px}
   /* the felt word — large, in the emotion's own colour */
@@ -527,16 +572,17 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   #footer .ver{color:rgba(150,160,180,.42)}
 </style></head><body>
 <canvas id="sky"></canvas>
-<div class="hud" id="who"><div class="name box" id="whoname">THE MIND</div><div class="sub" id="stats">reading her real state…</div></div>
+<div class="hud" id="who"><div class="name" id="whoname">the mind</div><div class="sub" id="stats">reading her real state…</div></div>
 <div class="hud" id="topbar"><span class="box"><span class="live">●</span> LIVE <span id="clock"></span></span></div>
 <div class="hud" id="legend"></div>
-<div class="hud" id="hint">drag to orbit her mind · scroll to zoom · double-click resets · hover any node</div>
+<div id="felt-word"></div>
+<div class="hud" id="hint">drag to move through her mind · scroll to come closer · say something below</div>
 <div class="hud box" id="axes">ANGLE · what &nbsp;&nbsp;RADIUS · strength &nbsp;&nbsp;HEIGHT · when</div>
 <div class="hud" id="state" style="top:auto;bottom:122px;left:50%;transform:translateX(-50%);
   font-size:15px;letter-spacing:.04em;color:#dfe4ee;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.8)"></div>
 <div class="hud" id="stages" style="top:50%;left:26px;transform:translateY(-50%);
   font-size:11px;color:rgba(200,210,230,.9);display:none"></div>
-<div class="hud" id="askbar"><input id="q" placeholder="ask her something — watch the thought move…"><button id="go">think</button></div>
+<div class="hud" id="askbar"><input id="q" placeholder="say something…"><button id="go" title="think">✦</button></div>
 <div class="hud" id="card"></div>
 <div class="hud" id="feel">
   <div class="fhead"><span class="fpip"></span><span class="fhh">how she feels · her own mind</span></div>
@@ -1485,7 +1531,26 @@ function feelHue(valence, arousal){
 }
 /* paint the feel panel from a feel object (brain.feel_read output). Everything
    here is her real state; nothing invented. */
+/* raw r,g,b for the ambient --feel variable (feelHue returns 'rgb(...)') */
+function feelRGB(valence, arousal){
+  const m = feelHue(valence, arousal).match(/\d+/g);
+  return m ? m.slice(0,3).join(", ") : "180, 190, 215";
+}
+/* AMBIENT feeling: the whole scene soft-tints to her felt state, and one warm
+   word floats near the ask-bar. This is the 'Her' move — you sense her mood
+   peripherally, like reading a person, not by reading a chart. */
+function renderAmbientFeel(f){
+  const rgb = (f && f.label) ? feelRGB(f.valence, f.arousal) : "180, 190, 215";
+  document.documentElement.style.setProperty("--feel", rgb);
+  const fw = document.getElementById("felt-word");
+  if (fw){
+    if (f && f.label){ fw.textContent = "she feels " + f.label; fw.style.opacity = "1"; }
+    else { fw.style.opacity = "0"; }
+  }
+}
+
 function renderFeel(f){
+  renderAmbientFeel(f);
   const P = document.getElementById("feel");
   if (!f || !f.label){ P.style.display = "none"; return; }
   const hue = feelHue(f.valence, f.arousal);
@@ -1590,20 +1655,37 @@ async function renderAnatomy(q){
   let d; try{ d = await j("/api/engineflow?q=" + encodeURIComponent(q)); }catch(_){ return; }
   const active = (d.active || {});
   const notes = active.notes || {};
+  const ai = active.ai || {}, mem = active.memory || {};
   list.innerHTML = "";
   (d.regions || []).forEach(r => {
     const note = (notes[r.id] || []).join(" · ");
     const li = document.createElement("li");
     if (r.id === "limbic") li.className = "limbic";
     if (note) li.classList.add("on");
+    let extra = "";
+    // HOW AI WORKS — surfaced right at the cortex, where the model lives
+    if (r.id === "cortex"){
+      extra = '<div class="rsys">' + (ai.model
+        ? 'model · <b>' + ai.model + '</b>' + (ai.rule ? ' <span class="rdim">(' + ai.rule.replace(/_/g,' ') + ')</span>' : '')
+          + '<div class="rdim">one organ, optional — it only writes the words within her chosen stance</div>'
+        : '<b>no model</b> — she composes from her own stance + feeling') + '</div>';
+    }
+    // HOW MEMORY WORKS — surfaced at the hippocampus
+    if (r.id === "hippocampus" && (mem.held != null)){
+      extra = '<div class="rsys">' + mem.held + ' memories held · '
+        + (mem.recalled || 0) + ' recalled now'
+        + '<div class="rdim">sealed on-device · related ones cluster · reused ones grow stronger</div></div>';
+    }
     li.innerHTML = '<span class="rlab">' + r.label + '</span>'
       + '<span class="rfac">' + r.faculty + '</span>'
       + (note ? '<div class="rnote">' + note + '</div>'
-              : '<div class="rrole">' + r.role + '</div>');
+              : '<div class="rrole">' + r.role + '</div>')
+      + extra;
     list.appendChild(li);
   });
   // only show it in the details/expert view, so the simple mind stays uncluttered
-  if (MODE !== "simple") box.style.display = "block";
+  if (MODE !== "simple"){ box.style.display = "block";
+    requestAnimationFrame(() => box.classList.add("show")); }
 }
 
 async function think(q){
@@ -1856,7 +1938,7 @@ function hudRefresh(){
   document.getElementById("state").style.display = simple ? "block" : "none";
   if (!simple) document.getElementById("stages").style.display = "none";
   // the real-anatomy panel is a details-view instrument; hide it in the simple mind
-  if (simple){ const an = document.getElementById("anatomy"); if (an) an.style.display = "none"; }
+  if (simple){ const an = document.getElementById("anatomy"); if (an){ an.classList.remove("show"); an.style.display = "none"; } }
   document.getElementById("q").placeholder = simple
     ? "ask her anything — watch her think…"
     : "ask her something — watch the thought move…";
