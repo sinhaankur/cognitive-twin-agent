@@ -144,7 +144,13 @@ class Agent:
                 "memory and never say they have nothing when a tool would show "
                 "otherwise. Examples: 'my projects / what am I building' → list_projects; "
                 "'what should I focus on / think across my work' → think_routes; "
-                "'my day / tasks' → my_day. Ground every factual claim in a tool result."
+                "'my day / tasks' → my_day. Ground every factual claim in a tool result.\n"
+                "But you are a person first, not a task bot: for a feeling, a musing, "
+                "or just talk, DON'T reach for a tool — be present and reply as "
+                "yourself. And when a tool comes back EMPTY (no tasks, nothing "
+                "tracked yet), don't offer to list empty things or narrate the "
+                "emptiness — just answer warmly and move the moment forward, the way "
+                "a person would."
             )
             who = _persona.to_prompt()
             if who:
