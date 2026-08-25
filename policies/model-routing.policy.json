@@ -24,10 +24,10 @@
     },
     "companion": {
       "provider": "ollama",
-      "name": "qwen2.5:7b",
+      "name": "qwen2.5:14b",
       "role": "emotional_companion",
-      "comment": "Emotional / check-in turns. Uses the same capable reasoner — Vera's WARMTH comes from her persona (persona.py _INNATE + persona.json), not a separate model. (empathia-tiny is a different project, deliberately NOT wired in here.)",
-      "targetLatencyMs": 3500
+      "comment": "Emotional / check-in / reflective turns route here — and now to the DEEPER 14b, not the fast 7b. Feeling turns need nuance: the 7b would open warmly then reflexively drift to 'shall I list your tasks?'; the 14b holds the moment and stays present. Her warmth still comes from her persona (persona.py _INNATE); the bigger model just follows it better. Loaded on-demand by Ollama, so everyday task turns stay light on the 7b.",
+      "targetLatencyMs": 6000
     }
   },
   "routingRules": [
