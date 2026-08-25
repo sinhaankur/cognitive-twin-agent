@@ -204,6 +204,90 @@ def thought_path(prompt: str) -> dict[str, Any]:
     return {"prompt": prompt, "path": ordered}
 
 
+# The real anatomical regions, in the order a thought flows through the brain.
+# Kept here (not invented in JS) so the Mind view can draw the TRUE architecture:
+# occipital → parietal → (accommodation) → limbic → hippocampus → frontal →
+# cortex → temporal → cerebellum. Each carries its real function, one line.
+_REGIONS = [
+    ("occipital",   "Occipital lobe",   "perception",      "Sees a face, if a camera is on — folds it into the feeling."),
+    ("parietal",    "Parietal lobe",    "situation",       "Where/when/what: reads the moment and its topic."),
+    ("accommodation", "Association cortex", "accommodation", "Notices HOW you speak, and leans toward it — staying herself."),
+    ("limbic",      "Limbic system",    "emotion",         "Feels it. The felt state that colours everything after."),
+    ("hippocampus", "Hippocampus",      "memory",          "Recalls what's relevant from shared history."),
+    ("frontal",     "Frontal lobe",     "perspective",     "Takes a stance — gentle or direct, lead or hold space."),
+    ("cortex",      "Cerebral cortex",  "reasoning/language", "Puts it into words (a model may help; never required)."),
+    ("temporal",    "Temporal lobe",    "humor",           "Adds wit — only if the feeling says the moment is light."),
+    ("cerebellum",  "Cerebellum",       "voice/delivery",  "Paces and warms the voice to match the feeling."),
+]
+
+
+def engine_flow(prompt: str) -> dict[str, Any]:
+    """The REAL anatomical signal flow for a prompt, from the Human Brain Engine —
+    the true architecture, not the faculty-plumbing graph. Runs the brain's regions
+    in anatomical order and reports, per region, what it actually did this turn
+    (from the Signal's own trace). Read-only: it does NOT form a memory.
+
+    This is what the Mind view should draw to show 'how a thought flows': nine
+    regions wired in order, the limbic feeling colouring the ones downstream, and
+    the live per-region note for the prompt you typed. Honest — every line is the
+    engine's own output; nothing is invented. Falls back to the region map alone
+    if the engine isn't importable, so the view never breaks."""
+    regions = [
+        {"id": rid, "label": label, "faculty": fac, "role": role}
+        for (rid, label, fac, role) in _REGIONS
+    ]
+    # the wiring: the pipeline is a chain, PLUS the limbic feeling reaching forward
+    # to frontal, temporal, and cerebellum (the 'connective tissue').
+    order = [r["id"] for r in regions]
+    edges = [{"source": order[i], "target": order[i + 1], "kind": "flow"}
+             for i in range(len(order) - 1)]
+    for tgt in ("frontal", "temporal", "cerebellum"):
+        edges.append({"source": "limbic", "target": tgt, "kind": "colours"})
+
+    out: dict[str, Any] = {"prompt": prompt, "regions": regions, "edges": edges,
+                           "order": order}
+    if not (prompt or "").strip():
+        return out
+    try:
+        from brain import Brain
+        b = Brain()
+        # run the pipeline WITHOUT closing the memory loop (read-only introspection)
+        from brain.core.signal import Signal as _Sig
+        sig = _Sig(text=prompt)
+        notes: dict[str, list[str]] = {}
+        for region in b.pipeline:
+            before = len(sig.trace)
+            sig = region.process(sig)
+            # map the engine's region name back to our short id
+            rid = _region_id(getattr(region, "region", ""))
+            if rid:
+                notes[rid] = [t.split(": ", 1)[-1] for t in sig.trace[before:]]
+        out["active"] = {
+            "feeling": {"label": sig.feeling.label, "valence": round(sig.feeling.valence, 3),
+                        "arousal": round(sig.feeling.arousal, 3)},
+            "stance": sig.stance,
+            "wit": bool(sig.wit),
+            "delivery": sig.delivery,
+            "notes": notes,
+        }
+    except Exception as e:
+        out["active"] = {"error": str(e)}
+    return out
+
+
+def _region_id(region_name: str) -> str:
+    """Map an engine region name ('limbic system', 'frontal lobe', …) to our id."""
+    n = (region_name or "").lower()
+    for rid, *_ in _REGIONS:
+        if rid in n:
+            return rid
+    if "cortex" in n and "association" in n:
+        return "accommodation"   # mirror/association cortex
+    if "cortex" in n:
+        return "cortex"
+    return ""
+
+
 def landscape(limit: int = 60) -> dict[str, Any]:
     """A 'landscape of thoughts' layout — memories placed in 2D so related ones
     (sharing content words) sit near each other, and clusters read as terrain.
