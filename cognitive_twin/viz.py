@@ -422,28 +422,38 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   #hint{bottom:96px;left:50%;transform:translateX(-50%);color:var(--ink-faint);
     font-size:10px;letter-spacing:.03em;white-space:nowrap;font-family:var(--sans);
     opacity:0;transition:opacity .6s ease}         /* whispered, and only when useful */
-  /* the thought chain — numbered stations joined by links that fill as it moves */
-  #stages .stgh{font-size:9px;letter-spacing:.14em;text-transform:uppercase;
-    color:rgba(150,160,180,.7);margin-bottom:9px}
-  #stages .stg{display:flex;align-items:center;gap:9px;opacity:.26;transition:opacity .3s}
+  /* the thought chain — numbered stations joined by links that fill as it moves.
+     tinted to her felt colour so it reads as one system with the brain view */
+  #stages .stgh{font-family:var(--serif);font-style:italic;font-size:12px;letter-spacing:0;
+    text-transform:none;color:var(--ink-dim);margin-bottom:11px}
+  #stages .stg{display:flex;align-items:center;gap:10px;opacity:.26;transition:opacity .4s;
+    font-family:var(--sans);font-size:12px;color:var(--ink)}
   #stages .stg.now{opacity:1}
   #stages .stg.done{opacity:.6}
-  #stages .n{width:18px;height:18px;border-radius:50%;border:1px solid rgba(170,190,230,.5);
+  #stages .n{width:20px;height:20px;border-radius:50%;border:1px solid rgba(var(--feel),.4);
     display:inline-flex;align-items:center;justify-content:center;font-size:9px;flex:none;
-    background:rgba(7,9,16,.8)}
-  #stages .stg.now .n{border-color:#7ec8ff;color:#bfe3ff;box-shadow:0 0 10px rgba(126,200,255,.55)}
-  #stages .stg.done .n{border-color:rgba(127,209,185,.7);color:#7fd1b9}
-  #stages .stgline{width:1px;height:13px;background:rgba(170,190,230,.22);margin-left:9px}
-  #stages .stgline.full{background:rgba(127,209,185,.55)}
-  #card{display:none;background:rgba(7,9,16,.92);border:1px solid rgba(170,190,230,.3);
-    padding:9px 12px;font-size:11.5px;max-width:300px;box-shadow:0 6px 24px rgba(0,0,0,.5)}
-  #card .t{font-weight:600;margin-bottom:3px;letter-spacing:.1em;text-transform:uppercase;font-size:10px}
-  #card .m{color:#8f96a6;font-size:10.5px;margin-top:3px}
-  #answer{display:none;top:56px;right:18px;background:rgba(7,9,16,.92);border:1px solid rgba(126,200,255,.4);
-    padding:12px 14px;font-size:11.5px;max-width:300px}
-  #answer .t{font-weight:600;color:#7ec8ff;margin-bottom:6px;letter-spacing:.12em;text-transform:uppercase;font-size:10px}
-  #answer .row{color:#aeb4c0;margin-top:3px}
-  #answer .kv{color:#7fd1b9}
+    background:rgba(9,11,19,.8);font-family:var(--mono);transition:all .4s cubic-bezier(.16,1,.3,1)}
+  #stages .stg.now .n{border-color:rgba(var(--feel),1);color:rgba(var(--feel),1);
+    box-shadow:0 0 14px rgba(var(--feel),.6);transform:scale(1.1)}
+  #stages .stg.done .n{border-color:rgba(var(--feel),.7);color:rgba(var(--feel),.85)}
+  #stages .stgline{width:2px;height:14px;background:rgba(var(--feel),.18);margin-left:9px;border-radius:2px}
+  #stages .stgline.full{background:rgba(var(--feel),.5)}
+  #card{display:none;background:rgba(9,11,19,.7);backdrop-filter:blur(16px) saturate(1.15);
+    border:1px solid rgba(var(--feel),.18);border-radius:12px;
+    padding:11px 14px;font-size:12px;max-width:300px;
+    box-shadow:0 16px 44px -14px rgba(0,0,0,.7);font-family:var(--sans)}
+  #card .t{font-family:var(--serif);font-style:italic;font-weight:400;margin-bottom:3px;
+    letter-spacing:0;text-transform:none;font-size:13px;color:var(--ink)}
+  #card .m{color:var(--ink-dim);font-size:11px;margin-top:3px}
+  /* the reply-metadata card — bottom-right so it never collides with the feel panel */
+  #answer{display:none;bottom:110px;right:26px;background:rgba(9,11,19,.62);
+    backdrop-filter:blur(16px) saturate(1.15);border:1px solid rgba(var(--feel),.18);
+    border-radius:14px;padding:13px 16px;font-size:11.5px;max-width:280px;
+    box-shadow:0 20px 60px -18px rgba(0,0,0,.75);font-family:var(--mono)}
+  #answer .t{font-family:var(--serif);font-style:italic;font-weight:400;
+    color:rgba(var(--feel),1);margin-bottom:7px;letter-spacing:0;text-transform:none;font-size:13px}
+  #answer .row{color:var(--ink-dim);margin-top:4px}
+  #answer .kv{color:rgba(var(--feel),.95)}
   /* ── the FEELING panel — the one place in the Mind that carries warm colour.
         emotion = hue (heavy→violet … glad→gold); everything else stays cyan, so
         'how she feels' is instantly distinct from 'how she thinks'. It lives at
@@ -584,17 +594,19 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
     background:var(--fc,#cfd);border:1.5px solid rgba(255,255,255,.6);cursor:grab}
   #feel .forigin{font-size:8.5px;letter-spacing:.05em;color:rgba(140,150,170,.55);
     margin-top:9px;padding-top:8px;border-top:1px solid rgba(170,190,230,.1);line-height:1.4}
-  #axes{bottom:42px;right:18px;color:rgba(190,200,220,.75);font-size:9.5px;text-transform:uppercase}
+  #axes{bottom:44px;right:26px;color:var(--ink-faint);font-size:9.5px;text-transform:none;
+    font-family:var(--sans);letter-spacing:.02em;background:transparent;border:0;
+    backdrop-filter:none;padding:0}
   /* the footer — a quiet instrument strip; every page ends the same way */
-  #footer{position:fixed;left:0;right:0;bottom:0;height:26px;z-index:3;
-    display:flex;align-items:center;gap:16px;padding:0 16px;
-    background:rgba(5,7,13,.9);border-top:1px solid rgba(170,190,230,.14);
-    backdrop-filter:blur(6px);font-size:9.5px;letter-spacing:.1em;
-    text-transform:uppercase;color:rgba(150,160,180,.6);pointer-events:auto}
-  #footer a{color:rgba(175,190,220,.78);text-decoration:none}
-  #footer a:hover{color:#bfe3ff}
+  #footer{position:fixed;left:0;right:0;bottom:0;height:28px;z-index:4;
+    display:flex;align-items:center;gap:18px;padding:0 22px;
+    background:linear-gradient(0deg, rgba(4,5,10,.92), rgba(4,5,10,0));
+    border-top:0;backdrop-filter:blur(4px);font-size:9.5px;letter-spacing:.04em;
+    text-transform:none;color:var(--ink-faint);pointer-events:auto;font-family:var(--sans)}
+  #footer a{color:var(--ink-dim);text-decoration:none;transition:color .2s}
+  #footer a:hover{color:rgba(var(--feel),1)}
   #footer .sp{flex:1}
-  #footer .ver{color:rgba(150,160,180,.42)}
+  #footer .ver{color:var(--ink-faint);font-family:var(--mono)}
 </style></head><body>
 <canvas id="sky"></canvas>
 <div class="hud" id="who"><div class="name" id="whoname">the mind</div><div class="sub" id="stats">reading her real state…</div></div>
