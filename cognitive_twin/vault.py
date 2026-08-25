@@ -45,6 +45,17 @@ _FILE_MAGIC = b"CTV1F"         # one sealed whole file
 _BUNDLE_KDF_ITERS = 600_000
 
 
+def _lock(path: "Path") -> None:
+    """Set a file to owner read/write only (0600), failing soft. On POSIX this
+    seals the file; on Windows os.chmod behaves differently and may raise, so we
+    swallow OSError — the vault stays correct cross-device instead of crashing
+    mid-write. Mirrors memory._secure so every sealed file is locked the same way."""
+    try:
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass
+
+
 # ---- ChaCha20-Poly1305 (RFC 8439), pure stdlib --------------------------------
 def _rotl32(v: int, c: int) -> int:
     return ((v << c) & 0xFFFFFFFF) | (v >> (32 - c))
@@ -186,7 +197,7 @@ def _derived_key() -> bytes:
     else:
         salt = secrets.token_bytes(16)
         salt_file.write_bytes(salt)
-        os.chmod(salt_file, stat.S_IRUSR | stat.S_IWUSR)
+        _lock(salt_file)
     import hashlib
     return hashlib.pbkdf2_hmac("sha256", (ident + ":" + getpass.getuser()).encode(),
                                salt, 200_000)
@@ -244,7 +255,7 @@ def migrate_jsonl(path: Path) -> int:
     if changed:
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text("\n".join(sealed) + "\n", encoding="utf-8")
-        os.chmod(tmp, stat.S_IRUSR | stat.S_IWUSR)
+        _lock(tmp)
         tmp.replace(path)
     return changed
 
@@ -297,7 +308,7 @@ def export_bundle(dest: Path, passphrase: str) -> dict[str, Any]:
            "data": base64.b64encode(blob).decode()}
     dest = dest.expanduser()
     dest.write_text(json.dumps(doc), encoding="utf-8")
-    os.chmod(dest, stat.S_IRUSR | stat.S_IWUSR)
+    _lock(dest)
     return {"files": n, "path": str(dest)}
 
 
@@ -328,7 +339,7 @@ def import_bundle(src: Path, passphrase: str, *, force: bool = False) -> dict[st
                        if ln.strip()]
                 data = ("\n".join(out) + "\n").encode("utf-8")
             dest.write_bytes(data)
-            os.chmod(dest, stat.S_IRUSR | stat.S_IWUSR)
+            _lock(dest)
             n += 1
     return {"files": n, "path": str(root)}
 

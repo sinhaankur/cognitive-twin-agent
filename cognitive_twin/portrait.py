@@ -40,14 +40,40 @@ from typing import Any
 # where the pipeline lives (isolated venv + stages)
 _PIPE = Path(__file__).resolve().parent.parent / "scripts" / "portrait3d"
 _VENV_PY = _PIPE / ".venv" / "bin" / "python"
-_BLENDER = "/Applications/Blender.app/Contents/MacOS/Blender"
+
+
+def _blender() -> str | None:
+    """Locate Blender across platforms: PATH first (Linux/Windows/brew), then the
+    macOS app bundle, then common install spots. Returns None if not found so
+    callers can degrade gracefully instead of assuming a macOS path."""
+    onpath = shutil.which("blender") or shutil.which("Blender")
+    if onpath:
+        return onpath
+    candidates = [
+        "/Applications/Blender.app/Contents/MacOS/Blender",             # macOS
+        str(Path.home() / "Applications/Blender.app/Contents/MacOS/Blender"),
+        "/usr/bin/blender", "/usr/local/bin/blender", "/snap/bin/blender",  # Linux
+        r"C:\Program Files\Blender Foundation\Blender\blender.exe",      # Windows
+    ]
+    for c in candidates:
+        if Path(c).exists():
+            return c
+    return None
 
 
 def _out_dir() -> Path:
-    """Where the app looks for the face (macOS Application Support), owner-only."""
-    base = Path.home() / "Library" / "Application Support" / "Vera" / "portrait"
+    """Where the app looks for the face, owner-only. Uses macOS Application Support
+    when present; falls back to the shared on-device state dir on other platforms so
+    this never crashes off-Mac (portrait rendering itself is macOS-only, but the path
+    resolution must stay safe everywhere)."""
+    mac_support = Path.home() / "Library" / "Application Support"
+    base = (mac_support if mac_support.is_dir()
+            else Path.home() / ".cognitive-twin") / "Vera" / "portrait"
     base.mkdir(parents=True, exist_ok=True)
-    os.chmod(base, stat.S_IRWXU)  # 0700
+    try:
+        os.chmod(base, stat.S_IRWXU)  # 0700 — fail soft on Windows
+    except OSError:
+        pass
     return base
 
 
@@ -68,7 +94,7 @@ def status() -> dict[str, Any]:
         "ready": ready,
         "mesh": str(mesh) if ready else None,
         "pipeline_installed": _VENV_PY.exists(),
-        "blender_present": Path(_BLENDER).exists(),
+        "blender_present": _blender() is not None,
     }
     if prov.exists():
         try:
@@ -100,7 +126,8 @@ def build(image_path: str) -> dict[str, Any]:
         return {"ok": False, "error": "photo not found"}
     if not _VENV_PY.exists():
         return {"ok": False, "error": "depth pipeline not installed"}
-    if not Path(_BLENDER).exists():
+    blender = _blender()
+    if blender is None:
         return {"ok": False, "error": "Blender not found"}
 
     out = _out_dir()
@@ -122,7 +149,7 @@ def build(image_path: str) -> dict[str, Any]:
 
     # 2) relief + texture + USDZ export — Blender, headless
     b = subprocess.run(
-        [_BLENDER, "--background", "--python", str(_PIPE / "build_face.py"),
+        [blender, "--background", "--python", str(_PIPE / "build_face.py"),
          "--", str(kept), str(depth), str(mesh)],
         capture_output=True, text=True,
     )
