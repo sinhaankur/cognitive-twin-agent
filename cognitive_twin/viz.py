@@ -607,6 +607,13 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   #footer a:hover{color:rgba(var(--feel),1)}
   #footer .sp{flex:1}
   #footer .ver{color:var(--ink-faint);font-family:var(--mono)}
+  /* the details toggle — a soft feeling-tinted pill, top-right, clear of everything */
+  #mode{background:rgba(10,13,22,.5);backdrop-filter:blur(14px);
+    border:1px solid rgba(var(--feel),.22);border-radius:999px;
+    color:var(--ink-dim);padding:8px 16px;font:11px var(--sans);letter-spacing:.02em;
+    cursor:pointer;text-transform:none;transition:all .3s ease}
+  #mode:hover{color:rgba(var(--feel),1);border-color:rgba(var(--feel),.5);
+    background:rgba(var(--feel),.08)}
 </style></head><body>
 <canvas id="sky"></canvas>
 <div class="hud" id="who"><div class="name" id="whoname">the mind</div><div class="sub" id="stats">reading her real state…</div></div>
@@ -672,10 +679,8 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   <span class="sp"></span>
   <span class="ver">build __VER__ · 127.0.0.1 only</span>
 </div>
-<div class="hud" id="modebtn" style="bottom:42px;right:18px;pointer-events:auto">
-  <button id="mode" style="background:rgba(7,9,16,.7);border:1px solid rgba(170,190,230,.25);
-    color:rgba(200,210,230,.8);padding:6px 12px;font:10px ui-monospace,Menlo,monospace;
-    letter-spacing:.1em;cursor:pointer;text-transform:uppercase">details</button>
+<div class="hud" id="modebtn" style="top:24px;right:26px;pointer-events:auto">
+  <button id="mode">details</button>
 </div>
 <script>
 "use strict";
