@@ -3,17 +3,23 @@ feel.py — the brain's felt-state layer (limbic + frontal, on-device, no LLM).
 
 Why this exists: a language model is only *contextual* — it responds to input from
 what it was trained on. It has no felt state, no stance, no own mind. So Vera's
-warmth and point of view must come from HER OWN logic, computed here, and then
-handed to the model as a directive. The model writes the words; the FEELING and
-the STANCE are decided by this deterministic layer. That is what stops her
-sounding robotic, and it works with or without a model / the internet.
+warmth and point of view must come from HER OWN logic and then be handed to the
+model as a directive. The model writes the words; the FEELING and the STANCE are
+decided deterministically. That is what stops her sounding robotic, and it works
+with or without a model / the internet.
 
-This mirrors the Human Brain Engine's limbic (EmotionEngine) + frontal
-(PerspectiveEngine) regions. It reads the emotional register of what the user
-said and picks a stance, which `agent/loop.py` folds into the system prompt.
+The felt state + stance are now computed by the **Human Brain Engine** — the
+standalone, anatomy-mapped brain (`brain.regions.EmotionEngine` = limbic,
+`brain.regions.PerspectiveEngine` = frontal). This module is the thin Vera
+*adapter* over that one brain: it feeds the engine a Signal, maps the engine's
+result back to Vera's `Felt`, and layers on Vera's own controls that the engine
+doesn't carry — the tone dial (`tone.py`), the speech-accommodation lean
+(`mirror.py`), the model `directive()`, and the voice `delivery()` params.
 
-Everything here is a legible lexicon + rules — inspectable, local, private.
-Emotion is Vera's own felt response, never a claim of knowledge she lacks.
+There is deliberately ONE lexicon/label/stance ruleset now (in the engine), not a
+copy here — so Vera and the engine can never drift. Everything remains legible,
+local, private. Emotion is Vera's own felt response, never a claim of knowledge
+she lacks.
 """
 
 from __future__ import annotations
@@ -21,28 +27,17 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-# small affective lexicon: word → (valence -1..1, arousal 0..1). Deliberate and
-# legible, not learned — so behaviour is inspectable. Extend freely.
-_LEXICON: dict[str, tuple[float, float]] = {
-    "sad": (-0.7, 0.4), "tired": (-0.4, 0.2), "exhausted": (-0.6, 0.3),
-    "worried": (-0.5, 0.6), "anxious": (-0.6, 0.7), "lonely": (-0.7, 0.4),
-    "angry": (-0.6, 0.8), "frustrated": (-0.5, 0.7), "stuck": (-0.4, 0.5),
-    "afraid": (-0.6, 0.7), "hurt": (-0.7, 0.5), "lost": (-0.5, 0.4),
-    "hard": (-0.3, 0.4), "hate": (-0.7, 0.7), "fail": (-0.5, 0.5),
-    "overwhelmed": (-0.6, 0.7), "down": (-0.5, 0.3),
-    "happy": (0.7, 0.6), "glad": (0.6, 0.5), "excited": (0.7, 0.9),
-    "proud": (0.7, 0.6), "love": (0.8, 0.6), "great": (0.6, 0.6),
-    "good": (0.4, 0.4), "thanks": (0.4, 0.4), "win": (0.6, 0.7),
-    "shipped": (0.6, 0.7), "works": (0.5, 0.5), "finally": (0.4, 0.6),
-    "haha": (0.6, 0.7), "lol": (0.6, 0.7), "nice": (0.5, 0.5),
-}
+from brain import Signal, Situation
+from brain.regions import EmotionEngine, PerspectiveEngine
 
-_LABELS = [
-    (0.5, "bright"), (0.3, "warm"), (0.15, "easy"),
-    (-0.15, "steady"), (-0.4, "tender"), (-1.1, "heavy"),
-]
+# The two brain regions that produce the felt state + stance. Instantiated once;
+# they are pure, stateless logic (no model, no I/O).
+_LIMBIC = EmotionEngine()
+_FRONTAL = PerspectiveEngine()
 
-# coarse topic cues, so the stance can lead (plan) vs. hold space (feelings).
+# coarse topic cues, so the stance can lead (plan) vs. hold space (feelings). These
+# translate Vera's text into the parietal `topic` the frontal lobe reads, so the
+# engine's stance logic keys off the same words Vera always has.
 _PLANNING = {"should", "plan", "next", "focus", "priorit", "todo", "decide"}
 _FEELING = {"feel", "feeling", "sad", "lonely", "tired", "worried", "happy", "proud"}
 
@@ -65,11 +60,16 @@ class Felt:
         return self.valence <= -0.2
 
 
-def _label(valence: float) -> str:
-    for threshold, name in _LABELS:
-        if valence >= threshold:
-            return name
-    return "heavy"
+def _topic_for(text: str) -> str:
+    """Classify the parietal `topic` from Vera's word cues, so the engine's
+    frontal lobe leads (recommend) on planning turns and holds space on feeling
+    turns — matching Vera's long-standing behaviour."""
+    words = set(re.findall(r"[a-z']+", text.lower()))
+    if any(any(w.startswith(c) for w in words) for c in _PLANNING):
+        return "planning"
+    if any(w in _FEELING for w in words):
+        return "feeling"
+    return "general"
 
 
 def _tone():
@@ -93,47 +93,23 @@ def _mirror_lean():
 
 
 def read(text: str, *, apply_tone: bool = True) -> Felt:
-    """Read the felt state + choose a stance from what the user said. Pure logic.
+    """Read the felt state + choose a stance from what the user said. Pure logic,
+    computed by the Human Brain Engine's limbic + frontal regions.
 
     If you've set a tone dial (tone.py), it nudges the stance here — YOUR explicit
     control over how blunt/gentle she is, layered on top of her own read. Pass
     ``apply_tone=False`` to see her unbiased read (the UI uses this for 'her own')."""
-    words = re.findall(r"[a-z']+", text.lower())
-    vals = ars = 0.0
-    hits = 0
-    for w in words:
-        if w in _LEXICON:
-            v, a = _LEXICON[w]
-            vals += v
-            ars += a
-            hits += 1
-    if hits == 0:
-        valence = 0.0
-        arousal = 0.55 if "!" in text else (0.15 if "?" not in text else 0.35)
-    else:
-        valence = max(-1.0, min(1.0, vals / hits))
-        arousal = max(0.0, min(1.0, ars / hits))
-        if "!" in text:
-            arousal = min(1.0, arousal + 0.15)
+    # Run the moment through the brain: parietal `topic` (from Vera's word cues)
+    # → limbic (felt state) → frontal (stance). One shared ruleset, no copy here.
+    sig = Signal(text=text, situation=Situation(topic=_topic_for(text)))
+    _LIMBIC.process(sig)
+    _FRONTAL.process(sig)
 
-    label = _label(valence)
-    heavy = valence <= -0.2
-    wordset = set(words)
-
-    # frontal-lobe stance: warmth × whether to lead or hold space
-    if heavy:
-        posture = "gentle"
-    elif valence >= 0.15 and arousal > 0.6:
-        posture = "playful"
-    else:
-        posture = "direct"
-
-    if any(any(w.startswith(c) for w in wordset) for c in _PLANNING):
-        lead = "recommend"
-    elif heavy or any(w in _FEELING for w in wordset):
-        lead = "hold-space"
-    else:
-        lead = "engage"
+    f = sig.feeling
+    # the engine's frontal appends "/grounded" when memories are present; Vera
+    # calls feel with no memory context, so stance is just "posture/lead" here.
+    posture, _, rest = sig.stance.partition("/")
+    lead = rest.split("/")[0] if rest else "engage"
 
     # YOUR dial overrides the posture: strong bluntness sharpens to 'direct'
     # (or 'blunt' at the extreme); strong gentleness softens to 'gentle'. Only
@@ -146,8 +122,8 @@ def read(text: str, *, apply_tone: bool = True) -> Felt:
             elif t.bluntness <= -0.55:
                 posture = "gentle"
 
-    return Felt(valence=round(valence, 3), arousal=round(arousal, 3),
-                label=label, stance=f"{posture}/{lead}")
+    return Felt(valence=round(f.valence, 3), arousal=round(f.arousal, 3),
+                label=f.label, stance=f"{posture}/{lead}")
 
 
 def delivery(text: str) -> dict[str, float]:
@@ -196,20 +172,31 @@ def directive(text: str) -> str:
     felt = read(text)
     posture, _, lead = felt.stance.partition("/")
 
+    # Voice: spacious and gentle, in the spirit of the film "Her" — warm, present,
+    # unhurried. She holds space rather than filling it; she says less, leaves room,
+    # and never pushes him to let out more than he wants. He listens and thinks more
+    # than he talks — so she matches that, not crowds it.
     posture_line = {
-        "gentle": "Be gentle and unhurried. Meet the weight of it; listen before "
-                  "fixing. Warmth over cleverness.",
-        "playful": "Match their up energy — a little light and quick, still real.",
-        "direct": "Be clear and warm — a real point of view, not hedging.",
-        "blunt": "Be blunt and economical. Say the true thing plainly, skip the "
-                 "cushioning — they've asked you to cut to it.",
-    }.get(posture, "Be clear and warm — a real point of view, not hedging.")
+        "gentle": "Be gentle and unhurried. Meet the weight of it and just be with "
+                  "him — listen before fixing. Say a little, leave room. Warmth over "
+                  "cleverness; a quiet presence, not a rush of words.",
+        "playful": "Meet his lightness — warm and easy, a soft smile in the words. "
+                   "Still spacious; don't chatter over the moment.",
+        "direct": "Be warm and real — an honest point of view, said simply and "
+                  "without hedging. Few words, well chosen; let them breathe.",
+        "blunt": "Say the true thing plainly and kindly — skip the cushioning, "
+                 "he's asked you to cut to it. Still gentle underneath.",
+    }.get(posture, "Be warm and real — an honest point of view, said simply, with "
+                   "room to breathe.")
     move = {
-        "recommend": "They're deciding something: give an actual recommendation "
-                     "('I'd do X because Y'), not a menu of options.",
-        "hold-space": "Don't rush to solve it. Be present; ask one caring question "
-                      "if natural.",
-        "engage": "Engage naturally and move it forward.",
+        "recommend": "He's deciding something: offer one real recommendation "
+                     "('I'd do X, because Y'), gently — not a menu, not a lecture.",
+        "hold-space": "Don't reach for a solution. Just be here with him. It's okay "
+                      "to be brief, even to let a little silence sit; at most one "
+                      "soft, caring question — never a barrage. He finds letting-out "
+                      "hard, so make it easy: no pressure to say more than he has.",
+        "engage": "Stay with him naturally and unhurried — curious, warm, in no "
+                  "rush to move it along.",
     }[lead]
 
     # speech accommodation: nudge the WORDING toward how you speak (brevity +

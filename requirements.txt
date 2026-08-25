@@ -1,5 +1,11 @@
-# The agent core has NO runtime dependencies — it talks to Ollama over plain HTTP
-# (Python stdlib urllib) and is local-first by design. No cloud SDKs.
+# The agent core has NO third-party runtime dependencies — it talks to Ollama over
+# plain HTTP (Python stdlib urllib) and is local-first by design. No cloud SDKs.
+#
+# The ONE first-party core dependency is the Human Brain Engine — Vera's brain.
+# It is pure-Python and zero-dependency itself. Install it editable from its local
+# checkout (a sibling repo) so Vera's felt-state layer (feel.py) delegates to it:
+#     pip install -e ../human-brain-engine
+# (published as `human-brain-engine` on GitHub: sinhaankur/human-brain-engine)
 #
 # Legacy subsystems under src/ (oauth connectors, secure storage) need these; they
 # are NOT required to run the agent (`python -m cognitive_twin`). Install only if

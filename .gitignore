@@ -1,5 +1,10 @@
 __pycache__/
 *.py[cod]
+# python packaging / build artifacts (from `pip install -e .`)
+*.egg-info/
+build/
+dist/
+.pytest_cache/
 .env
 agent_config.json
 memory/runtime/

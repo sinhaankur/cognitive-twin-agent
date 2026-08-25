@@ -129,21 +129,23 @@ class Agent:
         # editable persona profile (who they are) + a private summary of how they
         # actually behave. Together: the twin reasons + speaks as this person.
         parts = [self.persona]
-        # Tool-use directive — small models otherwise answer facts from thin air
-        # (e.g. "you have no projects" when list_projects would return 15). Make it
-        # explicit: for anything about the user's real state, CALL the tool first,
-        # never guess or say you don't know when a tool can tell you.
-        parts.append(
-            "# USING YOUR TOOLS\n"
-            "You have tools that read the user's real, on-device data. When a "
-            "question is about their PROJECTS, tasks, day, files, screen, or "
-            "anything a tool can answer, CALL the tool first — do not answer from "
-            "memory and never say they have nothing when a tool would show "
-            "otherwise. Examples: 'my projects / what am I building' → list_projects; "
-            "'what should I focus on / think across my work' → think_routes; "
-            "'my day / tasks' → my_day. Ground every factual claim in a tool result."
-        )
         if self.use_memory:
+            # Tool-use directive — small models otherwise answer facts from thin
+            # air (e.g. "you have no projects" when list_projects would return 15).
+            # Make it explicit: for anything about the user's real state, CALL the
+            # tool first, never guess or say you don't know when a tool can tell
+            # you. Gated with memory so a bare library Agent (use_memory=False)
+            # stays a clean primitive — its system prompt is exactly the persona.
+            parts.append(
+                "# USING YOUR TOOLS\n"
+                "You have tools that read the user's real, on-device data. When a "
+                "question is about their PROJECTS, tasks, day, files, screen, or "
+                "anything a tool can answer, CALL the tool first — do not answer from "
+                "memory and never say they have nothing when a tool would show "
+                "otherwise. Examples: 'my projects / what am I building' → list_projects; "
+                "'what should I focus on / think across my work' → think_routes; "
+                "'my day / tasks' → my_day. Ground every factual claim in a tool result."
+            )
             who = _persona.to_prompt()
             if who:
                 parts.append(who)

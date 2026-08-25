@@ -52,14 +52,27 @@ def test_life_status_text(tmp_path):
 
 
 def test_dashboard_has_no_vera_stack(tmp_path):
-    """The standalone app must not drag in the voice/agent/LLM modules."""
+    """The standalone app must not drag in the voice/agent/LLM modules.
+
+    Measures what importing the dashboard ADDS, not the global sys.modules state —
+    so an earlier test in the suite having imported the Vera stack can't make this
+    fail. We purge the assistant modules, import the dashboard fresh, and assert it
+    did not re-introduce any of them (that is the real 'stands alone' contract)."""
+    def _vera_stack():
+        return {m for m in sys.modules
+                if m.startswith("cognitive_twin.voice")
+                or m.startswith("cognitive_twin.agent")
+                or m.startswith("cognitive_twin.llm")
+                or m.startswith("cognitive_twin.brain")}
+
+    # start from a clean slate: drop any assistant modules a prior test imported
+    for m in _vera_stack():
+        del sys.modules[m]
+
     _fresh(tmp_path)
-    leaked = [m for m in sys.modules
-              if m.startswith("cognitive_twin.voice")
-              or m.startswith("cognitive_twin.agent")
-              or m.startswith("cognitive_twin.llm")
-              or m.startswith("cognitive_twin.brain")]
-    assert not leaked, f"dashboard pulled in assistant modules: {leaked}"
+
+    leaked = _vera_stack()
+    assert not leaked, f"dashboard pulled in assistant modules: {sorted(leaked)}"
 
 
 def test_dashboard_http(tmp_path):

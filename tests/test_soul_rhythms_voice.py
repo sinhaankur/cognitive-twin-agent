@@ -31,6 +31,17 @@ from cognitive_twin import rhythms as R         # noqa: E402
 from cognitive_twin import voice_profile as VP  # noqa: E402
 
 
+def setup_function(_fn):
+    """Re-assert this module's isolation before EVERY test. The env var is set
+    once at import, but other test files reassign CTWIN_MEMORY_DIR to their own
+    temp dirs (process-global) — so by the time these tests run in the full suite
+    the env could point elsewhere. Pin it back to our dir and drop memory's cache
+    so reads see our seeded file, not another test's leftover state."""
+    os.environ["CTWIN_MEMORY_DIR"] = _TMP
+    os.environ["CTWIN_PERSONA_DIR"] = _TMP
+    M._entries_cache = None
+
+
 def _seed_memory(hours, prompt="work on the rust core"):
     """Write interaction entries at given hours so rhythms/soul have data."""
     path = Path(_TMP) / "memory.jsonl"
