@@ -448,57 +448,82 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
         emotion = hue (heavy→violet … glad→gold); everything else stays cyan, so
         'how she feels' is instantly distinct from 'how she thinks'. It lives at
         top-right and glows in her current felt hue (--fc), set live by JS. ───── */
-  #feel{display:none;top:56px;right:18px;width:236px;
-    background:linear-gradient(180deg, rgba(10,9,18,.94), rgba(7,8,14,.94));
-    border:1px solid var(--fc,rgba(150,150,200,.5));border-radius:2px;
+  #feel{display:none;top:74px;right:26px;width:248px;
+    background:rgba(9,11,19,.62);backdrop-filter:blur(16px) saturate(1.15);
+    border:1px solid var(--fc,rgba(var(--feel),.16));border-radius:14px;
     padding:0;font-size:11px;overflow:hidden;
-    box-shadow:0 8px 30px rgba(0,0,0,.55), 0 0 22px -6px var(--fc,transparent);
-    transition:border-color .5s ease, box-shadow .5s ease}
-  #feel .fhead{display:flex;align-items:center;gap:7px;padding:9px 12px 8px;
-    border-bottom:1px solid rgba(170,190,230,.12)}
-  #feel .fpip{width:7px;height:7px;border-radius:50%;background:var(--fc,#889);
-    box-shadow:0 0 8px var(--fc,transparent);flex:none}
-  #feel .fhh{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:rgba(160,170,190,.7)}
-  #feel .fbody{padding:11px 12px 12px}
-  /* the real-anatomy panel — nine regions, in order, with live per-region notes.
-     soft glass, no hard border — matches the cinematic language; fades in on a thought */
-  #anatomy{display:none;top:74px;left:26px;width:290px;max-height:calc(100vh - 200px);
-    overflow-y:auto;background:rgba(9,11,19,.62);backdrop-filter:blur(16px) saturate(1.15);
-    border:1px solid rgba(var(--feel), .16);border-radius:14px;padding:0;
-    box-shadow:0 20px 60px -18px rgba(0,0,0,.75);opacity:0;transition:opacity .5s ease}
-  #anatomy.show{opacity:1}
-  #anatomy .fhead{display:flex;align-items:center;gap:8px;padding:12px 15px 10px;
+    box-shadow:0 20px 60px -18px rgba(0,0,0,.75), 0 0 30px -10px var(--fc,transparent);
+    transition:border-color .8s ease, box-shadow .8s ease}
+  #feel .fhead{display:flex;align-items:center;gap:8px;padding:12px 15px 10px;
     border-bottom:1px solid var(--line)}
-  #anatomy .fpip{width:6px;height:6px;border-radius:50%;background:rgba(var(--feel),1);
-    box-shadow:0 0 9px rgba(var(--feel),.8);flex:none}
-  #anatomy .fhh{font-family:var(--serif);font-style:italic;font-size:12px;letter-spacing:0;
+  #feel .fpip{width:6px;height:6px;border-radius:50%;background:var(--fc,#889);
+    box-shadow:0 0 9px var(--fc,transparent);flex:none}
+  #feel .fhh{font-family:var(--serif);font-style:italic;font-size:12px;letter-spacing:0;
     text-transform:none;color:var(--ink-dim)}
-  #anatomy .anbody{padding:9px 12px 11px}
-  #anatomy .ansub{font-size:8.5px;letter-spacing:.03em;color:rgba(150,160,180,.6);
-    line-height:1.4;margin-bottom:8px}
+  #feel .fbody{padding:11px 12px 12px}
+  /* THE BRAIN VIEW — majestic. A luminous vertical spine of nine regions; a thought
+     REASONS down it, each region igniting in turn (LLM-thinking, made visible). Wider,
+     grander, glassier; the signal visibly flows region → region. Fades in on a thought. */
+  #anatomy{display:none;top:50%;left:50%;transform:translate(-50%,-50%) scale(.98);
+    width:min(440px,90vw);max-height:82vh;overflow-y:auto;
+    background:linear-gradient(180deg, rgba(11,13,24,.72), rgba(7,9,16,.78));
+    backdrop-filter:blur(22px) saturate(1.2);
+    border:1px solid rgba(var(--feel), .2);border-radius:22px;padding:0;
+    box-shadow:0 40px 120px -30px rgba(0,0,0,.85), 0 0 60px -20px rgba(var(--feel),.35),
+      inset 0 1px 0 rgba(255,255,255,.05);
+    opacity:0;transition:opacity .6s ease, transform .6s cubic-bezier(.16,1,.3,1)}
+  #anatomy.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+  #anatomy .fhead{display:flex;align-items:center;gap:10px;padding:20px 26px 14px;
+    border-bottom:1px solid var(--line)}
+  #anatomy .fpip{width:7px;height:7px;border-radius:50%;background:rgba(var(--feel),1);
+    box-shadow:0 0 14px rgba(var(--feel),.9);flex:none;animation:apip 2.2s ease-in-out infinite}
+  @keyframes apip{0%,100%{opacity:.5}50%{opacity:1}}
+  #anatomy .fhh{font-family:var(--serif);font-style:italic;font-size:16px;letter-spacing:0;
+    text-transform:none;color:var(--ink)}
+  #anatomy .anclose{margin-left:auto;pointer-events:auto;cursor:pointer;color:var(--ink-faint);
+    font-size:18px;line-height:1;padding:2px 4px;border-radius:6px;transition:color .2s,background .2s}
+  #anatomy .anclose:hover{color:var(--ink);background:rgba(255,255,255,.06)}
+  #anatomy .anbody{padding:18px 26px 22px}
+  #anatomy .ansub{font-size:11px;letter-spacing:.01em;color:var(--ink-dim);
+    line-height:1.5;margin-bottom:18px;font-family:var(--sans)}
+  #anatomy .thinking{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle}
+  #anatomy .thinking i{width:4px;height:4px;border-radius:50%;background:rgba(var(--feel),.9);
+    animation:think 1.2s ease-in-out infinite}
+  #anatomy .thinking i:nth-child(2){animation-delay:.2s} #anatomy .thinking i:nth-child(3){animation-delay:.4s}
+  @keyframes think{0%,100%{opacity:.2;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
   #anatomy ol{list-style:none;margin:0;padding:0;counter-reset:reg}
-  #anatomy li{counter-increment:reg;position:relative;padding:5px 0 5px 20px;
-    border-left:1px solid rgba(150,170,220,.18);margin-left:4px;transition:opacity .3s}
-  #anatomy li::before{content:counter(reg);position:absolute;left:-7px;top:6px;
-    width:13px;height:13px;border-radius:50%;background:rgba(20,24,38,.95);
-    border:1px solid rgba(150,170,220,.35);color:rgba(180,195,225,.85);
-    font:8px ui-monospace,Menlo,monospace;display:flex;align-items:center;justify-content:center}
-  #anatomy li.on::before{background:var(--rc,#8ea);color:#061018;border-color:var(--rc,#8ea);
-    box-shadow:0 0 9px var(--rc,#8ea)}
-  #anatomy li.limbic::before{--rc:#f7a}    /* feeling = the connective tissue */
-  #anatomy .rlab{font-size:10px;color:rgba(205,214,232,.92);letter-spacing:.01em}
-  #anatomy .rfac{font-size:8px;letter-spacing:.1em;text-transform:uppercase;
-    color:rgba(150,160,185,.6);margin-left:5px}
-  #anatomy .rnote{font-size:9px;color:rgba(150,200,175,.85);line-height:1.35;margin-top:1px}
-  #anatomy .rrole{font-size:8.5px;color:rgba(140,150,170,.55);line-height:1.35;margin-top:1px}
+  /* each region: dim until the reasoning reaches it, then it IGNITES */
+  #anatomy li{counter-increment:reg;position:relative;padding:11px 0 11px 34px;
+    margin-left:8px;opacity:.28;filter:saturate(.4);
+    transition:opacity .5s ease, filter .5s ease;
+    border-left:2px solid rgba(var(--feel), .12)}
+  #anatomy li.lit{opacity:1;filter:saturate(1)}
+  #anatomy li.lit{border-left-color:rgba(var(--feel), .55)}
+  #anatomy li::before{content:counter(reg);position:absolute;left:-12px;top:9px;
+    width:22px;height:22px;border-radius:50%;background:rgba(14,17,28,.98);
+    border:1.5px solid rgba(150,170,220,.3);color:rgba(180,195,225,.8);
+    font:10px var(--mono);display:flex;align-items:center;justify-content:center;
+    transition:all .5s cubic-bezier(.16,1,.3,1);z-index:1}
+  #anatomy li.lit::before{background:rgba(var(--rc,var(--feel)),1);color:#050810;
+    border-color:rgba(var(--rc,var(--feel)),1);
+    box-shadow:0 0 20px 2px rgba(var(--rc,var(--feel)),.7);transform:scale(1.12)}
+  #anatomy li.limbic{--rc:247,150,190}    /* feeling = the connective tissue (rose) */
+  #anatomy .rlab{font-family:var(--serif);font-size:14px;color:var(--ink);letter-spacing:.01em}
+  #anatomy .rfac{font-size:8.5px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ink-faint);margin-left:8px;font-family:var(--mono)}
+  #anatomy .rnote{font-size:11px;color:rgba(var(--feel),.92);line-height:1.45;margin-top:3px;
+    font-family:var(--mono)}
+  #anatomy .rrole{font-size:11px;color:var(--ink-dim);line-height:1.45;margin-top:3px;font-family:var(--sans)}
   /* the how-memory / how-AI story, shown at the hippocampus + cortex */
   #anatomy .rsys{font-size:9px;color:rgba(190,200,225,.82);line-height:1.4;margin-top:3px;
     padding:4px 7px;background:rgba(var(--feel), .07);border-radius:5px;
     border-left:2px solid rgba(var(--feel), .5)}
   #anatomy .rsys b{color:rgba(var(--feel), 1);font-weight:600}
   #anatomy .rdim{font-size:8px;color:rgba(150,160,180,.55);margin-top:2px;line-height:1.35}
-  #anatomy .anorigin{font-size:8px;letter-spacing:.04em;color:rgba(140,150,170,.5);
-    line-height:1.4;margin-top:9px;border-top:1px solid rgba(170,190,230,.1);padding-top:7px}
+  #anatomy .anorigin{font-size:10px;letter-spacing:.01em;color:var(--ink-dim);
+    line-height:1.55;margin-top:16px;border-top:1px solid var(--line);padding-top:13px;
+    font-family:var(--sans)}
+  #anatomy .anorigin b{color:rgba(var(--feel),.95);font-weight:600}
   /* the felt word — large, in the emotion's own colour */
   #feel .fword{font-size:19px;letter-spacing:.02em;color:var(--fc,#cfd);line-height:1;
     text-shadow:0 0 16px var(--fc,transparent);text-transform:lowercase}
@@ -617,11 +642,11 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   </div>
 </div>
 <div class="hud" id="anatomy">
-  <div class="fhead"><span class="fpip"></span><span class="fhh">the real brain · how a thought flows</span></div>
+  <div class="fhead"><span class="fpip"></span><span class="fhh">the brain, thinking</span><span class="anclose" id="anclose" title="close">×</span></div>
   <div class="anbody">
     <div class="ansub">nine regions, in anatomical order — the limbic feeling colours the ones after it</div>
     <ol id="anlist"></ol>
-    <div class="anorigin">the true architecture — each line is the <b>engine's own</b> output for your prompt, on-device. nothing invented.</div>
+    <div class="anorigin"><b>her version of neurons firing.</b> a human brain thinks through neurons and electrical signals leaping between them. she thinks through these nine region-engines (the <b>nodes</b>) and one <b>Signal</b> that flows between them — the same idea, a different substance: data, not electrons. every line is the engine's own output for your words, on-device. nothing invented.</div>
   </div>
 </div>
 <div class="hud" id="answer"></div>
@@ -1656,13 +1681,22 @@ async function renderAnatomy(q){
   const active = (d.active || {});
   const notes = active.notes || {};
   const ai = active.ai || {}, mem = active.memory || {};
+  const feel = active.feeling || {};
   list.innerHTML = "";
+  const items = [];
   (d.regions || []).forEach(r => {
     const note = (notes[r.id] || []).join(" · ");
     const li = document.createElement("li");
     if (r.id === "limbic") li.className = "limbic";
-    if (note) li.classList.add("on");
+    li.dataset.hasnote = note ? "1" : "";
     let extra = "";
+    // the limbic region shows the full felt VALUES — the nuanced terminology, visible
+    if (r.id === "limbic" && feel.label){
+      extra = '<div class="rsys">felt · <b>' + feel.label + '</b>'
+        + '  valence ' + (feel.valence>=0?'+':'') + feel.valence
+        + ' · arousal ' + feel.arousal
+        + '<div class="rdim">valence = heavy(−1) … glad(+1) · arousal = calm(0) … lit(1)</div></div>';
+    }
     // HOW AI WORKS — surfaced right at the cortex, where the model lives
     if (r.id === "cortex"){
       extra = '<div class="rsys">' + (ai.model
@@ -1682,10 +1716,29 @@ async function renderAnatomy(q){
               : '<div class="rrole">' + r.role + '</div>')
       + extra;
     list.appendChild(li);
+    items.push(li);
   });
   // only show it in the details/expert view, so the simple mind stays uncluttered
-  if (MODE !== "simple"){ box.style.display = "block";
-    requestAnimationFrame(() => box.classList.add("show")); }
+  if (MODE === "simple") return;
+  const sub = box.querySelector(".ansub");
+  if (sub) sub.innerHTML = 'watch the thought reason down the brain — each region ignites in turn'
+    + '<span class="thinking"><i></i><i></i><i></i></span>';
+  box.style.display = "block";
+  requestAnimationFrame(() => box.classList.add("show"));
+  // THE MAJESTIC REVEAL: light regions ONE AT A TIME, in anatomical order, so the
+  // reasoning is watchable. Real thought is instant; this paces it so you can SEE
+  // how she thinks — situate → feel → recall → decide → word → wit → voice.
+  if (window._anTimers) window._anTimers.forEach(clearTimeout);
+  window._anTimers = [];
+  items.forEach((li, i) => {
+    window._anTimers.push(setTimeout(() => {
+      li.classList.add("lit");
+      // when the last one lights, the thought has fully formed — settle the dots
+      if (i === items.length - 1 && sub){
+        const th = sub.querySelector(".thinking"); if (th) th.style.opacity = ".25";
+      }
+    }, 260 + i * 340));   // ~340ms per region — fast, but watchable
+  });
 }
 
 async function think(q){
@@ -2007,6 +2060,10 @@ function resize(){
 window.addEventListener("resize", resize);
 resize();
 setInterval(loadAll, 12000);
+// close the brain view (it's a centred overlay now)
+(function(){ const c = document.getElementById("anclose"); if (c) c.onclick = () => {
+  const a = document.getElementById("anatomy"); if (a){ a.classList.remove("show");
+    setTimeout(() => a.style.display = "none", 500); } }; })();
 wireDial();
 loadAll().then(() => {
   reveal();
