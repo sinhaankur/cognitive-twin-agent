@@ -166,6 +166,18 @@ def _feel(q: str) -> dict[str, Any]:
         return {"error": str(e)}
 
 
+def _engineflow(q: str) -> dict[str, Any]:
+    """The REAL anatomical signal flow from the Human Brain Engine — nine regions
+    in order, the limbic feeling colouring the ones downstream, and the live
+    per-region note for this prompt. This is the honest architecture the Mind view
+    draws (see brain.engine_flow). Local only, read-only."""
+    try:
+        from . import brain
+        return brain.engine_flow(q)
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def _tone_get() -> dict[str, Any]:
     """Your current tone dial (tone.py) — the human's control over her delivery."""
     try:
@@ -257,6 +269,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, _landscape())
         elif self.path == "/api/brain":
             self._json(200, _brain())
+        elif self.path.startswith("/api/engineflow"):
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query).get("q", [""])[0]
+            self._json(200, _engineflow(q))
         elif self.path.startswith("/api/thought"):
             from urllib.parse import urlparse, parse_qs
             q = parse_qs(urlparse(self.path).query).get("q", [""])[0]
@@ -408,6 +424,36 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
     box-shadow:0 0 8px var(--fc,transparent);flex:none}
   #feel .fhh{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:rgba(160,170,190,.7)}
   #feel .fbody{padding:11px 12px 12px}
+  /* the real-anatomy panel — nine regions, in order, with live per-region notes */
+  #anatomy{display:none;top:56px;left:18px;width:272px;
+    background:linear-gradient(180deg, rgba(10,9,18,.94), rgba(7,8,14,.94));
+    border:1px solid rgba(150,160,210,.4);border-radius:2px;padding:0;overflow:hidden;
+    box-shadow:0 8px 30px rgba(0,0,0,.55)}
+  #anatomy .fhead{display:flex;align-items:center;gap:7px;padding:9px 12px 8px;
+    border-bottom:1px solid rgba(170,190,230,.12)}
+  #anatomy .fpip{width:7px;height:7px;border-radius:50%;background:#8ea;
+    box-shadow:0 0 8px #8ea;flex:none}
+  #anatomy .fhh{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:rgba(160,170,190,.7)}
+  #anatomy .anbody{padding:9px 12px 11px}
+  #anatomy .ansub{font-size:8.5px;letter-spacing:.03em;color:rgba(150,160,180,.6);
+    line-height:1.4;margin-bottom:8px}
+  #anatomy ol{list-style:none;margin:0;padding:0;counter-reset:reg}
+  #anatomy li{counter-increment:reg;position:relative;padding:5px 0 5px 20px;
+    border-left:1px solid rgba(150,170,220,.18);margin-left:4px;transition:opacity .3s}
+  #anatomy li::before{content:counter(reg);position:absolute;left:-7px;top:6px;
+    width:13px;height:13px;border-radius:50%;background:rgba(20,24,38,.95);
+    border:1px solid rgba(150,170,220,.35);color:rgba(180,195,225,.85);
+    font:8px ui-monospace,Menlo,monospace;display:flex;align-items:center;justify-content:center}
+  #anatomy li.on::before{background:var(--rc,#8ea);color:#061018;border-color:var(--rc,#8ea);
+    box-shadow:0 0 9px var(--rc,#8ea)}
+  #anatomy li.limbic::before{--rc:#f7a}    /* feeling = the connective tissue */
+  #anatomy .rlab{font-size:10px;color:rgba(205,214,232,.92);letter-spacing:.01em}
+  #anatomy .rfac{font-size:8px;letter-spacing:.1em;text-transform:uppercase;
+    color:rgba(150,160,185,.6);margin-left:5px}
+  #anatomy .rnote{font-size:9px;color:rgba(150,200,175,.85);line-height:1.35;margin-top:1px}
+  #anatomy .rrole{font-size:8.5px;color:rgba(140,150,170,.55);line-height:1.35;margin-top:1px}
+  #anatomy .anorigin{font-size:8px;letter-spacing:.04em;color:rgba(140,150,170,.5);
+    line-height:1.4;margin-top:9px;border-top:1px solid rgba(170,190,230,.1);padding-top:7px}
   /* the felt word — large, in the emotion's own colour */
   #feel .fword{font-size:19px;letter-spacing:.02em;color:var(--fc,#cfd);line-height:1;
     text-shadow:0 0 16px var(--fc,transparent);text-transform:lowercase}
@@ -522,6 +568,14 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
     </div>
     <div class="forigin">the feeling is <b>hers</b> — computed on-device, no model.
       the dial is <b>yours</b>: it never moves on its own.</div>
+  </div>
+</div>
+<div class="hud" id="anatomy">
+  <div class="fhead"><span class="fpip"></span><span class="fhh">the real brain · how a thought flows</span></div>
+  <div class="anbody">
+    <div class="ansub">nine regions, in anatomical order — the limbic feeling colours the ones after it</div>
+    <ol id="anlist"></ol>
+    <div class="anorigin">the true architecture — each line is the <b>engine's own</b> output for your prompt, on-device. nothing invented.</div>
   </div>
 </div>
 <div class="hud" id="answer"></div>
@@ -1526,8 +1580,35 @@ function wireDial(){
   });
 }
 
+/* the real-anatomy panel — fetch the engine's own signal flow for this prompt and
+   list the nine regions in order, each with the live note it produced. Honest:
+   every note is the engine's output, nothing invented. */
+async function renderAnatomy(q){
+  const box = document.getElementById("anatomy");
+  const list = document.getElementById("anlist");
+  if (!box || !list) return;
+  let d; try{ d = await j("/api/engineflow?q=" + encodeURIComponent(q)); }catch(_){ return; }
+  const active = (d.active || {});
+  const notes = active.notes || {};
+  list.innerHTML = "";
+  (d.regions || []).forEach(r => {
+    const note = (notes[r.id] || []).join(" · ");
+    const li = document.createElement("li");
+    if (r.id === "limbic") li.className = "limbic";
+    if (note) li.classList.add("on");
+    li.innerHTML = '<span class="rlab">' + r.label + '</span>'
+      + '<span class="rfac">' + r.faculty + '</span>'
+      + (note ? '<div class="rnote">' + note + '</div>'
+              : '<div class="rrole">' + r.role + '</div>');
+    list.appendChild(li);
+  });
+  // only show it in the details/expert view, so the simple mind stays uncluttered
+  if (MODE !== "simple") box.style.display = "block";
+}
+
 async function think(q){
   lastFeelQ = q;   // so a later dial change re-reads THIS prompt's feeling
+  renderAnatomy(q);   // update the real-anatomy panel alongside the thought
   const A = document.getElementById("answer"); A.style.display = "none";
   let d; try{ d = await j("/api/thought?q=" + encodeURIComponent(q)); }catch(_){ return; }
   const recall = [];
@@ -1774,6 +1855,8 @@ function hudRefresh(){
   document.getElementById("legend").style.display = "flex";
   document.getElementById("state").style.display = simple ? "block" : "none";
   if (!simple) document.getElementById("stages").style.display = "none";
+  // the real-anatomy panel is a details-view instrument; hide it in the simple mind
+  if (simple){ const an = document.getElementById("anatomy"); if (an) an.style.display = "none"; }
   document.getElementById("q").placeholder = simple
     ? "ask her anything — watch her think…"
     : "ask her something — watch the thought move…";
