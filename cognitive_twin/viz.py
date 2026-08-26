@@ -608,12 +608,13 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   #footer .sp{flex:1}
   #footer .ver{color:var(--ink-faint);font-family:var(--mono)}
   /* the details toggle — a soft feeling-tinted pill, top-right, clear of everything */
-  #mode{background:rgba(10,13,22,.5);backdrop-filter:blur(14px);
+  #mode, #brainbtn{background:rgba(10,13,22,.5);backdrop-filter:blur(14px);
     border:1px solid rgba(var(--feel),.22);border-radius:999px;
     color:var(--ink-dim);padding:8px 16px;font:11px var(--sans);letter-spacing:.02em;
     cursor:pointer;text-transform:none;transition:all .3s ease}
-  #mode:hover{color:rgba(var(--feel),1);border-color:rgba(var(--feel),.5);
+  #mode:hover, #brainbtn:hover{color:rgba(var(--feel),1);border-color:rgba(var(--feel),.5);
     background:rgba(var(--feel),.08)}
+  #brainbtn{color:rgba(var(--feel),.95);border-color:rgba(var(--feel),.35)}
 </style></head><body>
 <canvas id="sky"></canvas>
 <div class="hud" id="who"><div class="name" id="whoname">the mind</div><div class="sub" id="stats">reading her real state…</div></div>
@@ -679,7 +680,8 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   <span class="sp"></span>
   <span class="ver">build __VER__ · 127.0.0.1 only</span>
 </div>
-<div class="hud" id="modebtn" style="top:24px;right:26px;pointer-events:auto">
+<div class="hud" id="modebtn" style="top:24px;right:26px;pointer-events:auto;display:flex;gap:10px">
+  <button id="brainbtn" title="watch her brain think">✦ the brain</button>
   <button id="mode">details</button>
 </div>
 <script>
@@ -724,6 +726,15 @@ document.getElementById("mode").onclick = () => {
   localStorage.setItem("mindMode", MODE);
   document.getElementById("mode").textContent = MODE === "simple" ? "details" : "simple view";
   hudRefresh();
+};
+// "the brain" — always opens the majestic brain view, so it's never hidden. Forces
+// details mode and reasons through the last thing you said (or a gentle default).
+document.getElementById("brainbtn").onclick = () => {
+  if (MODE === "simple"){ MODE = "expert"; localStorage.setItem("mindMode", MODE);
+    document.getElementById("mode").textContent = "simple view"; hudRefresh(); }
+  const q = (lastFeelQ && lastFeelQ !== "(resting)" && lastFeelQ.trim())
+    ? lastFeelQ : "how are you, really?";
+  renderAnatomy(q);
 };
 
 /* ---------- deterministic jitter (stable across repolls) -------------------- */
