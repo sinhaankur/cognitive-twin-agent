@@ -829,7 +829,7 @@ function buildCloud(){
   const PITCH = 0.42;                    // arm winding — how tightly they coil (radians)
   cloud = Array.from({length: count}, (_, i) => {
     const isBulge = rnd(i*11) < 0.30;    // ~30% form the dense central bulge
-    let r, a0;
+    let r, a0, isDust = false;
     if (isBulge){
       // the bulge — a tight, roughly spherical concentration around the core
       r = 0.13 + Math.pow(rnd(i*11+1), 2.0) * 0.34;
@@ -843,6 +843,10 @@ function buildCloud(){
       // scatter around the arm centre — tighter near the core, looser outward
       const spread = (0.18 + r * 0.32) * (rnd(i*11+10) - 0.5) * 2;
       a0 = theta + spread;
+      // DUST LANE: stars that land just INSIDE the arm (the inner edge, where real
+      // galaxies show dark dust) become dust grains — dark, reddish-brown, low light.
+      // ~22% of arm stars, biased to the inner-edge offset, form the shadow bands.
+      if (spread < 0 && spread > -(0.14 + r*0.18) && rnd(i*11+12) < 0.5) isDust = true;
     }
     const neutral = rnd(i*11+2) < 0.34;
     let c = neutral ? NEUTRAL[(rnd(i*11+3)*NEUTRAL.length)|0] : pool[(rnd(i*11+3)*pool.length)|0];
@@ -851,16 +855,18 @@ function buildCloud(){
     const wm = (1 - gfrac) * (isBulge ? 0.55 : 0.42), cm = gfrac * 0.32;
     c = [ c[0]*(1-wm) + 255*wm, c[1]*(1-wm) + 212*wm, c[2]*(1-wm) + 158*wm ];
     c = [ (c[0]*(1-cm) + 140*cm)|0, (c[1]*(1-cm) + 180*cm)|0, (c[2]*(1-cm) + 255*cm)|0 ];
+    // dust grains: dark reddish-brown, dim — they read as the shadow lanes
+    if (isDust){ c = [58, 40, 34]; }
     const tier = rnd(i*11+7);
     return {
       u: Math.cos(a0) * r, v: Math.sin(a0) * r,        // in-plane position (disc units)
       hr: r,                                           // home radius — the shape holds
       // the bulge is rounded/tall; the disc is FLAT (a thin galactic plane)
       y: (rnd(i*11+5) - 0.5) * (isBulge ? (0.5 + r*0.4) : (0.10 + r*0.08)),
-      c, s: tier < 0.72 ? 1.2 : (tier < 0.95 ? 2 : 3),
-      spark: tier >= 0.985,                            // a few luminous grains
+      c, dust: isDust, s: isDust ? 2.2 : (tier < 0.72 ? 1.2 : (tier < 0.95 ? 2 : 3)),
+      spark: !isDust && tier >= 0.985,                 // a few luminous grains
       tw: rnd(i*11+8) * 6.2832,
-      al: 0.40 + rnd(i*11+9) * 0.55
+      al: isDust ? (0.5 + rnd(i*11+9)*0.3) : (0.40 + rnd(i*11+9) * 0.55)
     };
   });
 }
@@ -981,12 +987,19 @@ function drawCloud(now, dt, scale){
   for (let i = 0; i < cloud.length; i++){
     const p = cloud[i];
     const r = Math.hypot(p.u, p.v) || 0.001;
-    // ride the simulated fluid, plus a weak spring back to the home radius so
-    // the mass churns without dissolving
+    // KEPLERIAN ORBIT — but rotation is PURPOSEFUL, not idle churn. At rest she is
+    // almost still (a slow, barely-breathing drift); when she THINKS, the galaxy
+    // spins up. v = sqrt(GM/r) (Kepler's 3rd law — inner stars sweep faster, which
+    // is what winds the spiral arms) × a thinking factor that rises with 'heat'.
+    const think = 0.14 + heat * 0.86;                 // ~0.14 at rest → 1.0 mid-thought
+    const vOrb = (0.34 / Math.sqrt(r + 0.12)) * think;
+    const ku = -p.v / r * vOrb, kv = p.u / r * vOrb;  // (−sin,cos)·v  → counter-clockwise
+    // the fluid churn also only stirs hard when she thinks (× think), plus a weak
+    // spring back to the home radius so the shape holds instead of dissolving
     const f = fieldAt(p.u, p.v);
     const err = (p.hr - r) / r;
-    const du = f[0] + p.u * err * 0.5;
-    const dv = f[1] + p.v * err * 0.5;
+    const du = ku + f[0] * (0.25 + think * 0.5) + p.u * err * 0.5;
+    const dv = kv + f[1] * (0.25 + think * 0.5) + p.v * err * 0.5;
     p.u += du * dt; p.v += dv * dt;
     const wob = 1 + 0.05 * Math.sin(now * 0.0006 + p.tw);
     const w = project(p.u * Rc * wob, p.y * Rc * 0.55, p.v * Rc * wob);
@@ -2180,10 +2193,14 @@ function frame(now){
   // self-healing frame: if the viewport changed and the resize event was
   // missed (webview quirks), notice and re-measure — the heart stays centred
   if (window.innerWidth !== W || window.innerHeight !== H) resize();
-  // she is never frozen — but in the simple view the CAMERA is: a graph that
-  // drifts forever reads as "why is it circling", not as alive. life comes
-  // from the heart and the threads, not from spinning the room.
-  if (MODE !== "simple" && !cam.drag && !hoverHold && !fly) cam.yaw += dt * 0.012;
+  // she is never frozen — but a camera that drifts FOREVER reads as "why is it
+  // circling", not as alive. So the room only turns when she's actually THINKING
+  // (streams active): the spin is a consequence of thought, not idle churn. At rest
+  // the view holds still. Life comes from the heart and the threads, not spinning.
+  if (MODE !== "simple" && !cam.drag && !hoverHold && !fly){
+    const thinking = Math.min(1, streams.length / 40);
+    if (thinking > 0.01) cam.yaw += dt * 0.03 * thinking;
+  }
   // camera dynamics: a flight in progress, else the throw + eased zoom + follow
   if (fly){
     fly.t += dt;
