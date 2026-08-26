@@ -829,7 +829,7 @@ function buildCloud(){
   const PITCH = 0.42;                    // arm winding — how tightly they coil (radians)
   cloud = Array.from({length: count}, (_, i) => {
     const isBulge = rnd(i*11) < 0.30;    // ~30% form the dense central bulge
-    let r, a0, isDust = false;
+    let r, a0, isDust = false, isYoung = false;
     if (isBulge){
       // the bulge — a tight, roughly spherical concentration around the core
       r = 0.13 + Math.pow(rnd(i*11+1), 2.0) * 0.34;
@@ -840,13 +840,16 @@ function buildCloud(){
       // place on a logarithmic spiral arm: angle = k·ln(r) + arm offset
       const arm = (rnd(i*11+6) * ARMS | 0) * (6.2832 / ARMS);
       const theta = Math.log(r + 0.2) / PITCH + arm;
-      // scatter around the arm centre — tighter near the core, looser outward
-      const spread = (0.18 + r * 0.32) * (rnd(i*11+10) - 0.5) * 2;
+      // scatter around the arm CENTRELINE with a Gaussian-ish bias (sum of randoms →
+      // bell curve): most stars hug the arm, few stray between — so the arms read
+      // crisp with darker inter-arm gaps, like a real grand-design spiral.
+      const g3 = (rnd(i*11+10) + rnd(i*11+13) + rnd(i*11+14)) / 3 - 0.5;  // ~N(0), tight
+      const spread = (0.30 + r * 0.42) * g3 * 2;
       a0 = theta + spread;
-      // DUST LANE: stars that land just INSIDE the arm (the inner edge, where real
-      // galaxies show dark dust) become dust grains — dark, reddish-brown, low light.
-      // ~22% of arm stars, biased to the inner-edge offset, form the shadow bands.
-      if (spread < 0 && spread > -(0.14 + r*0.18) && rnd(i*11+12) < 0.5) isDust = true;
+      isYoung = spread > 0.02 && spread < (0.16 + r*0.2) && rnd(i*11+15) < 0.4;
+      // DUST LANE: stars on the INNER edge of the arm (real galaxies show dark dust
+      // there) become dust grains — dark, reddish-brown, low light: the shadow bands.
+      if (spread < -0.02 && spread > -(0.16 + r*0.2) && rnd(i*11+12) < 0.55) isDust = true;
     }
     const neutral = rnd(i*11+2) < 0.34;
     let c = neutral ? NEUTRAL[(rnd(i*11+3)*NEUTRAL.length)|0] : pool[(rnd(i*11+3)*pool.length)|0];
@@ -855,8 +858,11 @@ function buildCloud(){
     const wm = (1 - gfrac) * (isBulge ? 0.55 : 0.42), cm = gfrac * 0.32;
     c = [ c[0]*(1-wm) + 255*wm, c[1]*(1-wm) + 212*wm, c[2]*(1-wm) + 158*wm ];
     c = [ (c[0]*(1-cm) + 140*cm)|0, (c[1]*(1-cm) + 180*cm)|0, (c[2]*(1-cm) + 255*cm)|0 ];
-    // dust grains: dark reddish-brown, dim — they read as the shadow lanes
-    if (isDust){ c = [58, 40, 34]; }
+    // special populations OVERRIDE the grade so they stay pure:
+    // young star-forming regions on the arm's leading edge — hot blue-white;
+    // dust grains — dark reddish-brown, dim — the shadow lanes.
+    if (isYoung) c = [185, 210, 255];
+    if (isDust) c = [58, 40, 34];
     const tier = rnd(i*11+7);
     return {
       u: Math.cos(a0) * r, v: Math.sin(a0) * r,        // in-plane position (disc units)
