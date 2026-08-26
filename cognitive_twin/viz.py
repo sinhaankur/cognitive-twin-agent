@@ -811,24 +811,41 @@ function buildCloud(){
     for (let k = 0; k < m.count; k++) pool.push(c);
   });
   if (!pool.length) pool.push([120,135,170]);   // no memories: dim, quiet blue
+  // A SPIRAL GALAXY, like the Milky Way: a bright central bulge + logarithmic
+  // spiral arms (not a random cloud). Stars are born ALONG two main arms (plus a
+  // faint pair), scattered around them, so the sweep reads as real galactic structure.
+  const ARMS = 2;                       // the Milky Way's two dominant arms
+  const PITCH = 0.42;                    // arm winding — how tightly they coil (radians)
   cloud = Array.from({length: count}, (_, i) => {
-    const band = rnd(i*11);
-    // dense inner band + long soft tail; hole in the very middle (dark core)
-    const r = 0.13 + (band < 0.72 ? Math.pow(rnd(i*11+1), 1.4) * 0.5
-                                  : 0.36 + Math.pow(rnd(i*11+1), 0.8) * 0.85);
+    const isBulge = rnd(i*11) < 0.30;    // ~30% form the dense central bulge
+    let r, a0;
+    if (isBulge){
+      // the bulge — a tight, roughly spherical concentration around the core
+      r = 0.13 + Math.pow(rnd(i*11+1), 2.0) * 0.34;
+      a0 = rnd(i*11+4) * 6.2832;
+    } else {
+      // the disc — radius biased outward with a long tail
+      r = 0.20 + Math.pow(rnd(i*11+1), 0.85) * 1.05;
+      // place on a logarithmic spiral arm: angle = k·ln(r) + arm offset
+      const arm = (rnd(i*11+6) * ARMS | 0) * (6.2832 / ARMS);
+      const theta = Math.log(r + 0.2) / PITCH + arm;
+      // scatter around the arm centre — tighter near the core, looser outward
+      const spread = (0.18 + r * 0.32) * (rnd(i*11+10) - 0.5) * 2;
+      a0 = theta + spread;
+    }
     const neutral = rnd(i*11+2) < 0.34;
     let c = neutral ? NEUTRAL[(rnd(i*11+3)*NEUTRAL.length)|0] : pool[(rnd(i*11+3)*pool.length)|0];
-    // astro colour grade: warm toward the heart, cool toward the rim
+    // astro colour grade: warm/golden bulge toward the heart, cool blue arms at the rim
     const gfrac = Math.max(0, Math.min(1, (r - 0.13) / 1.1));
-    const wm = (1 - gfrac) * 0.42, cm = gfrac * 0.30;
+    const wm = (1 - gfrac) * (isBulge ? 0.55 : 0.42), cm = gfrac * 0.32;
     c = [ c[0]*(1-wm) + 255*wm, c[1]*(1-wm) + 212*wm, c[2]*(1-wm) + 158*wm ];
     c = [ (c[0]*(1-cm) + 140*cm)|0, (c[1]*(1-cm) + 180*cm)|0, (c[2]*(1-cm) + 255*cm)|0 ];
     const tier = rnd(i*11+7);
-    const a0 = rnd(i*11+4) * 6.2832;
     return {
       u: Math.cos(a0) * r, v: Math.sin(a0) * r,        // in-plane position (disc units)
       hr: r,                                           // home radius — the shape holds
-      y: (rnd(i*11+5) - 0.5) * (0.72 + r*0.5),         // a full, rounded mass
+      // the bulge is rounded/tall; the disc is FLAT (a thin galactic plane)
+      y: (rnd(i*11+5) - 0.5) * (isBulge ? (0.5 + r*0.4) : (0.10 + r*0.08)),
       c, s: tier < 0.72 ? 1.2 : (tier < 0.95 ? 2 : 3),
       spark: tier >= 0.985,                            // a few luminous grains
       tw: rnd(i*11+8) * 6.2832,
@@ -996,13 +1013,15 @@ function drawCloud(now, dt, scale){
       cctx.beginPath(); cctx.arc(P.X, P.Y, sz * 2.6, 0, 7); cctx.fill();
     }
   }
-  // a soft luminous heart behind the dark core (the dense unresolved middle)
+  // THE GALACTIC HEART — a brilliant golden-white nucleus (the Milky Way's core is
+  // the brightest thing in the sky). A broad warm halo behind the grains so the
+  // centre glows rather than sits dark.
   const core = S(0, 0), CR = Rc * 0.34 * cam.zoom;
-  let g = cctx.createRadialGradient(core.X, core.Y, 0, core.X, core.Y, CR * 2.1);
-  g.addColorStop(0, "rgba(190,200,255,0.16)"); g.addColorStop(0.5, "rgba(230,180,240,0.07)");
-  g.addColorStop(1, "rgba(190,200,255,0)");
+  let g = cctx.createRadialGradient(core.X, core.Y, 0, core.X, core.Y, CR * 2.6);
+  g.addColorStop(0, "rgba(255,238,205,0.42)"); g.addColorStop(0.28, "rgba(255,210,150,0.22)");
+  g.addColorStop(0.6, "rgba(230,180,240,0.08)"); g.addColorStop(1, "rgba(190,200,255,0)");
   cctx.globalAlpha = 1;
-  cctx.fillStyle = g; cctx.beginPath(); cctx.arc(core.X, core.Y, CR * 2.1, 0, 7); cctx.fill();
+  cctx.fillStyle = g; cctx.beginPath(); cctx.arc(core.X, core.Y, CR * 2.6, 0, 7); cctx.fill();
   // composite: once sharp, once through the bloom pipeline
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
@@ -1013,11 +1032,21 @@ function drawCloud(now, dt, scale){
   ctx.drawImage(BLOOM_CV, 0, 0, W, H);
   ctx.globalAlpha = 1;
   ctx.restore();
-  // the dark core — a quiet centre the mind turns around
-  g = ctx.createRadialGradient(core.X, core.Y, 0, core.X, core.Y, CR);
-  g.addColorStop(0, "rgba(3,4,9,0.97)"); g.addColorStop(0.72, "rgba(3,4,9,0.6)");
-  g.addColorStop(1, "rgba(3,4,9,0)");
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(core.X, core.Y, CR, 0, 7); ctx.fill();
+  // the bright nucleus — a hot golden-white core (NOT a dark hole). At its very
+  // centre a tiny dark point: Sagittarius A*, the black hole the galaxy turns around,
+  // ringed by intense light. This makes the centre the most luminous, interesting thing.
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  g = ctx.createRadialGradient(core.X, core.Y, 0, core.X, core.Y, CR * 1.15);
+  g.addColorStop(0, "rgba(255,250,235,0.95)"); g.addColorStop(0.35, "rgba(255,226,175,0.6)");
+  g.addColorStop(0.7, "rgba(255,190,140,0.2)"); g.addColorStop(1, "rgba(255,180,130,0)");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(core.X, core.Y, CR * 1.15, 0, 7); ctx.fill();
+  ctx.restore();
+  // Sagittarius A* — a small dark eye at the very centre, so the light has a heart
+  g = ctx.createRadialGradient(core.X, core.Y, 0, core.X, core.Y, CR * 0.18);
+  g.addColorStop(0, "rgba(2,3,7,0.92)"); g.addColorStop(0.7, "rgba(2,3,7,0.4)");
+  g.addColorStop(1, "rgba(2,3,7,0)");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(core.X, core.Y, CR * 0.18, 0, 7); ctx.fill();
   // a bright swirl ring, slowly precessing (the awake mind)
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
