@@ -1,9 +1,11 @@
 """
 Multi-backend model discovery + selection.
 
-The twin can drive more than one local backend at once:
+The twin can drive more than one backend at once:
   - Ollama                 (http://localhost:11434)        — default
   - OpenAI-compatible      (LM Studio, llama.cpp, Jan, …)  — opt-in
+  - Claude (Anthropic)     (api.anthropic.com)             — opt-in, doubly:
+    a key must exist AND the switch must be on (see claude_api_key/claude_enabled)
 
 This module probes whichever backends are reachable, merges their models into a
 single list for the picker, and builds the right client for a chosen model.
@@ -24,6 +26,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from .claude_client import ClaudeClient
 from .ollama_client import OllamaClient
 from .openai_client import OpenAIClient
 
@@ -108,6 +111,41 @@ def openai_label(cfg: dict[str, Any] | None = None) -> str:
     return DEFAULT_OPENAI_LABEL
 
 
+CLAUDE_LABEL = "claude"
+
+
+def claude_api_key(cfg: dict[str, Any] | None = None) -> str | None:
+    """The user's Anthropic key, if they have one: Keychain (secrets_store)
+    first, then env, then config. None means Claude cannot be constructed."""
+    try:
+        from .. import secrets_store
+        # migrate=False: reading a key must never WRITE the Keychain (tests and
+        # doctor flows read with fake env keys; migration is the doctor's job)
+        key = secrets_store.get("ANTHROPIC_API_KEY", migrate=False)
+        if key and key.strip():
+            return key.strip()
+    except Exception:  # noqa: BLE001 - no keychain is a normal state
+        pass
+    env = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CTWIN_CLAUDE_KEY")
+    if env and env.strip():
+        return env.strip()
+    block = (cfg or {}).get("claude")
+    if isinstance(block, dict):
+        key = block.get("api_key") or block.get("key")
+        if isinstance(key, str) and key.strip():
+            return key.strip()
+    return None
+
+
+def claude_enabled(cfg: dict[str, Any] | None = None) -> bool:
+    """The explicit switch. A key alone is NOT consent — the user must also say
+    'use Claude' (CTWIN_USE_CLAUDE=1 or claude.enabled in the agent config)."""
+    if _truthy(os.environ.get("CTWIN_USE_CLAUDE")):
+        return True
+    block = (cfg or {}).get("claude")
+    return isinstance(block, dict) and bool(block.get("enabled"))
+
+
 def split_model_id(model_id: str) -> tuple[str | None, str]:
     """Split a (possibly tagged) model id into (provider_label, bare_name).
 
@@ -131,11 +169,15 @@ class MultiBackend:
         openai_base: str | None = None,
         openai_label: str = DEFAULT_OPENAI_LABEL,
         timeout: float = 120.0,
+        claude_key: str | None = None,
     ) -> None:
         self.ollama_host = ollama_host
         self.openai_base = openai_base
         self.openai_label = openai_label
         self.timeout = timeout
+        # None = Claude off (the default). Callers only pass a key when the
+        # user's explicit switch is on AND a key exists (see claude_enabled).
+        self.claude_key = claude_key
 
     # ---- discovery ----------------------------------------------------------
     def list_models(self) -> list[str]:
@@ -153,6 +195,13 @@ class MultiBackend:
                     models.append(f"{self.openai_label}{SEP}{name}")
             except Exception:  # noqa: BLE001
                 pass
+        if self.claude_key:
+            try:
+                cl = ClaudeClient(api_key=self.claude_key, timeout=self.timeout)
+                for name in cl.available_models():
+                    models.append(f"{CLAUDE_LABEL}{SEP}{name}")
+            except Exception:  # noqa: BLE001
+                pass
         # de-dupe while preserving order
         seen: set[str] = set()
         out: list[str] = []
@@ -166,6 +215,13 @@ class MultiBackend:
     def client_for(self, model_id: str, *, temperature: float = 0.4):
         """Build the right client for a model id, switching backend by prefix."""
         label, name = split_model_id(model_id)
+        if label == CLAUDE_LABEL and self.claude_key:
+            return ClaudeClient(
+                model=name,
+                api_key=self.claude_key,
+                timeout=self.timeout,
+                temperature=temperature,
+            )
         if label is not None and self.openai_base and label == self.openai_label:
             return OpenAIClient(
                 model=name,
@@ -184,3 +240,12 @@ class MultiBackend:
     def is_openai_model(self, model_id: str) -> bool:
         label, _ = split_model_id(model_id)
         return label is not None and label == self.openai_label
+
+    def is_claude_model(self, model_id: str) -> bool:
+        label, _ = split_model_id(model_id)
+        return label == CLAUDE_LABEL
+
+    def is_cloud_model(self, model_id: str) -> bool:
+        """True when this model would leave the machine. Today that means
+        Claude; every other backend is local by construction."""
+        return self.is_claude_model(model_id)

@@ -76,15 +76,20 @@ def build_agent(model: str | None = None, *, route: bool = True,
         ollama_host=host,
         openai_base=providers.openai_base_url(cfg),
         openai_label=providers.openai_label(cfg),
+        # Claude joins only when the user flipped the switch AND has a key —
+        # otherwise the cloud client can't even be constructed (local-first).
+        claude_key=(providers.claude_api_key(cfg)
+                    if providers.claude_enabled(cfg) else None),
     )
     # Build the client for the configured model id; a `label/name` id selects the
     # OpenAI backend, a bare name selects Ollama.
     client = backend.client_for(model)
     # Policy-driven routing is on by default — pick a local model per request from
     # policies/model-routing.policy.json. An explicit --model or --no-route turns
-    # it off and pins the one model. Routing only applies to Ollama models, so if
-    # the pinned model is on the OpenAI backend, leave routing off.
-    if route and backend.is_openai_model(model):
+    # it off and pins the one model. Routing only applies to Ollama models, so a
+    # pinned OpenAI-backend or Claude model leaves routing off (the policy names
+    # local models; a cloud pick is the user's explicit, per-model choice).
+    if route and (backend.is_openai_model(model) or backend.is_cloud_model(model)):
         route = False
     router = Router() if route else None
     # use_memory=True: the real app learns the user's patterns locally (private,
