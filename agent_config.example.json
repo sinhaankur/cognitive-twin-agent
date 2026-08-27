@@ -24,6 +24,10 @@
       "enabled": true
     }
   },
+  "claude": {
+    "enabled": false,
+    "_comment": "The one cloud door, doubly opt-in: set enabled=true AND have an Anthropic key (Keychain ANTHROPIC_API_KEY, or env). Models show as claude/… so a cloud turn is never silent. The router never auto-picks them."
+  },
   "memory": {
     "vectorStore": "local",
     "embeddingModel": "nomic-embed-text",

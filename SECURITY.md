@@ -88,6 +88,14 @@ Vera reasons with a **local LLM** (Ollama / an OpenAI-compatible local server).
 Your personal data is fed to that local model at runtime — it is not sent to a
 cloud API by default, and it is never used to train anything.
 
+**The one cloud door — Claude, doubly opt-in.** If you already have Claude, Vera
+can borrow it for a turn — but only after two deliberate acts: an Anthropic API
+key must exist (Keychain `ANTHROPIC_API_KEY`, or env), **and** the switch must be
+on (`CTWIN_USE_CLAUDE=1`, or `"claude": {"enabled": true}` in `agent_config.json`).
+Either one alone does nothing. Cloud models always appear as `claude/…` in the
+picker and in every route readout, so a cloud turn is never silent; the policy
+router never auto-picks them (`allowCloudFallback` stays `false`).
+
 ## The one narrow network touchpoint: connectors you turn on
 
 Some capabilities (Gmail) must talk to *your* provider over the network — that's
