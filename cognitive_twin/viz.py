@@ -471,11 +471,12 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   #feel .fhh{font-family:var(--serif);font-style:italic;font-size:12px;letter-spacing:0;
     text-transform:none;color:var(--ink-dim)}
   #feel .fbody{padding:11px 12px 12px}
-  /* THE BRAIN VIEW — majestic. A luminous vertical spine of nine regions; a thought
-     REASONS down it, each region igniting in turn (LLM-thinking, made visible). Wider,
-     grander, glassier; the signal visibly flows region → region. Fades in on a thought. */
+  /* THE BRAIN VIEW — majestic. Her ACTUAL brain, drawn: a sagittal human profile
+     on canvas (cerebrum, cerebellum, brainstem, gyri) with the nine engine regions
+     at their true anatomical places. A thought REASONS through it — one signal
+     travels region → region and each caption beside it ignites in the same beat. */
   #anatomy{display:none;top:50%;left:50%;transform:translate(-50%,-50%) scale(.98);
-    width:min(440px,90vw);max-height:82vh;overflow-y:auto;
+    width:min(980px,94vw);max-height:88vh;overflow-y:auto;
     background:linear-gradient(180deg, rgba(11,13,24,.72), rgba(7,9,16,.78));
     backdrop-filter:blur(22px) saturate(1.2);
     border:1px solid rgba(var(--feel), .2);border-radius:22px;padding:0;
@@ -493,9 +494,18 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   #anatomy .anclose{margin-left:auto;pointer-events:auto;cursor:pointer;color:var(--ink-faint);
     font-size:18px;line-height:1;padding:2px 4px;border-radius:6px;transition:color .2s,background .2s}
   #anatomy .anclose:hover{color:var(--ink);background:rgba(255,255,255,.06)}
-  #anatomy .anbody{padding:18px 26px 22px}
+  #anatomy .anbody{padding:18px 26px 22px;display:grid;
+    grid-template-columns:1.15fr 1fr;column-gap:28px;align-items:start}
   #anatomy .ansub{font-size:11px;letter-spacing:.01em;color:var(--ink-dim);
-    line-height:1.5;margin-bottom:18px;font-family:var(--sans)}
+    line-height:1.5;margin-bottom:18px;font-family:var(--sans);grid-column:1/-1}
+  /* the drawn brain — sticky beside the captions so the two stay in one glance.
+     NB: the page's global canvas{} rule pins canvases fullscreen at opacity 0
+     (the galaxy's reveal); this one must undo every bit of that. */
+  #anwrap{position:sticky;top:0}
+  #ancanvas{position:static;inset:auto;width:100%;height:auto;opacity:1;
+    aspect-ratio:10/9;display:block;border-radius:16px}
+  @media (max-width:780px){ #anatomy .anbody{grid-template-columns:1fr}
+    #anwrap{position:static} }
   #anatomy .thinking{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle}
   #anatomy .thinking i{width:4px;height:4px;border-radius:50%;background:rgba(var(--feel),.9);
     animation:think 1.2s ease-in-out infinite}
@@ -532,7 +542,7 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   #anatomy .rdim{font-size:8px;color:rgba(150,160,180,.55);margin-top:2px;line-height:1.35}
   #anatomy .anorigin{font-size:10px;letter-spacing:.01em;color:var(--ink-dim);
     line-height:1.55;margin-top:16px;border-top:1px solid var(--line);padding-top:13px;
-    font-family:var(--sans)}
+    font-family:var(--sans);grid-column:1/-1}
   #anatomy .anorigin b{color:rgba(var(--feel),.95);font-weight:600}
   /* the felt word — large, in the emotion's own colour */
   #feel .fword{font-size:19px;letter-spacing:.02em;color:var(--fc,#cfd);line-height:1;
@@ -665,6 +675,7 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   <div class="fhead"><span class="fpip"></span><span class="fhh">the brain, thinking</span><span class="anclose" id="anclose" title="close">×</span></div>
   <div class="anbody">
     <div class="ansub">nine regions, in anatomical order — the limbic feeling colours the ones after it</div>
+    <div id="anwrap"><canvas id="ancanvas"></canvas></div>
     <ol id="anlist"></ol>
     <div class="anorigin"><b>her version of neurons firing.</b> a human brain thinks through neurons and electrical signals leaping between them. she thinks through these nine region-engines (the <b>nodes</b>) and one <b>Signal</b> that flows between them — the same idea, a different substance: data, not electrons. every line is the engine's own output for your words, on-device. nothing invented.</div>
   </div>
@@ -717,6 +728,7 @@ let ripples = [];
 
 /* ---------- view mode: simple (the graph anyone reads) vs details ------------ */
 let MODE = localStorage.getItem("mindMode") || "simple";
+const STILL = new URLSearchParams(location.search).get("still") === "1";
 // ?mode= wins (the app pins its Brain window to the human view)
 { const m = new URLSearchParams(location.search).get("mode");
   if (m === "simple" || m === "expert"){ MODE = m; localStorage.setItem("mindMode", m); } }
@@ -1746,6 +1758,258 @@ function wireDial(){
   });
 }
 
+/* ---------- her brain, DRAWN — real sagittal anatomy on its own canvas --------
+   A hand-traced human profile facing left: cerebrum ringed with gyri, cerebellum
+   with its folia, brainstem — and the nine engine regions at their true
+   anatomical places. ONE signal enters along the optic path and travels the
+   engine's real flow order; each region ignites as it arrives, and the SAME
+   timeline lights the captions beside the drawing, so the picture and the words
+   can never disagree. Regions, order and notes all come from /api/engineflow —
+   nothing decorative is invented. If the engine can't answer, nothing animates. */
+const ANAT = (() => {
+  // outlines in normalized 0..1 coords (forehead at the left edge)
+  const CEREBRUM = [[.115,.425],[.098,.33],[.125,.243],[.185,.172],[.27,.122],
+    [.38,.093],[.50,.088],[.615,.113],[.71,.168],[.776,.248],[.80,.345],
+    [.782,.432],[.727,.478],[.652,.502],[.583,.517],[.518,.547],[.44,.586],
+    [.335,.60],[.268,.574],[.208,.52],[.152,.474]];
+  const CBELL = {cx:.664,cy:.586,rx:.104,ry:.075,rot:-.20};
+  const STEM  = [[.578,.545],[.556,.625],[.545,.705],[.518,.80]];
+  const CALLO = [[.315,.375],[.36,.315],[.45,.29],[.545,.31],[.60,.365]];
+  const CENTR = [.44,.355];                    // deep centre — signals cross here
+  // the nine regions at their true places; l = which way the label leans
+  const POS = {
+    occipital:    {x:.716,y:.318, l:[ 1,-.4],  name:"occipital"},
+    parietal:     {x:.505,y:.158, l:[ .3,-1],  name:"parietal"},
+    accommodation:{x:.352,y:.238, l:[-.9,-.7], name:"association"},
+    limbic:       {x:.448,y:.388, l:[-1,.15],  name:"limbic"},
+    hippocampus:  {x:.532,y:.462, l:[ 1,.35],  name:"hippocampus"},
+    frontal:      {x:.215,y:.295, l:[-1,-.15], name:"frontal"},
+    cortex:       {x:.318,y:.118, l:[-.6,-1],  name:"cortex"},
+    temporal:     {x:.372,y:.532, l:[-.8,.95], name:"temporal"},
+    cerebellum:   {x:.664,y:.586, l:[ 1,.7],   name:"cerebellum"}
+  };
+  const EYE = [.055,.47];                      // where the world comes in
+  const ROSE = [247,150,190];                  // limbic rose — the captions' colour
+  const LEAD = 700, LEG = 340;                 // entry beat, then one region per beat
+  let cv=null, cc=null, Wc=0, Hc=0, dpr=1;
+  let paths=null, gyri=[], dots=[], run=null, raf=0, lastT=0;
+
+  function feelC(){ const v = getComputedStyle(document.documentElement)
+    .getPropertyValue("--feel").split(",").map(Number);
+    return (v.length === 3 && !isNaN(v[0])) ? v : [180,190,215]; }
+  // catmull-rom → bezier; open curves clamp their ends, closed ones wrap
+  function smooth(pts, closed){
+    const n = pts.length, p = new Path2D();
+    const P = closed ? (i => pts[(i+n)%n]) : (i => pts[Math.max(0,Math.min(n-1,i))]);
+    p.moveTo(pts[0][0]*Wc, pts[0][1]*Hc);
+    for (let i=0; i<(closed?n:n-1); i++){
+      const a=P(i-1), b=P(i), c=P(i+1), d=P(i+2);
+      p.bezierCurveTo((b[0]+(c[0]-a[0])/6)*Wc, (b[1]+(c[1]-a[1])/6)*Hc,
+                      (c[0]-(d[0]-b[0])/6)*Wc, (c[1]-(d[1]-b[1])/6)*Hc,
+                      c[0]*Wc, c[1]*Hc);
+    }
+    if (closed) p.closePath();
+    return p;
+  }
+  function build(){
+    paths = { cerebrum: smooth(CEREBRUM, true), stem: smooth(STEM, false),
+              callo: smooth(CALLO, false) };
+    // gyri: nested rings of the outline, each with its own wobble — the folded
+    // cortex, kept to the outer half so the deep structures stay legible
+    gyri = [];
+    for (let g=0; g<5; g++){
+      const f = .10 + g*.082;
+      gyri.push(smooth(CEREBRUM.map(([x,y],i) => {
+        const w = .011*Math.sin(i*2.1+g*1.7) + .007*Math.sin(i*4.3+g*3.1);
+        return [CENTR[0]+(x-CENTR[0])*(1-f)+w, CENTR[1]+(y-CENTR[1])*(1-f)+w*.7];
+      }), true));
+    }
+    // a living cortex: particles seeded inside the real outline (plus cerebellum)
+    dots = [];
+    let guard = 0;
+    while (dots.length < 1200 && guard++ < 24000){
+      const x = Math.random(), y = Math.random()*.72;
+      if (cc.isPointInPath(paths.cerebrum, x*Wc*dpr, y*Hc*dpr))
+        dots.push({x, y, s:.5+Math.random(), ph:Math.random()*6.283, a:.05+Math.random()*.12});
+    }
+    for (let i=0; i<220; i++){
+      const t = Math.random()*6.283, r = Math.sqrt(Math.random());
+      dots.push({x:CBELL.cx + Math.cos(t)*r*CBELL.rx*.92,
+                 y:CBELL.cy + Math.sin(t)*r*CBELL.ry*.92,
+                 s:.5+Math.random()*.8, ph:Math.random()*6.283, a:.05+Math.random()*.1});
+    }
+  }
+  function setup(){
+    if (!cv){ cv = document.getElementById("ancanvas");
+      if (!cv) return false; cc = cv.getContext("2d"); }
+    const w = cv.clientWidth; if (!w) return false;
+    dpr = window.devicePixelRatio || 1;
+    if (w !== Wc || !paths){ Wc = w; Hc = w*.9;
+      cv.width = Math.round(Wc*dpr); cv.height = Math.round(Hc*dpr);
+      cc.setTransform(dpr,0,0,dpr,0,0); build(); }
+    return true;
+  }
+  // signals travel the interior: each leg bows toward the deep centre
+  function leg(a, b){ return { ax:a.x*Wc, ay:a.y*Hc, bx:b.x*Wc, by:b.y*Hc,
+    cx:((a.x+b.x)/2 + (CENTR[0]-(a.x+b.x)/2)*.35)*Wc,
+    cy:((a.y+b.y)/2 + (CENTR[1]-(a.y+b.y)/2)*.35)*Hc }; }
+  function qp(L, t){ const u = 1-t; return {
+    x: u*u*L.ax + 2*u*t*L.cx + t*t*L.bx,
+    y: u*u*L.ay + 2*u*t*L.cy + t*t*L.by }; }
+  function strokeQ(L, t0, t1, col, w){
+    cc.strokeStyle = col; cc.lineWidth = w; cc.beginPath();
+    const p0 = qp(L, t0); cc.moveTo(p0.x, p0.y);
+    for (let s=1; s<=12; s++){ const p = qp(L, t0+(t1-t0)*s/12); cc.lineTo(p.x, p.y); }
+    cc.stroke();
+  }
+  function frame(now){
+   try{
+    const box = document.getElementById("anatomy");
+    if (!box || box.style.display === "none"){ raf = 0; return; }  // closed → still
+    const dt = Math.min(.05, (now-lastT)/1000 || .016); lastT = now;
+    const F = feelC(), t = now/1000;
+    // advance the timeline: ignite each region as the signal reaches it
+    if (run && !run.done){
+      const e = now - run.t0;
+      const stage = Math.max(0, Math.min(run.order.length, Math.floor((e-run.lead)/run.leg)+1));
+      while (run.lit < stage){
+        const i = run.lit, id = run.order[i];
+        run.flash[id] = 1;
+        if (run.items[i]) run.items[i].classList.add("lit");
+        run.lit++;
+        if (run.lit === run.order.length){ run.done = true;
+          if (run.sub){ const th = run.sub.querySelector(".thinking");
+            if (th) th.style.opacity = ".25"; } }
+      }
+    }
+    for (const k in (run ? run.flash : {})) run.flash[k] = Math.max(0, run.flash[k]-dt*1.4);
+    cc.clearRect(0, 0, Wc, Hc);
+    // ambient depth behind the drawing
+    const g0 = cc.createRadialGradient(Wc*.45, Hc*.38, 8, Wc*.45, Hc*.38, Wc*.5);
+    g0.addColorStop(0, "rgba("+F+",.05)"); g0.addColorStop(1, "rgba(0,0,0,0)");
+    cc.fillStyle = g0; cc.fillRect(0, 0, Wc, Hc);
+    // the folded cortex + deep arc, whispered
+    cc.lineWidth = 1;
+    gyri.forEach((g, i) => { cc.strokeStyle = "rgba("+F+","+(.10-.014*i)+")"; cc.stroke(g); });
+    cc.strokeStyle = "rgba("+F+",.14)"; cc.stroke(paths.callo);
+    // cerebellum folia — its signature parallel grain
+    cc.save(); cc.translate(CBELL.cx*Wc, CBELL.cy*Hc); cc.rotate(CBELL.rot);
+    for (let i=-2; i<=2; i++){ cc.beginPath();
+      cc.ellipse(0, 0, CBELL.rx*Wc*(1-Math.abs(i)*.18), CBELL.ry*Hc*(.32+Math.abs(i)*.3),
+        0, i*.5, 3.14159-i*.5);
+      cc.strokeStyle = "rgba("+F+",.10)"; cc.stroke(); }
+    cc.restore();
+    // the living cortex: every particle drifts; those near a lit region glow
+    const litRs = run ? run.order.slice(0, run.lit) : [];
+    for (const d of dots){
+      const px = (d.x + Math.sin(t*.7+d.ph)*.004)*Wc;
+      const py = (d.y + Math.cos(t*.6+d.ph*1.3)*.004)*Hc;
+      let a = d.a, cr = F, boost = 0;
+      for (const id of litRs){
+        const R = POS[id], dx = px/Wc-R.x, dy = py/Hc-R.y;
+        const q = Math.exp(-(dx*dx+dy*dy)/.006) * (.35 + (run.flash[id]||0)*.65);
+        if (q > boost){ boost = q; cr = (id === "limbic") ? ROSE : F; }
+      }
+      a = Math.min(.85, a + boost*.6);
+      cc.fillStyle = "rgba("+cr+","+a.toFixed(3)+")";
+      cc.fillRect(px, py, d.s, d.s);
+    }
+    // the outline — and when the cortex itself is reasoning, the whole sheet shimmers
+    const cortexLit = litRs.indexOf("cortex") >= 0;
+    cc.lineWidth = 1.25; cc.strokeStyle = "rgba("+F+",.38)"; cc.stroke(paths.cerebrum);
+    if (cortexLit){
+      cc.save(); cc.lineWidth = 2.2;
+      cc.strokeStyle = "rgba("+F+","+(.18+.14*Math.sin(t*2.1)+((run.flash.cortex||0)*.5)).toFixed(3)+")";
+      cc.setLineDash([Wc*.28, Wc*.9]); cc.lineDashOffset = -(t*Wc*.16)%(Wc*1.18);
+      cc.stroke(paths.cerebrum); cc.restore();
+    }
+    cc.lineWidth = 1.1; cc.strokeStyle = "rgba("+F+",.32)"; cc.stroke(paths.stem);
+    cc.save(); cc.translate(CBELL.cx*Wc, CBELL.cy*Hc); cc.rotate(CBELL.rot);
+    cc.beginPath(); cc.ellipse(0, 0, CBELL.rx*Wc, CBELL.ry*Hc, 0, 0, 6.283);
+    cc.strokeStyle = "rgba("+F+",.30)"; cc.stroke(); cc.restore();
+    if (run){
+      const ord = run.order, e = now - run.t0;
+      // the optic entry — the world arriving at the back of the brain, as it does
+      const entry = leg({x:EYE[0], y:EYE[1]}, POS[ord[0]]);
+      if (run.lit > 0) strokeQ(entry, 0, 1, "rgba("+F+",.13)", 1);
+      // legs already travelled stay as faint white-matter trails
+      for (let i=1; i<run.lit; i++)
+        strokeQ(leg(POS[ord[i-1]], POS[ord[i]]), 0, 1, "rgba("+F+",.15)", 1);
+      // once the feeling has fired, its colour washes downstream (the rose arcs)
+      if (litRs.indexOf("limbic") >= 0)
+        ["frontal","temporal","cerebellum"].forEach((id, i) => {
+          if (litRs.indexOf(id) >= 0)
+            strokeQ(leg(POS.limbic, POS[id]), 0, 1,
+              "rgba("+ROSE+","+(.10+.05*Math.sin(t*1.5+i*2)).toFixed(3)+")", 1);
+        });
+      // the signal itself — one bright pulse, mid-flight on the current leg
+      if (!run.done){
+        let L = null, tt = 0;
+        if (e < run.lead){ L = entry; tt = e/run.lead; }
+        else { const k = Math.min(ord.length-1, Math.floor((e-run.lead)/run.leg)+1);
+          if (k >= 1){ L = leg(POS[ord[k-1]], POS[ord[k]]);
+            tt = Math.min(1, ((e-run.lead)%run.leg)/run.leg); } }
+        if (L){
+          strokeQ(L, Math.max(0, tt-.22), tt, "rgba("+F+",.5)", 1.6);
+          const p = qp(L, tt);
+          const gl = cc.createRadialGradient(p.x, p.y, 0, p.x, p.y, 11);
+          gl.addColorStop(0, "rgba(255,255,255,.95)");
+          gl.addColorStop(.35, "rgba("+F+",.6)"); gl.addColorStop(1, "rgba(0,0,0,0)");
+          cc.fillStyle = gl; cc.beginPath(); cc.arc(p.x, p.y, 11, 0, 6.283); cc.fill();
+        }
+      }
+      // region nodes + their small pills — dim until the reasoning arrives
+      cc.font = "9px ui-monospace, Menlo, monospace"; cc.textBaseline = "middle";
+      ord.forEach((id, i) => {
+        const R = POS[id], X = R.x*Wc, Y = R.y*Hc;
+        const lit = i < run.lit, fl = run.flash[id] || 0;
+        const col = (id === "limbic" && lit) ? ROSE : F;
+        if (lit){
+          const gl = cc.createRadialGradient(X, Y, 0, X, Y, 10+fl*8);
+          gl.addColorStop(0, "rgba("+col+","+(.5+fl*.5).toFixed(2)+")");
+          gl.addColorStop(1, "rgba(0,0,0,0)");
+          cc.fillStyle = gl; cc.beginPath(); cc.arc(X, Y, 10+fl*8, 0, 6.283); cc.fill();
+          if (fl > .02){ cc.strokeStyle = "rgba("+col+","+(fl*.6).toFixed(2)+")";
+            cc.lineWidth = 1.2; cc.beginPath();
+            cc.arc(X, Y, 5+(1-fl)*22, 0, 6.283); cc.stroke(); }
+        }
+        cc.fillStyle = lit ? "rgba("+col+",.95)" : "rgba("+F+",.35)";
+        cc.beginPath(); cc.arc(X, Y, lit ? 2.6 : 2, 0, 6.283); cc.fill();
+        const lx = X + R.l[0]*26, ly = Y + R.l[1]*20;
+        cc.strokeStyle = "rgba("+F+","+(lit?.28:.12)+")"; cc.lineWidth = 1;
+        cc.beginPath(); cc.moveTo(X+R.l[0]*5, Y+R.l[1]*5); cc.lineTo(lx, ly); cc.stroke();
+        cc.fillStyle = lit ? "rgba("+col+",.92)" : "rgba("+F+",.38)";
+        cc.textAlign = R.l[0] < -.3 ? "right" : (R.l[0] > .3 ? "left" : "center");
+        cc.fillText(POS[id].name, lx + (R.l[0] < -.3 ? -3 : (R.l[0] > .3 ? 3 : 0)),
+                    ly + (R.l[1] > .5 ? 6 : -2));
+      });
+    }
+    window._anDbg = { lit: run ? run.lit : -1, done: run ? run.done : null,
+      frames: (window._anDbg ? window._anDbg.frames : 0) + 1, err: null };
+    raf = requestAnimationFrame(frame);
+   }catch(e_){ raf = 0;   // a broken brain must never animate — stop, quietly
+    window._anDbg = Object.assign(window._anDbg || {}, {err: String(e_ && e_.message)}); }
+  }
+  return {
+    // one timeline drives drawing AND captions; falls back to captions-only if
+    // the canvas can't come up (nothing else may break the honest list)
+    play(regions, items, sub){
+      const order = regions.map(r => r.id).filter(id => POS[id]);
+      if (!setup() || !order.length){
+        items.forEach((li, i) => setTimeout(() => li.classList.add("lit"), 260+i*340));
+        return;
+      }
+      // ?fast=1 — collapse the beats (dev/screenshots); the drawing is identical
+      const fast = new URLSearchParams(location.search).get("fast") === "1";
+      run = { t0: performance.now(), order, items, sub, lit: 0, flash: {}, done: false,
+              lead: fast ? 60 : LEAD, leg: fast ? 40 : LEG };
+      lastT = performance.now();
+      if (!raf) raf = requestAnimationFrame(frame);
+    },
+    stop(){ if (raf) cancelAnimationFrame(raf); raf = 0; }
+  };
+})();
+
 /* the real-anatomy panel — fetch the engine's own signal flow for this prompt and
    list the nine regions in order, each with the live note it produced. Honest:
    every note is the engine's output, nothing invented. */
@@ -1753,7 +2017,21 @@ async function renderAnatomy(q){
   const box = document.getElementById("anatomy");
   const list = document.getElementById("anlist");
   if (!box || !list) return;
-  let d; try{ d = await j("/api/engineflow?q=" + encodeURIComponent(q)); }catch(_){ return; }
+  // open the panel BEFORE the engine runs — the first run can take seconds
+  // (models and memory wake up), and a click must always answer immediately
+  const sub0 = box.querySelector(".ansub");
+  if (MODE !== "simple"){
+    if (sub0) sub0.innerHTML = 'her brain is reading your words'
+      + '<span class="thinking"><i></i><i></i><i></i></span>';
+    box.style.display = "block";
+    requestAnimationFrame(() => box.classList.add("show"));
+  }
+  let d; try{ d = await j("/api/engineflow?q=" + encodeURIComponent(q)); }
+  catch(_){
+    // the engine didn't answer — say so quietly; nothing may animate
+    if (sub0) sub0.textContent = "her brain engine is not reachable right now — try again in a moment";
+    return;
+  }
   const active = (d.active || {});
   const notes = active.notes || {};
   const ai = active.ai || {}, mem = active.memory || {};
@@ -1801,20 +2079,11 @@ async function renderAnatomy(q){
     + '<span class="thinking"><i></i><i></i><i></i></span>';
   box.style.display = "block";
   requestAnimationFrame(() => box.classList.add("show"));
-  // THE MAJESTIC REVEAL: light regions ONE AT A TIME, in anatomical order, so the
-  // reasoning is watchable. Real thought is instant; this paces it so you can SEE
-  // how she thinks — situate → feel → recall → decide → word → wit → voice.
-  if (window._anTimers) window._anTimers.forEach(clearTimeout);
-  window._anTimers = [];
-  items.forEach((li, i) => {
-    window._anTimers.push(setTimeout(() => {
-      li.classList.add("lit");
-      // when the last one lights, the thought has fully formed — settle the dots
-      if (i === items.length - 1 && sub){
-        const th = sub.querySelector(".thinking"); if (th) th.style.opacity = ".25";
-      }
-    }, 260 + i * 340));   // ~340ms per region — fast, but watchable
-  });
+  // THE MAJESTIC REVEAL: the signal enters the drawn brain along the optic path
+  // and travels the real flow order; each region ignites as it arrives, and the
+  // same beat lights its caption. Real thought is instant; this paces it so you
+  // can SEE how she thinks — situate → feel → recall → decide → word → wit → voice.
+  requestAnimationFrame(() => ANAT.play(d.regions || [], items, sub));
 }
 
 async function think(q){
@@ -2147,6 +2416,7 @@ setInterval(loadAll, 12000);
 // close the brain view (it's a centred overlay now)
 (function(){ const c = document.getElementById("anclose"); if (c) c.onclick = () => {
   const a = document.getElementById("anatomy"); if (a){ a.classList.remove("show");
+    ANAT.stop();   // a closed brain is a still brain
     setTimeout(() => a.style.display = "none", 500); } }; })();
 wireDial();
 loadAll().then(() => {
@@ -2158,6 +2428,9 @@ loadAll().then(() => {
   // ?demo=1 — auto-run one visible thought (handy for demos + screenshots)
   if (location.search.indexOf("demo") >= 0)
     setTimeout(() => think("how is mom doing today"), 1200);
+  // ?brain=1 — deep-link straight into the drawn brain, mid-thought
+  if (new URLSearchParams(location.search).get("brain") === "1")
+    setTimeout(() => document.getElementById("brainbtn").onclick(), 300);
 });
 setTimeout(reveal, 2500);   // never leave the mind dark, even if an API stalls
 
@@ -2450,8 +2723,11 @@ function frame(now){
     ctx.stroke();
   });
 
-  requestAnimationFrame(frame);
+  // ?still=1 — let the scene settle, then hold the frame (reduced motion; also
+  // what makes headless screenshots deterministic). The brain view keeps its own loop.
+  if (!STILL || ++frame._n < 120) requestAnimationFrame(frame);
 }
+frame._n = 0;
 requestAnimationFrame(frame);
 </script></body></html>
 """
