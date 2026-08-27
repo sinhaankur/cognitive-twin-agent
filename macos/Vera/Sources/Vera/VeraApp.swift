@@ -591,6 +591,36 @@ final class AppModel: ObservableObject {
     /// Speak a reply in her cloned voice if available, else the built-in voice.
     /// Either way the mic opens muted underneath her (VoiceEngine's barge-in
     /// hunt): speak over her and she stops mid-word, your words already caught.
+    // how much of the streamed answer has already been handed to speech
+    private var streamSpokenUpTo = 0
+
+    /// Peel COMPLETE sentences beyond what's already been spoken and queue
+    /// them. `final` flushes the remainder (stream over — every word lands).
+    /// Conservative on purpose: a mid-stream chunk must end at a sentence
+    /// boundary and carry real length, so she never pauses in a wrong place.
+    func speakStreamSentences(_ text: String, final: Bool) {
+        let chars = Array(text)
+        guard streamSpokenUpTo < chars.count else { return }
+        var boundary = final ? chars.count : -1
+        if !final {
+            var i = chars.count - 2
+            while i > streamSpokenUpTo {
+                let c = chars[i]
+                if (c == "." || c == "!" || c == "?" || c == "…"),
+                   chars[i + 1] == " " || chars[i + 1] == "\n" { boundary = i + 1; break }
+                i -= 1
+            }
+        }
+        guard boundary > streamSpokenUpTo else { return }
+        let chunk = String(chars[streamSpokenUpTo..<boundary])
+        // too tiny to speak alone mid-stream ("Ok.") — wait for more words
+        if !final && chunk.trimmingCharacters(in: .whitespacesAndNewlines).count < 10 { return }
+        let first = (streamSpokenUpTo == 0)
+        streamSpokenUpTo = boundary
+        if first { phase = .speaking }
+        voice.speakFragment(chunk, first: first)
+    }
+
     func speakReply(_ text: String) {
         phase = .speaking
         if clonedVoiceReady {
@@ -969,11 +999,21 @@ final class AppModel: ObservableObject {
                         self.turns.append(turn)
                         return turn.id
                     }
+                    // speak-as-she-thinks: complete sentences peel off the
+                    // stream and start speaking at once — the wait collapses
+                    // from the whole answer to its first sentence. System
+                    // voice only: the cloned voice renders server-side on the
+                    // full text (speakReply) and keeps its own path.
+                    let streamSpeak = await MainActor.run { () -> Bool in
+                        self.streamSpokenUpTo = 0
+                        return self.speakReplies && !self.clonedVoiceReady
+                    }
                     let reply = try await agent.askStream(text) { partial in
                         Task { @MainActor in
                             if let i = self.turns.firstIndex(where: { $0.id == turnID }) {
                                 self.turns[i].text = partial
                             }
+                            if streamSpeak { self.speakStreamSentences(partial, final: false) }
                         }
                     }
                     if let m = reply.model { await MainActor.run { self.modelName = m } }
@@ -987,7 +1027,11 @@ final class AppModel: ObservableObject {
                             }
                         }
                         self.answer = answerText
-                        if self.speakReplies { self.speakReply(answerText) }
+                        if streamSpeak && !answerText.isEmpty {
+                            self.phase = .speaking
+                            self.speakStreamSentences(answerText, final: true)
+                        }
+                        else if self.speakReplies { self.speakReply(answerText) }
                         else { self.phase = .idle }
                     }
                     return

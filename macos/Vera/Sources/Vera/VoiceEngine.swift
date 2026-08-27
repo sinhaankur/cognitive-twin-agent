@@ -363,6 +363,35 @@ final class VoiceEngine: ObservableObject {
         startListening(hunting: true, over: text)
     }
 
+    // a barge-in (or tap-to-stop) empties the queue; any fragments still
+    // arriving from the model's stream must then be dropped, not spoken late
+    private var streamCancelled = false
+
+    /// Speak one piece of a STREAMED reply. Sentences peel off the model's
+    /// stream and queue here, so she starts the first sentence while the rest
+    /// still forms — the wait collapses from the whole answer to one sentence.
+    /// Each fragment also refreshes the barge-in echo filter, so her own
+    /// still-arriving words never read as an interruption.
+    func speakFragment(_ text: String, first: Bool) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        if first {
+            streamCancelled = false
+            if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
+        } else if streamCancelled {
+            return
+        }
+        let utter = AVSpeechUtterance(string: t)
+        utter.voice = humaneVoice()
+        utter.rate = 0.46
+        utter.pitchMultiplier = 1.02
+        utter.preUtteranceDelay = first ? 0.05 : 0
+        utter.postUtteranceDelay = 0.06
+        synth.speak(utter)
+        // opens the hunt on the first fragment; refreshes its echo words after
+        startListening(hunting: true, over: t)
+    }
+
     /// Start watching for her name (opt-in wake word). Muted, fully local,
     /// no posts anywhere. Safe to call every tick — it no-ops while any
     /// session is open or while she speaks.
@@ -420,6 +449,7 @@ final class VoiceEngine: ObservableObject {
     /// `keepSession = true` is the barge-in path: the mic session survives
     /// because it has already become the user's next turn.
     func stopSpeaking(keepSession: Bool = false) {
+        streamCancelled = true      // late stream fragments must stay silent
         if synth.isSpeaking || synth.isPaused {
             synth.stopSpeaking(at: .immediate)
         }
@@ -537,8 +567,10 @@ private final class SpeechDelegate: NSObject, AVSpeechSynthesizerDelegate {
         self.onWord = onWord
     }
     func speechSynthesizer(_ s: AVSpeechSynthesizer, didStart u: AVSpeechUtterance) { onChange(true) }
-    func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish u: AVSpeechUtterance) { onChange(false) }
-    func speechSynthesizer(_ s: AVSpeechSynthesizer, didCancel u: AVSpeechUtterance) { onChange(false) }
+    // report the QUEUE, not the utterance: a streamed reply is several queued
+    // utterances that must read as one breath — no flicker between sentences
+    func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish u: AVSpeechUtterance) { onChange(s.isSpeaking) }
+    func speechSynthesizer(_ s: AVSpeechSynthesizer, didCancel u: AVSpeechUtterance) { onChange(s.isSpeaking) }
     func speechSynthesizer(_ s: AVSpeechSynthesizer, willSpeakRangeOfSpeechString r: NSRange,
                            utterance u: AVSpeechUtterance) { onWord() }
 }
