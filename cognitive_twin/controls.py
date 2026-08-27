@@ -128,6 +128,15 @@ def _registry() -> list[Control]:
         set=lambda on: None, readonly=True,
         description="Gmail app password stored in the Keychain.",
     ))
+    # Claude — the ONE cloud door, and this is its switch (key alone is never
+    # consent). Unavailable until an Anthropic key exists; flipping it writes
+    # claude.enabled into agent_config.json, which the backend reads live.
+    controls.append(Control(
+        "claude_cloud", "Claude: cloud mind", "Connections",
+        get=_claude_get, set=_claude_set,
+        available=_claude_key_present,
+        description=_claude_desc,
+    ))
 
     # — Careers (the job search) —
     controls.append(Control(
@@ -169,6 +178,50 @@ _BOOKER_DIR = Path(os.environ.get("BOOKER_DIR", Path.home() / "Documents" / "bui
 _BOOKER_CONFIG = _BOOKER_DIR / "src" / "config.mjs"
 _LAUNCHD_LABEL = "com.sinhaankur.buildinglink-booker"
 _LAUNCHD_PLIST = Path.home() / "Library" / "LaunchAgents" / f"{_LAUNCHD_LABEL}.plist"
+
+
+# ── Claude (the one cloud door) — state lives in agent_config.json ────────────
+def _agent_cfg_path() -> Path:
+    return Path.cwd() / "agent_config.json"
+
+
+def _agent_cfg_read() -> dict:
+    for p in (_agent_cfg_path(), Path.cwd() / "agent_config.example.json"):
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 - missing/invalid file reads as empty
+            continue
+    return {}
+
+
+def _claude_get() -> bool:
+    from .llm import providers
+    return _safe(lambda: providers.claude_enabled(_agent_cfg_read()))
+
+
+def _claude_set(on: bool) -> None:
+    p = _agent_cfg_path()
+    try:
+        cfg = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - first flip creates the file
+        cfg = {}
+    blk = cfg.get("claude") if isinstance(cfg.get("claude"), dict) else {}
+    blk["enabled"] = bool(on)
+    cfg["claude"] = blk
+    p.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+
+
+def _claude_key_present() -> bool:
+    from .llm import providers
+    return _safe(lambda: providers.claude_api_key(_agent_cfg_read()) is not None)
+
+
+def _claude_desc() -> str:
+    if not _claude_key_present():
+        return ("Borrow Claude for a turn — needs an Anthropic key first "
+                "(Keychain ANTHROPIC_API_KEY). Off = nothing ever leaves this Mac.")
+    return ("Borrow Claude for a turn — models appear as claude/… in the picker, "
+            "so a cloud turn is never silent. The router never auto-picks them.")
 
 
 def _careers_ai_flag() -> Path:

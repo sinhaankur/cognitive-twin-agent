@@ -92,6 +92,7 @@
     const CONFIRM = {
       booker_confirm: "Turn ON real bookings? The booker will make actual reservations on your account.",
       booker_nightly: "Schedule the booker to run automatically every night?",
+      claude_cloud: "Turn ON Claude? Turns you route to a claude/… model are sent to Anthropic. Everything else stays local, and the router never auto-picks cloud.",
     };
 
     async function load() {
@@ -120,7 +121,8 @@
       const control = c.readonly
         ? `<span class="dot ${c.on ? "on" : ""}"></span><span class="ro">${c.on ? "connected" : "not set"}</span>`
         : `<label class="sw"><input type="checkbox" ${c.on ? "checked" : ""} ${c.available ? "" : "disabled"} data-key="${c.key}"><span class="slider"></span></label>`;
-      const warn = c.key.startsWith("booker_") ? `<span class="tag warn">outward</span>` : "";
+      const warn = (c.key.startsWith("booker_") || c.key === "claude_cloud")
+        ? `<span class="tag warn">outward</span>` : "";
       el.innerHTML = `
         <div class="meta">
           <div class="label">${c.label}${warn}</div>
