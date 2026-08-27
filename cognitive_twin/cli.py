@@ -77,9 +77,11 @@ def build_agent(model: str | None = None, *, route: bool = True,
         openai_base=providers.openai_base_url(cfg),
         openai_label=providers.openai_label(cfg),
         # Claude joins only when the user flipped the switch AND has a key —
-        # otherwise the cloud client can't even be constructed (local-first).
-        claude_key=(providers.claude_api_key(cfg)
-                    if providers.claude_enabled(cfg) else None),
+        # consulted LIVE per use, so the Controls switch works without a
+        # restart, and turning it off cuts the cloud immediately.
+        claude_key_provider=lambda: (
+            providers.claude_api_key(_load_config())
+            if providers.claude_enabled(_load_config()) else None),
     )
     # Build the client for the configured model id; a `label/name` id selects the
     # OpenAI backend, a bare name selects Ollama.

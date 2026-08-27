@@ -170,14 +170,27 @@ class MultiBackend:
         openai_label: str = DEFAULT_OPENAI_LABEL,
         timeout: float = 120.0,
         claude_key: str | None = None,
+        claude_key_provider: Any | None = None,
     ) -> None:
         self.ollama_host = ollama_host
         self.openai_base = openai_base
         self.openai_label = openai_label
         self.timeout = timeout
-        # None = Claude off (the default). Callers only pass a key when the
-        # user's explicit switch is on AND a key exists (see claude_enabled).
+        # None = Claude off (the default). A fixed key pins it on; a PROVIDER
+        # (Callable[[], str|None]) is consulted live on every use, so flipping
+        # the Controls switch takes effect without a restart.
         self.claude_key = claude_key
+        self.claude_key_provider = claude_key_provider
+
+    def _claude_key_now(self) -> str | None:
+        if self.claude_key:
+            return self.claude_key
+        if self.claude_key_provider is not None:
+            try:
+                return self.claude_key_provider()
+            except Exception:  # noqa: BLE001 - an unreadable key means "off"
+                return None
+        return None
 
     # ---- discovery ----------------------------------------------------------
     def list_models(self) -> list[str]:
@@ -195,9 +208,10 @@ class MultiBackend:
                     models.append(f"{self.openai_label}{SEP}{name}")
             except Exception:  # noqa: BLE001
                 pass
-        if self.claude_key:
+        ckey = self._claude_key_now()
+        if ckey:
             try:
-                cl = ClaudeClient(api_key=self.claude_key, timeout=self.timeout)
+                cl = ClaudeClient(api_key=ckey, timeout=self.timeout)
                 for name in cl.available_models():
                     models.append(f"{CLAUDE_LABEL}{SEP}{name}")
             except Exception:  # noqa: BLE001
@@ -215,13 +229,15 @@ class MultiBackend:
     def client_for(self, model_id: str, *, temperature: float = 0.4):
         """Build the right client for a model id, switching backend by prefix."""
         label, name = split_model_id(model_id)
-        if label == CLAUDE_LABEL and self.claude_key:
-            return ClaudeClient(
-                model=name,
-                api_key=self.claude_key,
-                timeout=self.timeout,
-                temperature=temperature,
-            )
+        if label == CLAUDE_LABEL:
+            ckey = self._claude_key_now()
+            if ckey:
+                return ClaudeClient(
+                    model=name,
+                    api_key=ckey,
+                    timeout=self.timeout,
+                    temperature=temperature,
+                )
         if label is not None and self.openai_base and label == self.openai_label:
             return OpenAIClient(
                 model=name,
