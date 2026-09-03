@@ -292,6 +292,38 @@ def web_download(url: str, _approved: bool = False) -> str:
 
 
 @R.add(
+    "my_principles",
+    "Show or FRAME through the user's own decision principles — how they think "
+    "and act (e.g. 'experience over easy comfort', 'need before want'). With no "
+    "choice given, lists their principles. With a choice, lays it against those "
+    "principles to help them decide — it FRAMES, never decides for them. Use for "
+    "'what do I value', 'help me decide X', 'weigh this'.",
+    {"type": "object", "properties": {
+        "choice": {"type": "string", "description": "optional: a decision to frame against their principles"},
+    }},
+)
+def my_principles(choice: str = "") -> str:
+    from .. import principles
+    return principles.frame(choice) if choice.strip() else principles.summary()
+
+
+@R.add(
+    "set_principle",
+    "Record a decision principle the user tells you they live/decide by (their "
+    "own words), so Vera reasons like their twin. Use when they say 'I value X "
+    "over Y', 'I always choose…', 'my principle is…'.",
+    {"type": "object", "properties": {
+        "text": {"type": "string", "description": "the principle in the user's words"},
+        "why": {"type": "string", "description": "their reason, optional"},
+        "weight": {"type": "integer", "description": "how strongly it pulls, 1–3 (default 1)"},
+    }, "required": ["text"]},
+)
+def set_principle(text: str, why: str = "", weight: int = 1) -> str:
+    from .. import principles
+    return principles.add(text, why, weight)
+
+
+@R.add(
     "anything_i_should_know",
     "Vera's proactive read: the few timely things worth surfacing right now — "
     "an imminent Ritam pickup, a meeting starting, a free block — ranked need "
