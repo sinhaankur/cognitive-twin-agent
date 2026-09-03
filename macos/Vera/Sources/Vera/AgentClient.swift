@@ -113,6 +113,59 @@ final class AgentClient {
         } catch { return ActivityState() }
     }
 
+    // MARK: - Email triage ("which emails are junk?")
+
+    struct EmailVerdict: Identifiable {
+        let id = UUID()
+        let sender: String
+        let subject: String
+        let label: String   // good | marketing | spam | unsure
+        let reason: String
+        let by: String      // rule | twin
+    }
+    struct EmailTriage {
+        var configured = false
+        var need: [String] = []        // missing IMAP settings, if not configured
+        var error: String? = nil
+        var total = 0
+        var counts: [String: Int] = [:]
+        var items: [EmailVerdict] = []
+    }
+
+    /// GET /api/email/triage — read-only inbox triage. Sorts messages into
+    /// good / marketing / spam / unsure so you can see what's junk. Nothing is
+    /// deleted or moved; the mailbox opens read-only. On-device end to end.
+    func triageEmail(limit: Int = 100) async -> EmailTriage {
+        var comps = URLComponents(url: baseURL.appendingPathComponent("api/email/triage"),
+                                  resolvingAgainstBaseURL: false)!
+        comps.queryItems = [URLQueryItem(name: "limit", value: String(limit))]
+        var req = URLRequest(url: comps.url!)
+        req.timeoutInterval = 90   // an IMAP fetch of ~100 messages can take a bit
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let o = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            var t = EmailTriage()
+            t.configured = (o["configured"] as? Bool) ?? false
+            t.need = (o["need"] as? [String]) ?? []
+            t.error = o["error"] as? String
+            t.total = (o["total"] as? Int) ?? 0
+            t.counts = (o["counts"] as? [String: Int]) ?? [:]
+            if let raw = o["items"] as? [[String: Any]] {
+                t.items = raw.map {
+                    EmailVerdict(
+                        sender: ($0["sender"] as? String) ?? "",
+                        subject: ($0["subject"] as? String) ?? "",
+                        label: ($0["label"] as? String) ?? "unsure",
+                        reason: ($0["reason"] as? String) ?? "",
+                        by: ($0["by"] as? String) ?? "rule")
+                }
+            }
+            return t
+        } catch {
+            return EmailTriage(configured: false, error: "\(error.localizedDescription)")
+        }
+    }
+
     /// GET /api/music/status — is music (Now Playing) tracking on?
     func musicEnabled() async -> Bool {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/music/status"))

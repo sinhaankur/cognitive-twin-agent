@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Vera — Inbox Triage",
+  "version": "0.1.0",
+  "description": "Vera reads your already-logged-in mail tab and tells you what's junk — on-device, no password shared. Talks to your local Vera core.",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": [
+    "https://mail.yahoo.com/*",
+    "https://*.mail.yahoo.com/*",
+    "https://mail.google.com/*",
+    "http://127.0.0.1:7878/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Vera — triage this inbox"
+  },
+  "icons": { "128": "icon.png" }
+}

@@ -160,6 +160,59 @@ def classify_by_rules(msg: Message, allow: set[str]) -> Verdict | None:
     return None
 
 
+# ---- web-visible classification (browser-extension path) ---------------------
+# When the inbox is read from an already-logged-in Yahoo/Gmail TAB (via the Vera
+# browser extension), we DON'T have raw headers — only what the page renders:
+# sender, subject, a snippet, and web cues like the provider's own "Unsubscribe"
+# link that shows on bulk mail. This classifier works from those visible fields,
+# so no password is ever handed to Vera — it piggybacks on the login you have.
+def classify_web(sender: str, subject: str, snippet: str = "",
+                 has_unsub_link: bool = False, allow: set[str] | None = None) -> Verdict:
+    """Classify one message from web-visible fields alone. Always returns a
+    Verdict (never None) — the caller can still upgrade an UNSURE via the LLM."""
+    allow = allow or set()
+    sender = (sender or "").lower().strip()
+    subject = subject or ""
+    domain = _domain(sender)
+    signals: list[str] = []
+
+    if sender in allow or (domain and domain in allow):
+        return Verdict("", sender, subject, GOOD,
+                       f"{sender or domain} is on your allowlist", signals=["allowlist"])
+
+    promo = bool(_PROMO_WORDS.search(subject) or _PROMO_WORDS.search(snippet or ""))
+    # The provider's visible "Unsubscribe" link is the web mirror of the
+    # List-Unsubscribe header — the single strongest bulk signal we can see.
+    if has_unsub_link:
+        signals.append("unsubscribe link")
+    if promo:
+        signals.append("promotional wording")
+    # A no-reply / bulk-looking sender is another visible tell.
+    bulk_sender = bool(re.search(r"(no[-_.]?reply|newsletter|noreply|mailer|marketing|notifications?|updates?|hello|team|info)@", sender))
+    if bulk_sender:
+        signals.append("bulk-style sender")
+
+    if has_unsub_link and (promo or bulk_sender):
+        return Verdict("", sender, subject, MARKETING,
+                       "has an unsubscribe link and " +
+                       ("promotional wording" if promo else "a bulk-style sender"),
+                       signals=signals)
+    if has_unsub_link:
+        return Verdict("", sender, subject, MARKETING,
+                       "carries an unsubscribe link (bulk mail)", signals=signals)
+    if promo and bulk_sender:
+        return Verdict("", sender, subject, MARKETING,
+                       "promotional subject from a bulk-style sender", signals=signals)
+    if not signals:
+        return Verdict("", sender, subject, GOOD,
+                       "reads like a personal or transactional message",
+                       signals=["no bulk cues"])
+    # One weak signal only → let the twin break the tie (caller may call the LLM);
+    # if no LLM, this stands as UNSURE.
+    return Verdict("", sender, subject, UNSURE,
+                   "one weak bulk cue — undecided", signals=signals)
+
+
 # ---- LLM tie-breaker ---------------------------------------------------------
 def classify_by_llm(msg: Message, snippet: str) -> Verdict | None:
     """Ask the local twin for a verdict on an ambiguous message. Returns None if

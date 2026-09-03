@@ -54,14 +54,35 @@ _portrait_building = False
 
 class _Handler(BaseHTTPRequestHandler):
     # the shared agent is attached to the server instance
+    def _allow_origin(self) -> str:
+        """Which origin to echo back for CORS. Same-origin (the app's own web
+        UI) always; PLUS browser extensions (chrome-/moz-extension://…), so the
+        Vera browser extension can POST a logged-in mail tab to the local core.
+        No password ever transits — only the messages the page already shows."""
+        own = "http://%s:%d" % (HOST, self.server.server_address[1])
+        origin = self.headers.get("Origin", "")
+        if origin.startswith(("chrome-extension://", "moz-extension://", "safari-web-extension://")):
+            return origin
+        return own
+
     def _send(self, code: int, body: bytes, ctype: str) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        # local-only app; allow the page's fetch calls
-        self.send_header("Access-Control-Allow-Origin", "http://%s:%d" % (HOST, self.server.server_address[1]))
+        # local-only app; allow the page's fetch calls + the Vera extension
+        self.send_header("Access-Control-Allow-Origin", self._allow_origin())
+        self.send_header("Vary", "Origin")
         self.end_headers()
         self.wfile.write(body)
+
+    def do_OPTIONS(self) -> None:
+        # CORS preflight for the browser extension's POST.
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", self._allow_origin())
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Vary", "Origin")
+        self.end_headers()
 
     def _json(self, code: int, obj: dict[str, Any]) -> None:
         self._send(code, json.dumps(obj).encode("utf-8"), "application/json")
@@ -178,6 +199,54 @@ class _Handler(BaseHTTPRequestHandler):
             st = portrait.status()
             st["building"] = _portrait_building
             self._json(200, st)
+        elif self.path == "/api/email/triage" or self.path.startswith("/api/email/triage?"):
+            # "Which of my emails are junk?" — read-only IMAP triage, on-device.
+            # Nothing is deleted/moved/marked; the mailbox opens read-only. IMAP
+            # talks straight to the provider (Yahoo/Gmail/…), the LLM tie-breaker
+            # is local. Config from env + Keychain, exactly like the CLI.
+            from urllib.parse import urlparse, parse_qs
+            import os as _os
+            from .. import email_triage
+            from ..secrets_store import get as _secret
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                limit = max(1, min(300, int(q.get("limit", ["100"])[0])))
+            except ValueError:
+                limit = 100
+            host = _os.environ.get("IMAP_HOST")
+            user = _os.environ.get("IMAP_USER")
+            password = _secret("IMAP_PASSWORD")
+            folder = _os.environ.get("IMAP_FOLDER", "INBOX")
+            if not (host and user and password):
+                # Not configured — tell the app what's missing so it can prompt.
+                self._json(200, {
+                    "configured": False,
+                    "need": [k for k, v in (("IMAP_HOST", host), ("IMAP_USER", user),
+                                            ("IMAP_PASSWORD", password)) if not v],
+                    "hint": "Set IMAP_HOST + IMAP_USER, and store an app-specific "
+                            "password as IMAP_PASSWORD. Yahoo: imap.mail.yahoo.com.",
+                })
+            else:
+                try:
+                    port = int(_os.environ.get("IMAP_PORT", "993"))
+                    verdicts = email_triage.triage(
+                        host=host, user=user, password=password, port=port,
+                        folder=folder, limit=limit,
+                    )
+                    counts = {"good": 0, "marketing": 0, "spam": 0, "unsure": 0}
+                    items = []
+                    for v in verdicts:
+                        counts[v.label] = counts.get(v.label, 0) + 1
+                        items.append({
+                            "sender": v.sender, "subject": v.subject,
+                            "label": v.label, "reason": v.reason, "by": v.by,
+                        })
+                    self._json(200, {
+                        "configured": True, "readOnly": True,
+                        "total": len(verdicts), "counts": counts, "items": items,
+                    })
+                except Exception as e:
+                    self._json(200, {"configured": True, "error": str(e)})
         else:
             self._json(404, {"error": "not found"})
 
@@ -190,6 +259,34 @@ class _Handler(BaseHTTPRequestHandler):
             on = bool(data.get("on"))
             result = controls.set_control(key, on)
             self._json(200 if "error" not in result else 400, result)
+            return
+        if self.path == "/api/email/triage-messages":
+            # Triage messages captured by the Vera BROWSER EXTENSION from your
+            # already-logged-in mail tab (Yahoo/Gmail). No password reaches Vera —
+            # it classifies the visible fields the page already shows. Body:
+            #   { "messages": [ {sender, subject, snippet?, hasUnsubscribeLink?} ] }
+            from .. import email_triage
+            data = self._read_json()
+            msgs = data.get("messages")
+            if not isinstance(msgs, list):
+                self._json(400, {"error": "messages[] required"})
+                return
+            counts = {"good": 0, "marketing": 0, "spam": 0, "unsure": 0}
+            items = []
+            for m in msgs[:500]:
+                if not isinstance(m, dict):
+                    continue
+                v = email_triage.classify_web(
+                    sender=str(m.get("sender", "")),
+                    subject=str(m.get("subject", "")),
+                    snippet=str(m.get("snippet", "")),
+                    has_unsub_link=bool(m.get("hasUnsubscribeLink")),
+                )
+                counts[v.label] = counts.get(v.label, 0) + 1
+                items.append({"sender": v.sender, "subject": v.subject,
+                              "label": v.label, "reason": v.reason, "by": v.by})
+            self._json(200, {"source": "browser", "readOnly": True,
+                             "total": len(items), "counts": counts, "items": items})
             return
         if self.path == "/api/ask":
             data = self._read_json()
