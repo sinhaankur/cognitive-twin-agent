@@ -234,6 +234,36 @@ def contacts_review() -> str:
 
 
 @R.add(
+    "set_daily_commitment",
+    "Save a recurring daily anchor the user tells you — the school run, the gym, "
+    "etc. Use when they say things like 'I drop Ritam at 8', 'pick up Ritam 4pm', "
+    "'gym at 5:30 on weekdays'. Vera holds it and reasons around it (reminders, "
+    "'am I free before pickup'). It never acts on its own.",
+    {"type": "object", "properties": {
+        "name": {"type": "string", "description": "the anchor, e.g. 'drop Ritam' or 'pick up Ritam' or 'gym'"},
+        "time": {"type": "string", "description": "time like '8am' or '16:30'"},
+        "days": {"type": "string", "description": "daily | weekdays | weekends | comma list (mon,wed,fri)"},
+    }, "required": ["name", "time"]},
+)
+def set_daily_commitment(name: str, time: str, days: str = "daily") -> str:
+    from .. import rhythms
+    return rhythms.add_commitment(name, time, days)
+
+
+@R.add(
+    "day_shape",
+    "The shape of the user's day — today's recurring anchors (Ritam drop-off/"
+    "pick-up, gym, …) in order, and what's next. Use for 'what's my day look "
+    "like', 'what's next', 'when do I pick up Ritam', 'how long until pickup'.",
+)
+def day_shape() -> str:
+    from .. import rhythms
+    shape = rhythms.day_shape()
+    nxt = rhythms.next_commitment()
+    return f"{shape}\n{nxt}"
+
+
+@R.add(
     "analyze_sentiment",
     "Analyse the emotional tone / sentiment of a piece of text (a message, an "
     "email, a note) — on-device. Returns the overall sentiment and why. Use when "

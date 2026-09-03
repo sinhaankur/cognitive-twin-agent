@@ -97,6 +97,101 @@ def set_override(key: str, value: Any) -> None:
     _write(data)
 
 
+# --- named daily commitments (the school run, the gym, …) ----------------------
+# These are the recurring anchors of a real day that the user TELLS Vera:
+# "drop Ritam 8am", "pick up Ritam 4pm", "gym 5:30pm weekdays". Stored sealed,
+# read-only reasoning — Vera holds them and reasons around them (reminders,
+# "am I free before pickup"), but never acts on its own.
+_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+
+def _parse_hhmm(s: str) -> str | None:
+    import re as _re
+    s = (s or "").strip().lower().replace(".", ":")
+    m = _re.match(r"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$", s)
+    if not m:
+        return None
+    h = int(m.group(1)); mm = int(m.group(2) or 0); ap = m.group(3)
+    if ap == "pm" and h < 12: h += 12
+    if ap == "am" and h == 12: h = 0
+    if not (0 <= h < 24 and 0 <= mm < 60):
+        return None
+    return f"{h:02d}:{mm:02d}"
+
+
+def add_commitment(name: str, time_str: str, days: str = "daily") -> str:
+    """Add/update a recurring daily commitment. `days`: 'daily', 'weekdays',
+    'weekends', or a comma list like 'mon,wed,fri'."""
+    hhmm = _parse_hhmm(time_str)
+    if not hhmm:
+        return f"I couldn't read the time '{time_str}'. Try like '8am' or '16:30'."
+    d = (days or "daily").lower().strip()
+    if d == "weekdays":
+        day_list = _DAYS[:5]
+    elif d == "weekends":
+        day_list = _DAYS[5:]
+    elif d in ("daily", "everyday", "every day", ""):
+        day_list = list(_DAYS)
+    else:
+        day_list = [x.strip()[:3] for x in d.split(",") if x.strip()[:3] in _DAYS]
+        if not day_list:
+            day_list = list(_DAYS)
+    data = _read()
+    coms = data.get("commitments", [])
+    coms = [c for c in coms if c.get("name", "").lower() != name.lower()]  # replace same-named
+    coms.append({"name": name.strip(), "time": hhmm, "days": day_list})
+    coms.sort(key=lambda c: c["time"])
+    data["commitments"] = coms
+    _write(data)
+    when = "every day" if len(day_list) == 7 else ("weekdays" if day_list == _DAYS[:5] else ", ".join(day_list))
+    return f"Got it — {name.strip()} at {hhmm}, {when}. I'll keep it in mind."
+
+
+def list_commitments() -> list[dict[str, Any]]:
+    data = _read()
+    coms = data.get("commitments", [])
+    return coms if isinstance(coms, list) else []
+
+
+def remove_commitment(name: str) -> str:
+    data = _read()
+    coms = data.get("commitments", [])
+    n = len(coms)
+    coms = [c for c in coms if c.get("name", "").lower() != name.lower()]
+    data["commitments"] = coms
+    _write(data)
+    return f"Removed '{name}'." if len(coms) < n else f"No commitment named '{name}'."
+
+
+def today_commitments() -> list[dict[str, Any]]:
+    """Today's commitments, in time order."""
+    wd = _DAYS[now().weekday()]
+    return [c for c in list_commitments() if wd in c.get("days", [])]
+
+
+def next_commitment() -> str:
+    """The next daily anchor coming up (e.g. Ritam pickup) and how long until."""
+    n = now()
+    cur = f"{n.hour:02d}:{n.minute:02d}"
+    upcoming = [c for c in today_commitments() if c["time"] > cur]
+    if not upcoming:
+        return "Nothing else scheduled in your day. You're clear."
+    c = upcoming[0]
+    hh, mm = map(int, c["time"].split(":"))
+    mins = (hh * 60 + mm) - (n.hour * 60 + n.minute)
+    soon = f"in {mins} min" if mins < 60 else f"in {mins//60}h {mins%60}m"
+    return f"Next in your day: {c['name']} at {c['time']} ({soon})."
+
+
+def day_shape() -> str:
+    """A readable line of today's anchors — the shape of the day."""
+    coms = today_commitments()
+    if not coms:
+        return "No fixed commitments on today's calendar of routines."
+    parts = [f"{c['time']} {c['name']}" for c in coms]
+    return "Today's rhythm: " + " · ".join(parts) + "."
+
+
 def summary_for_prompt() -> str:
     """A private context line so Anita reasons with your day in mind — when to be
     brief, when not to suggest things, etc."""
@@ -113,6 +208,10 @@ def summary_for_prompt() -> str:
         bits.append(f"You've told me you sleep around {r['sleep']}.")
     if isinstance(r.get("activities"), list) and r["activities"]:
         bits.append("Recurring activities you've mentioned: " + ", ".join(r["activities"]) + ".")
+    # Named daily anchors the user set (the school run, gym) — reason around them.
+    todays = today_commitments()
+    if todays:
+        bits.append("Today's anchors: " + "; ".join(f"{c['name']} at {c['time']}" for c in todays) + ".")
     if len(bits) == 1 and r.get("interactions", 0) < 8:
         bits.append("(Still learning your daily rhythm.)")
     return "# YOUR DAY (private, on-device)\n" + " ".join(bits)
