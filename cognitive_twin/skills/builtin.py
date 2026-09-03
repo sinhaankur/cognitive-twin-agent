@@ -292,6 +292,18 @@ def web_download(url: str, _approved: bool = False) -> str:
 
 
 @R.add(
+    "anything_i_should_know",
+    "Vera's proactive read: the few timely things worth surfacing right now — "
+    "an imminent Ritam pickup, a meeting starting, a free block — ranked need "
+    "before want. Read-only; it surfaces + offers, never acts. Use for 'anything "
+    "I should know', 'what's coming up', 'nudge me'.",
+)
+def anything_i_should_know() -> str:
+    from .. import proactive
+    return proactive.preview()
+
+
+@R.add(
     "agent_mode",
     "Get or set how much Vera may act on its own: read_only (only reads), "
     "approve (asks before every action — default), or auto (allow-listed actions "
