@@ -264,6 +264,51 @@ def day_shape() -> str:
 
 
 @R.add(
+    "web_fetch",
+    "Fetch readable text from a web page on an ALLOW-LISTED host (on-device gate). "
+    "Read-only — never saves. Use when the user asks you to read/look up something "
+    "online and the host is allowed. Blocked/gated hosts return a clear message.",
+    {"type": "object", "properties": {
+        "url": {"type": "string", "description": "an https URL on an allowed host"},
+    }, "required": ["url"]},
+)
+def web_fetch(url: str, _approved: bool = False) -> str:
+    from .. import net
+    return net.fetch_text(url, approved=_approved)
+
+
+@R.add(
+    "web_download",
+    "Download a file from an ALLOW-LISTED host into Vera's sandbox folder. Gated: "
+    "needs approval unless autonomous mode is on. Use when the user explicitly "
+    "asks to download something Vera needs.",
+    {"type": "object", "properties": {
+        "url": {"type": "string", "description": "an https URL on an allowed host"},
+    }, "required": ["url"]},
+)
+def web_download(url: str, _approved: bool = False) -> str:
+    from .. import net
+    return net.download(url, approved=_approved)
+
+
+@R.add(
+    "agent_mode",
+    "Get or set how much Vera may act on its own: read_only (only reads), "
+    "approve (asks before every action — default), or auto (allow-listed actions "
+    "run without asking). Use when the user says 'go autonomous', 'ask me first', "
+    "'read only', or asks what mode you're in.",
+    {"type": "object", "properties": {
+        "set": {"type": "string", "description": "read_only | approve | auto (omit to just report)"},
+    }},
+)
+def agent_mode(set: str = "") -> str:
+    from ..agent import permissions
+    if set:
+        return permissions.set_mode(set)
+    return permissions.status()
+
+
+@R.add(
     "analyze_sentiment",
     "Analyse the emotional tone / sentiment of a piece of text (a message, an "
     "email, a note) — on-device. Returns the overall sentiment and why. Use when "

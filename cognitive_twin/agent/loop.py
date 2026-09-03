@@ -33,8 +33,12 @@ class AgentResult:
     answer: str
     steps: int
     tool_calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
-    # which model the router picked for this run (None when routing is off)
-    route: RouteDecision | None = None
+    # which model the router picked for this run (None when routing is off).
+    # Also carries a permission Decision on an approval pause — both are metadata.
+    route: Any = None
+    # when the loop paused for approval: the (skill, args) awaiting a yes. The UI
+    # re-issues this call with args["_approved"]=True once the user confirms.
+    pending: tuple[str, dict[str, Any]] | None = None
 
 
 def _load_persona() -> str:
@@ -112,6 +116,20 @@ class Agent:
     def reset_conversation(self) -> None:
         """Forget the current session's back-and-forth (not the on-disk memory)."""
         self.history = []
+
+    def _audit_tool(self, name: str, args: dict[str, Any], decision: str) -> None:
+        """Sealed audit of every tool the agent ran, asked about, or was blocked
+        on — so you can always see exactly what Vera did on your behalf."""
+        try:
+            from .. import security
+            import time as _t
+            safe_args = {k: v for k, v in (args or {}).items() if k != "_approved"}
+            security.append_line(
+                security.path("agent_audit.jsonl"),
+                {"at": _t.time(), "tool": name, "decision": decision, "args": safe_args},
+            )
+        except Exception:
+            pass  # audit must never break the loop
 
     def run(self, user_input: str, *, record: bool = True,
             on_delta: Any = None) -> AgentResult:
@@ -283,10 +301,31 @@ class Agent:
                     answer=answer, steps=step, tool_calls=used, route=decision
                 )
 
-            # execute each requested tool call, append results, loop again
+            # execute each requested tool call, append results, loop again.
+            # THE PERMISSION GATE: every acting tool passes through permissions
+            # first. read → runs; write/network/external → asks or is blocked per
+            # the current mode (read_only / approve / auto). Approved calls carry
+            # approved=True (the app/UI re-sends the same call after a yes).
+            from . import permissions as _perm
             for call in reply.tool_calls:
                 name, args = _parse_tool_call(call)
-                result = self.registry.dispatch(name, args)
+                approved = bool(args.pop("_approved", False)) if isinstance(args, dict) else False
+                decision, why = _perm.decide(name, approved=approved)
+                if decision is _perm.Decision.BLOCK:
+                    result = f"[blocked] {why}"
+                elif decision is _perm.Decision.ASK:
+                    # Stop the loop and surface the request for approval — Vera
+                    # never acts unapproved. The UI shows this and can re-issue
+                    # the call with _approved once the user says yes.
+                    self._audit_tool(name, args, "asked")
+                    return AgentResult(
+                        answer=f"This needs your ok: {why}",
+                        steps=step, tool_calls=used, route=decision,
+                        pending=(name, dict(args) if isinstance(args, dict) else {}),
+                    )
+                else:
+                    result = self.registry.dispatch(name, args)
+                self._audit_tool(name, args, decision.value)
                 used.append((name, args))
                 messages.append(ChatMessage(role="tool", tool_name=name, content=result))
 
