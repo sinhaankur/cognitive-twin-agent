@@ -158,6 +158,97 @@ def thoughts_of_the_day(tasks_file: str = "tasks.md") -> str:
 # memory write); these skills let the model consult and work the same ledger.
 
 @R.add(
+    "calendar_agenda",
+    "Read the user's REAL calendars (all connected accounts — iCloud, Google, "
+    "Outlook — via macOS) and summarise their agenda. Read-only. Use when the "
+    "user asks what's on today/tomorrow/this week, what they have scheduled, etc.",
+    {"type": "object", "properties": {
+        "when": {"type": "string", "description": "today | tomorrow | week (default today)"},
+    }},
+)
+def calendar_agenda(when: str = "today") -> str:
+    from .. import calendar as _cal
+    return _cal.agenda(when)
+
+
+@R.add(
+    "calendar_next",
+    "The user's very next calendar event from any account (with how soon it is). "
+    "Use for 'what's next', 'what's coming up', 'when's my next meeting'.",
+)
+def calendar_next() -> str:
+    from .. import calendar as _cal
+    return _cal.next_event()
+
+
+@R.add(
+    "calendar_free",
+    "Whether the user is free on a given day/window, and where the gaps are, "
+    "across all their calendars. Use for 'am I free Saturday', 'do I have time "
+    "Tuesday afternoon'. Read-only.",
+    {"type": "object", "properties": {
+        "day": {"type": "string", "description": "a weekday (Saturday) or date (2026-09-12); default today"},
+        "start": {"type": "string", "description": "window start HH:MM (default 09:00)"},
+        "end": {"type": "string", "description": "window end HH:MM (default 18:00)"},
+    }},
+)
+def calendar_free(day: str = "", start: str = "09:00", end: str = "18:00") -> str:
+    from .. import calendar as _cal
+    return _cal.free_slots(day, start, end)
+
+
+@R.add(
+    "contacts_search",
+    "Look up who someone is in the user's address book (all accounts, on-device). "
+    "Use for 'who is <name>', 'what's <name>'s number/email', 'do I know anyone at "
+    "<company>'. Read-only.",
+    {"type": "object", "properties": {
+        "query": {"type": "string", "description": "a name, company, email, or number"},
+    }, "required": ["query"]},
+)
+def contacts_search(query: str) -> str:
+    from .. import contacts
+    return contacts.search(query)
+
+
+@R.add(
+    "contacts_count",
+    "How many contacts the user has (and how many are reachable). Use for 'how "
+    "many contacts do I have'.",
+)
+def contacts_count() -> str:
+    from .. import contacts
+    return contacts.count()
+
+
+@R.add(
+    "contacts_review",
+    "Surface contacts worth REVIEWING to delete — empties, no-name, junk, "
+    "duplicates — each with a reason. Vera NEVER deletes; it only flags them so "
+    "the user can remove them in the Contacts app. Use for 'clean up my contacts', "
+    "'which contacts are junk', 'help me delete bad contacts'.",
+)
+def contacts_review() -> str:
+    from .. import contacts
+    return contacts.review()
+
+
+@R.add(
+    "analyze_sentiment",
+    "Analyse the emotional tone / sentiment of a piece of text (a message, an "
+    "email, a note) — on-device. Returns the overall sentiment and why. Use when "
+    "the user asks how something 'reads', its tone, or whether a message sounds "
+    "warm/angry/anxious.",
+    {"type": "object", "properties": {
+        "text": {"type": "string", "description": "the text to analyse"},
+    }, "required": ["text"]},
+)
+def analyze_sentiment(text: str) -> str:
+    from .. import sentiment
+    return sentiment.analyze(text)
+
+
+@R.add(
     "my_day",
     "Show what's on the user's plate today: the tasks Vera has picked up from "
     "conversation (their day, shadowed) — open tasks with how long each has been "
