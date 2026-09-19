@@ -37,6 +37,7 @@ from .skills import places_skill  # noqa: F401  (registers places: today/week/st
 from .skills import music_skill  # noqa: F401  (registers music: now-playing/taste/status/enable)
 from .skills import social_skill  # noqa: F401  (registers social: summary/status/import Meta export)
 from .skills import careers_skill  # noqa: F401  (registers careers: job_fit/cover_letter/resumes/track)
+from .skills import watchtower_skill  # noqa: F401  (registers watchtower: status/note — opt-in observability)
 from .skills.base import default_registry
 
 
@@ -220,11 +221,34 @@ def _run_once_capture(agent: Agent, prompt: str, *,
     if pinned is not None:
         client.model = pinned  # type: ignore[attr-defined]
         saved_router, agent.router = agent.router, None
+    import time as _time
+    _t0 = _time.monotonic()
     try:
         result = agent.run(prompt, record=record, on_delta=on_delta)
     finally:
         if saved_router is not None:
             agent.router = saved_router
+
+    # Observability (opt-in): let a local WatchTower see the twin think — which
+    # model/backend answered and how long it took. Operational metadata only —
+    # never the prompt or the answer. A no-op unless CTWIN_WATCHTOWER is on, and
+    # best-effort so it can never break the reply.
+    try:
+        from . import watchtower
+        _bk = getattr(agent, "backend", None)
+        _answered = (route_dict or {}).get("model") if route_dict else None
+        watchtower.emit(
+            "reply",
+            model=_answered or getattr(client, "model", None),
+            backend=("unhosted" if (_bk and _answered and _bk.is_openai_model(_answered)
+                                    and _bk.openai_label == "unhosted")
+                     else "cloud" if (_bk and _answered and _bk.is_cloud_model(_answered))
+                     else "local"),
+            latency_ms=round((_time.monotonic() - _t0) * 1000),
+            routed=bool(route_dict),
+        )
+    except Exception:
+        pass  # observability must never break the loop
 
     return result.answer, route_dict
 

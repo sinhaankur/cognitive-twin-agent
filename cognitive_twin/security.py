@@ -288,9 +288,22 @@ def _check_egress() -> tuple[bool, str, str]:
         "claude_client.py",
         # opt-in web research skill (documented, off by default)
         "builtin.py",
+        # Vera's single guarded internet doorway: hard host allow-list + permission
+        # mode + sealed audit + sandboxed downloads (see net.py's own docstring).
+        # It IS the fenced egress path, so it belongs in the known-good set.
+        "net.py",
+        # site patrol: watches www.sinhaankur.com (read-only health) and, only
+        # while Ankur has the control switch on AND the smoke test is green,
+        # pushes a fix live. Egress is Ankur's own site + git push to origin.
+        "site_patrol.py",
         # importing an automation RECIPE (a JSON config file) from a URL you give —
         # it's a config you review before it runs, not a site being driven.
         "recipe.py",
+        # opt-in observability: reports Vera's OWN health to a self-hosted
+        # WatchTower. Off by default, loopback (127.0.0.1) by default, and sends
+        # operational metadata only (model/backend/latency) — never conversation,
+        # persona, or memory. A fenced, user-enabled egress; see watchtower.py.
+        "watchtower.py",
     }
     unknown = [h for h in hits if h.split(":")[0].split("/")[-1] not in known]
     if unknown:
