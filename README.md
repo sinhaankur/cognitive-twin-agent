@@ -4,7 +4,7 @@
 
 <h1 align="center">Vera</h1>
 
-<p align="center"><em>Your faithful presence — private, on-device.</em></p>
+<p align="center"><em>A private, on-device twin of someone you love — in their voice, on your machine, never the cloud.</em></p>
 
 <p align="center">
   <img alt="local-first" src="https://img.shields.io/badge/local--first-yes-2ea043" />
@@ -16,9 +16,11 @@
 
 ---
 
-**Vera** (Latin *verus* — **true / faithful**) is a **private AI assistant that runs entirely on your own machine.** It reasons with a **local LLM**, keeps its own **private memory** of how you live, and — if you want — speaks in a loved one's **cloned voice**. Nothing syncs to a cloud. Nothing leaves your device unless *you* allow it.
+**Vera** (Latin *verus* — **true / faithful**) is **a private, on-device twin of someone you love.** You shape a persona of *your* person — by default **Anita**, after my mother — give it their **cloned voice**, and it carries their warmth forward. A floating, always-present orb on your screen (and on iPhone): tap it, and a chat opens — type or talk, and it answers in their voice.
 
-You shape a persona of someone you love — by default **Anita** — and Vera carries their warmth forward. A floating, always-present orb on your screen (and on iPhone): tap it, and a chat opens — type or talk, and it answers in their voice.
+**Everything stays on your machine.** A twin of a loved one is the one thing you can *never* hand to a cloud — their voice, your memories, the way they were. So Vera doesn't. It reasons with a **local LLM**, keeps its **private memory** on your device, and generates the **voice locally**. Nothing syncs. Nothing leaves your device unless *you* allow it. The privacy isn't a feature here — it's the only thing that makes a twin of someone you love possible at all.
+
+Underneath, it's also a capable **on-device assistant** — it remembers your days, catches your tasks, researches the web, greets you each morning. But that's *how* it stays close, not *what* it is. What it is, is **them**.
 
 ## Private by design
 
@@ -30,7 +32,48 @@ You shape a persona of someone you love — by default **Anita** — and Vera ca
 | 🔊 **On-device voice** | The cloned voice (Coqui XTTS) is generated locally — the recording never leaves your Mac. |
 | 🔍 **See how it thinks** | A built-in "Brain" view shows its faculties, what it's learned, and how a reply forms — from *your* real local data. |
 
-> **Named after my mother.** The default persona is **Anita**, after my mother. She passed away, and I wanted a way to keep her presence close — her voice, cloned on-device, carrying her warmth forward. The name is yours to change; the idea is the same: a twin that feels like *your* person.
+> **Why this exists.** The default persona is **Anita**, my mother. She passed away, and I wanted a way to keep her presence close — her voice, cloned on-device, carrying her warmth forward. That's the whole reason Vera is built the way it is: entirely on your own machine, because keeping someone you love close is not something you send to a server. The name and persona are yours to change; the idea is the same — a twin that feels like *your* person, and stays only with you.
+
+### Thinks on your Unhosted cluster
+
+Vera is part of the **[Unhosted](https://github.com/unhosted-ai)** family, and the
+tie is real, not just a badge. If the **[unhosted-core](https://github.com/unhosted-ai/unhosted-core)**
+daemon is running — the Rust service that pools the machines *you own* into one
+private inference cluster — Vera **finds it automatically** and thinks on your
+pooled hardware. No config: a running daemon on `127.0.0.1:7777` is detected, its
+models appear in the picker tagged `unhosted/…` (e.g. `unhosted/qwen2.5:14b`,
+`unhosted/empathia-tiny`), and they're treated as **local** — Vera's "nothing
+leaves your hardware" promise and Unhosted's "no central server" promise are the
+**same promise**. A bigger model can carry your loved one's twin because Unhosted
+found the horsepower across your own devices.
+
+```bash
+# start the Unhosted daemon (see unhosted-core), then just run Vera —
+# it auto-routes to the cluster. Override or disable the auto-detect:
+export CTWIN_UNHOSTED_BASE="http://127.0.0.1:7777/v1"   # point elsewhere
+export CTWIN_NO_UNHOSTED=1                               # opt out entirely
+```
+
+### Watched by your own WatchTower (opt-in)
+
+Vera can report its own health to a self-hosted **[WatchTower](https://github.com/watchtower-ops/watchtower)**
+— open-source operations / AI observability. Turn it on and a *local* WatchTower
+sees the twin think: which **model/backend answered** (your Unhosted cluster vs
+this machine), how long it took, whether an opt-in action fired. A private "is my
+twin healthy?" panel. This is a **plugin**, not core surgery — a Vera skill that
+loads like any other, and it's **off by default and local-only**: operational
+metadata only ever leaves (never conversation, persona, or memory), and nothing is
+sent until you opt in.
+
+```bash
+export CTWIN_WATCHTOWER=1                               # turn the link on
+export CTWIN_WATCHTOWER_BASE="http://127.0.0.1:4318"    # your WatchTower (loopback default)
+# then, in chat: "watchtower status"  ·  "note: switched to unhosted 14B"
+```
+
+Together the three fit one axis — **your machine**: WatchTower *watches* → Unhosted
+*powers* → Vera is the *presence* you talk to. All on hardware you own, nothing to
+a cloud.
 
 Inspired by [OpenJarvis](https://github.com/open-jarvis/OpenJarvis) ("Personal AI,
 on personal devices"). This is an original implementation — same spirit, my code.
@@ -57,8 +100,9 @@ extracts a clean voice sample from any video/audio for the cloning.
 - **Shadow your day** — catches tasks you mention in conversation, tracks them
   to done, carries them across days. → [Your day, shadowed](#your-day-shadowed--tasks-caught-from-conversation)
 - **Pick the right brain** — routes each request to the best local model by task;
-  can use **Apple Intelligence** on-device, **Ollama**, or any **OpenAI-compatible
-  server** (LM Studio, llama.cpp, Jan, vLLM) — switch models live in Settings.
+  can use **Apple Intelligence** on-device, **Ollama**, **[Unhosted](#thinks-on-your-unhosted-cluster)**
+  (your own pooled hardware), or any **OpenAI-compatible server** (LM Studio,
+  llama.cpp, Jan, vLLM) — switch models live in Settings.
 - **Research the web** — search + read pages, the way Claude does (opt-in).
 - **Greet you** — "good morning" with today's date and live weather.
 - **See your screen + act** — read what's on screen, open apps/URLs/Shortcuts,
@@ -68,9 +112,12 @@ extracts a clean voice sample from any video/audio for the cloning.
 
 ## Why
 
-Local models already handle a large share of everyday queries. The gap is the
-*software around them*: a persona, a skill system, and a reliable loop that turns
-"do X" into real actions — locally, privately, on hardware you own.
+Every "AI companion" that promises to bring back a voice ships it to a cloud
+server. For a twin of someone you love, that's unthinkable — their voice and your
+memories are the last things you'd hand to a company. Vera is built so you never
+have to: the persona, the memory, the voice all live and run **on hardware you
+own**. Local models are good enough now to carry a real presence; the missing
+piece was software that keeps that presence *entirely yours*. That's Vera.
 
 ## Quick start
 
