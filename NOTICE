@@ -1,0 +1,44 @@
+Vera (Cognitive Twin)
+Copyright (C) 2026 Ankur Sinha
+
+This software is licensed under the GNU Affero General Public License v3.0
+(see LICENSE). The original code is authored by Ankur Sinha.
+
+────────────────────────────────────────────────────────────────────────────
+Third-party components
+────────────────────────────────────────────────────────────────────────────
+
+Vera runs entirely on-device and does not bundle these; it calls or optionally
+integrates with them at runtime. They remain the property of their authors under
+their own licenses, and are credited here.
+
+Local model runtimes (called at runtime, not distributed with Vera):
+  • Ollama — local LLM server. https://ollama.com  (MIT License)
+  • LM Studio / any OpenAI-compatible local server — optional backend.
+  • Apple Intelligence / Foundation Models — optional on-device backend (Apple).
+
+Local models the user may pull and run (not distributed with Vera):
+  • Qwen2.5 (Alibaba) — used via Ollama, under its own model license.
+  • Llama 3.x (Meta) — used via Ollama, under the Llama Community License.
+  • nomic-embed-text (Nomic AI) — embeddings for on-device RAG, under its license.
+  • Whisper (OpenAI) — optional speech-to-text, MIT License.
+
+Voice:
+  • Coqui XTTS — on-device voice synthesis, used for the optional cloned voice,
+    under the Coqui Public Model License / its stated terms. The user's own voice
+    recording never leaves the device.
+
+Inspiration / acknowledgement:
+  • OpenJarvis ("Personal AI, on personal devices") — spirit and idea only;
+    Vera is an original, independent implementation (Ankur Sinha's own code),
+    not a fork or copy of OpenJarvis.
+
+Companion tools by the same author:
+  • Voice Harvester (Ankur Sinha) — extracts a clean voice sample for cloning.
+  • Unhosted (unhosted-ai) — optional pooled local inference backend.
+
+────────────────────────────────────────────────────────────────────────────
+Attribution principle: everything original here is © Ankur Sinha. Anything used
+from elsewhere is credited above under its own license; no third party is
+credited for Ankur's work, and nothing used is left uncredited. If a component
+is missing or mis-stated here, it is an oversight to be corrected, not a claim.
