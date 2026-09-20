@@ -147,10 +147,23 @@ def _index_path(name: str) -> str:
     return os.path.join(_rag_dir(), safe + ".json")
 
 
-def build_index(folder: str, name: str = "default") -> dict:
-    """Ingest a folder into a saved index. Embeds if a local model is available,
-    else keyword-only. Returns a small summary dict."""
+# Prose extensions retrieve far better than raw source: measured on the Universe
+# Engine, 25 prose chunks answered clean+cited where 1,586 code chunks were noisy.
+_PROSE_EXTS = {".md", ".markdown", ".rst", ".txt"}
+
+
+def build_index(folder: str, name: str = "default", prose_first: bool = True) -> dict:
+    """Ingest a folder into a saved index. If `prose_first` (default) and the
+    folder has a healthy amount of prose (docs), index ONLY the prose — code
+    embeds noisily and drowns the docs (measured). Set prose_first=False to index
+    everything. Embeds if a local model is available, else keyword-only."""
     chunks = _ingest_dir(folder)
+    if prose_first:
+        prose = [c for c in chunks if os.path.splitext(c.source)[1].lower() in _PROSE_EXTS]
+        # only switch to prose-only when there's meaningful doc coverage AND the
+        # folder is code-heavy enough that code would drown it
+        if len(prose) >= 5 and len(prose) < len(chunks) * 0.5:
+            chunks = prose
     vectors = None
     if embeddings_available():
         vectors = []
