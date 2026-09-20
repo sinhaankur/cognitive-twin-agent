@@ -55,6 +55,17 @@ _RISK: dict[str, str] = {
     # query the local model) — no gate. rag_index WRITES the index file (below).
     "rag_recall": "read", "rag_list": "read",
     "watchtower_status": "read",
+    # Harmless reads that were defaulting to write_local and getting gated — so
+    # Vera stopped asking permission to GREET you. These only read local state /
+    # the local model; none write, act, or leave the machine. (Acting skills like
+    # open_app/see_screen/sync_email/drive_run/enable_* stay gated by default.)
+    "greeting": "read", "thoughts_of_the_day": "read", "my_principles": "read",
+    "projects_needing_attention": "read", "unused_accounts": "read",
+    "music_status": "read", "music_taste": "read", "now_playing": "read",
+    "places_today": "read", "places_week": "read", "places_status": "read",
+    "places_analysis": "read", "social_status": "read", "social_summary": "read",
+    "drive_list": "read", "drive_read": "read", "drive_checkpoint": "read",
+    "job_fit": "read", "think_routes": "read",
     # local writes (Vera's own sealed store)
     "note_task": "write_local", "complete_task": "write_local",
     "set_daily_commitment": "write_local",
