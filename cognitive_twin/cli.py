@@ -38,6 +38,7 @@ from .skills import music_skill  # noqa: F401  (registers music: now-playing/tas
 from .skills import social_skill  # noqa: F401  (registers social: summary/status/import Meta export)
 from .skills import careers_skill  # noqa: F401  (registers careers: job_fit/cover_letter/resumes/track)
 from .skills import watchtower_skill  # noqa: F401  (registers watchtower: status/note — opt-in observability)
+from .skills import rag_skill  # noqa: F401  (registers rag: index/recall/list — answer from your docs)
 from .skills.base import default_registry
 
 
