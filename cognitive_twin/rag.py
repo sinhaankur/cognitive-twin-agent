@@ -258,6 +258,86 @@ def retrieve(query: str, name: str = "default", k: int = 4, alpha: float = 0.6) 
             for i in order if final[i] > 0]
 
 
+# ---- rerank: widen the candidate pool, then keep the best few --------------
+# Retrieval alone can rank the right passage just outside the top-k (that's the
+# planet-data miss we saw). The fix (standard 2026 RAG): fetch a WIDER pool, then
+# re-score it against the question with the local LLM and keep the best k. Purely
+# additive + graceful — no LLM, or any failure, falls back to the retrieval order.
+def rerank(query: str, hits: list[Hit], keep: int = 4) -> list[Hit]:
+    if len(hits) <= keep:
+        return hits
+    listing = "\n".join(f"[{i+1}] {h.text[:240]}" for i, h in enumerate(hits))
+    try:
+        from .llm.ollama_client import OllamaClient, ChatMessage
+        model = os.environ.get("CTWIN_MODEL") or "qwen2.5:3b"
+        client = OllamaClient(host=_ollama_host(), model=model)
+        reply = client.chat([
+            ChatMessage(role="system", content=(
+                "You rank passages by how well they answer the question. Return ONLY "
+                f"the numbers of the {keep} best passages, comma-separated, best first.")),
+            ChatMessage(role="user", content=f"Question: {query}\n\nPassages:\n{listing}\n\nBest {keep} numbers:"),
+        ])
+        idxs = [int(n) - 1 for n in re.findall(r"\d+", reply.content or "")][:keep]
+        picked = [hits[i] for i in idxs if 0 <= i < len(hits)]
+        if picked:
+            # keep any not-picked as backfill so we always return `keep`
+            for h in hits:
+                if len(picked) >= keep:
+                    break
+                if h not in picked:
+                    picked.append(h)
+            return picked[:keep]
+    except Exception:
+        pass
+    return hits[:keep]
+
+
+def expand_query(query: str) -> str:
+    """Rewrite a natural question into a retrieval-friendly query with likely
+    DOMAIN terms, so vocabulary mismatch doesn't hide the right passage. (We saw
+    'data sources for the planets' miss the real planet table, which is worded in
+    domain terms like AU / axial tilt / J2000 — expanding recovers it.) Returns
+    the original query plus keywords; falls back to the raw query if no LLM."""
+    try:
+        from .llm.ollama_client import OllamaClient, ChatMessage
+        model = os.environ.get("CTWIN_MODEL") or "qwen2.5:3b"
+        client = OllamaClient(host=_ollama_host(), model=model)
+        reply = client.chat([
+            ChatMessage(role="system", content=(
+                "You expand a search query for retrieval. Output ONLY 4-8 extra "
+                "keywords/synonyms/technical terms likely to appear in the target "
+                "documents — no sentences, no explanation, space-separated.")),
+            ChatMessage(role="user", content=f"Query: {query}\n\nExtra keywords:"),
+        ])
+        extra = (reply.content or "").strip().replace("\n", " ")
+        # keep it a query, not a paragraph
+        extra = " ".join(_WORD.findall(extra.lower()))[:200]
+        return (query + " " + extra).strip() if extra else query
+    except Exception:
+        return query
+
+
+def retrieve_reranked(query: str, name: str = "default", k: int = 4,
+                      pool: int = 16, expand: bool = True) -> list[Hit]:
+    """The full pipeline: retrieve on the RAW query AND (optionally) an expanded
+    query, MERGE both candidate pools, then rerank down to k against the original
+    question. Expansion can only ADD recall — it never displaces good raw hits, so
+    a poor expansion (a small local model guesses imperfectly) can't regress us.
+    Every step is graceful; any failure degrades to plain retrieval."""
+    raw = retrieve(query, name=name, k=pool)
+    merged: list[Hit] = list(raw)
+    if expand:
+        eq = expand_query(query)
+        if eq != query:
+            seen = {(h.source, h.ordinal) for h in merged}
+            for h in retrieve(eq, name=name, k=pool):
+                if (h.source, h.ordinal) not in seen:
+                    merged.append(h); seen.add((h.source, h.ordinal))
+    if not merged:
+        return []
+    return rerank(query, merged, keep=k)  # rerank against the real question
+
+
 # ---- answer: retrieve -> local LLM -> cited answer -------------------------
 _SYSTEM = ("You answer strictly from the provided context. If the answer is not in "
            "the context, say you don't know from these documents. Be concise and "
@@ -265,7 +345,7 @@ _SYSTEM = ("You answer strictly from the provided context. If the answer is not 
 
 
 def answer(query: str, name: str = "default", k: int = 4) -> str:
-    hits = retrieve(query, name=name, k=k)
+    hits = retrieve_reranked(query, name=name, k=k)
     if not hits:
         avail = list_indexes()
         if not avail:
