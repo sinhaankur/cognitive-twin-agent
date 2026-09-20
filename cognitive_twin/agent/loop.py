@@ -276,6 +276,38 @@ class Agent:
         tools = _relevant_tools(self.registry.tool_specs(), user_input)
         used: list[tuple[str, dict[str, Any]]] = []
 
+        # DETERMINISTIC AUTO-RUN: for unambiguous commands ("book an amenity",
+        # "my day"), don't leave it to the model to decide whether to act — it
+        # sometimes asks instead of calling. Match the intent directly and invoke
+        # the skill. Still passes the SAME permission gate below, so nothing
+        # bypasses approval — this only changes which skill runs, not whether it's
+        # allowed. Falls through to the model when nothing matches.
+        if self.registry is not None:
+            try:
+                from . import intents as _intents
+                from . import permissions as _perm
+                hit = _intents.match(user_input, set(self.registry.names()))
+                if hit:
+                    name, args = hit
+                    gate, _why = _perm.decide(name)
+                    if gate is _perm.Decision.RUN:
+                        result = self.registry.dispatch(name, args)
+                        used.append((name, args))
+                        self._audit_tool(name, args, "run")
+                        # let the model phrase the result warmly, in her voice —
+                        # feed it back rather than dumping the raw tool string.
+                        messages.append(ChatMessage(role="tool", content=result, tool_name=name))
+                    elif gate is _perm.Decision.ASK:
+                        # needs the user's ok — surface that instead of the model
+                        # asking "which amenity?"; the UI re-sends approved.
+                        return AgentResult(
+                            answer=f"This needs your ok: '{name}' — confirm and I'll do it.",
+                            steps=1, tool_calls=[(name, args)], route=decision,
+                            pending=(name, args),
+                        )
+            except Exception:
+                pass  # deterministic match is best-effort; model path still runs
+
         for step in range(1, self.max_steps + 1):
             # stream tokens to the caller when it asked and the client can —
             # the words appear as she thinks them, not as one late block
