@@ -304,6 +304,10 @@ def _check_egress() -> tuple[bool, str, str]:
         # operational metadata only (model/backend/latency) — never conversation,
         # persona, or memory. A fenced, user-enabled egress; see watchtower.py.
         "watchtower.py",
+        # RAG over your own documents: chunks/embeds/answers on the LOCAL backend
+        # (Ollama at localhost). The only egress is to that local model — the same
+        # on-device door the LLM clients use; nothing goes to a cloud. See rag.py.
+        "rag.py",
     }
     unknown = [h for h in hits if h.split(":")[0].split("/")[-1] not in known]
     if unknown:
