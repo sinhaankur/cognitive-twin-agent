@@ -146,6 +146,26 @@ def _thought(q: str) -> dict[str, Any]:
         out["path"] = brain.thought_path(q).get("path", [])
     except Exception:
         out["path"] = []
+    # RAG retrieval — the documents Vera actually searches for THIS prompt, and
+    # the passages that surface, so the Brain view can show grounding honestly:
+    # "searched your documents → found these passages (with sources)". Only the
+    # default index is peeked, read-only; empty if nothing is indexed yet.
+    try:
+        from . import rag
+        indexes = rag.list_indexes()
+        hits = rag.retrieve(q, name="default", k=3) if "default" in indexes else []
+        out["retrieval"] = {
+            "indexes": indexes,
+            "hits": [
+                {"source": h.source, "ordinal": h.ordinal,
+                 "score": round(h.score, 3),
+                 "preview": (h.text[:120] + "…") if len(h.text) > 121 else h.text}
+                for h in hits
+            ],
+            "mode": "semantic+keyword" if rag.embeddings_available() else "keyword-only",
+        }
+    except Exception:
+        out["retrieval"] = {"indexes": [], "hits": [], "mode": "unavailable"}
     # the felt state she computes for THIS prompt — her own mind, no model. This
     # is what makes the feeling visible: the word for it, the stance, the pacing.
     try:
