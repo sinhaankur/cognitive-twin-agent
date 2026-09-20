@@ -51,9 +51,14 @@ _RISK: dict[str, str] = {
     "contacts_review": "read", "day_shape": "read", "my_day": "read",
     "analyze_sentiment": "read", "list_projects": "read", "list_dir": "read",
     "read_file": "read", "daily_digest": "read", "web_search": "read",
+    # RAG over your documents: recall/list only READ (search the local index +
+    # query the local model) — no gate. rag_index WRITES the index file (below).
+    "rag_recall": "read", "rag_list": "read",
+    "watchtower_status": "read",
     # local writes (Vera's own sealed store)
     "note_task": "write_local", "complete_task": "write_local",
     "set_daily_commitment": "write_local",
+    "rag_index": "write_local", "watchtower_note": "write_local",
     # network
     "web_fetch": "network", "web_download": "network",
     # external actions (the high bar)
