@@ -282,7 +282,7 @@ def rerank(query: str, hits: list[Hit], keep: int = 4) -> list[Hit]:
     listing = "\n".join(f"[{i+1}] {h.text[:240]}" for i, h in enumerate(hits))
     try:
         from .llm.ollama_client import OllamaClient, ChatMessage
-        model = os.environ.get("CTWIN_MODEL") or "qwen2.5:3b"
+        model = os.environ.get("CTWIN_MODEL") or "qwen2.5:14b"
         client = OllamaClient(host=_ollama_host(), model=model)
         reply = client.chat([
             ChatMessage(role="system", content=(
@@ -313,7 +313,7 @@ def expand_query(query: str) -> str:
     the original query plus keywords; falls back to the raw query if no LLM."""
     try:
         from .llm.ollama_client import OllamaClient, ChatMessage
-        model = os.environ.get("CTWIN_MODEL") or "qwen2.5:3b"
+        model = os.environ.get("CTWIN_MODEL") or "qwen2.5:14b"
         client = OllamaClient(host=_ollama_host(), model=model)
         reply = client.chat([
             ChatMessage(role="system", content=(
@@ -371,7 +371,7 @@ def answer(query: str, name: str = "default", k: int = 4) -> str:
     # generate with Vera's local backend; degrade to the top passage if it's down
     try:
         from .llm.ollama_client import OllamaClient, ChatMessage
-        model = os.environ.get("CTWIN_MODEL") or "qwen2.5:3b"
+        model = os.environ.get("CTWIN_MODEL") or "qwen2.5:14b"
         client = OllamaClient(host=_ollama_host(), model=model)
         reply = client.chat([
             ChatMessage(role="system", content=_SYSTEM),
