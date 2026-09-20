@@ -2126,8 +2126,20 @@ async function think(q){
     ? { at: 0.55 + 0.25, label: "feeling — " + feel.label
           + (feel.posture ? ", " + feel.posture : "") }
     : null;
+  // RAG: the documents she searched for THIS prompt (real retrieval, from
+  // _thought's `retrieval`). Shown as its own station so grounding is visible —
+  // "searched your documents → found N passages". Only appears when something is
+  // indexed and passages surfaced; honest, never a faked step.
+  const retr = d.retrieval || {};
+  const rhits = retr.hits || [];
+  const retrievalStage = (retr.indexes && retr.indexes.length && rhits.length)
+    ? { at: 0.3, label: "searched your documents — " + rhits.length
+          + (rhits.length === 1 ? " passage found" : " passages found")
+          + " (" + rhits[0].source + ")" }
+    : null;
   const stages = [
     { at: 0.0, label: "heard you" },
+    ...(retrievalStage ? [retrievalStage] : []),
     { at: 0.55, label: recall.length
         ? "remembering — " + recall.length + (recall.length === 1 ? " memory surfaces" : " memories surface")
         : "nothing familiar — thinking fresh" },
@@ -2827,7 +2839,7 @@ _ABOUT = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
   <p class="sub">a twin that lives on this machine — everything below is running now, none of it leaves 127.0.0.1</p>
   <div class="pillar"><span class="dot" style="background:#cfd8f2"></span><div><b>the mind, visible.</b> <span>her consciousness is a real fluid simulation (a hand-ported lattice-Boltzmann churn), her memories are cells constellated around it, their relations are threads, and a thought is light you can watch move. Nothing drawn is invented — every label is her real state.</span></div></div>
   <div class="pillar"><span class="dot" style="background:#7fd1b9"></span><div><b>memory that holds.</b> <span>everything she keeps is typed (emotion · task · opinion · knowledge), related, weighted by how often it truly returns in her thinking, and prunable when it's junk.</span></div></div>
-  <div class="pillar"><span class="dot" style="background:#7ec8ff"></span><div><b>thinking you can audit.</b> <span>ask her something and the chain of events plays out: heard → memories surface → connecting → choosing words, ending with the model her policy genuinely routed to.</span></div></div>
+  <div class="pillar"><span class="dot" style="background:#7ec8ff"></span><div><b>thinking you can audit.</b> <span>ask her something and the chain of events plays out: heard → searched your documents (the passages she found, with sources) → memories surface → connecting → choosing words, ending with the model her policy genuinely routed to.</span></div></div>
   <div class="pillar"><span class="dot" style="background:#ffd9a0"></span><div><b>a mind you can travel.</b> <span>approach flight on open, orbit with a thrown hand, click a memory to visit it, double-click to glide home. The entrance animation only plays when the view proves it is rendering correctly.</span></div></div>
   <div class="pillar"><span class="dot" style="background:#c98bff"></span><div><b>her inner life.</b> <span>persona, soul (reflections while you're away), mood, rhythms of the day, day-task shadows, and a voice — each a faculty on the wiring you can see in the details view.</span></div></div>
   <div class="pillar"><span class="dot" style="background:#f3c969"></span><div><b>private by design.</b> <span>zero dependencies, no build step, local-first: the engine serves only 127.0.0.1 and the pages work offline.</span></div></div>
