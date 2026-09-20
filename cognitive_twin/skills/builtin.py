@@ -425,7 +425,9 @@ def greeting() -> str:
     now = _dt.datetime.now()
     h = now.hour
     part = ("morning" if h < 12 else "afternoon" if h < 18 else "evening")
-    out = [f"Good {part}! It's {now.strftime('%A, %B %d')}, {now.strftime('%H:%M')}."]
+    # Include the YEAR explicitly: the model sometimes rephrases this line, and
+    # without the year in front of it, it would invent one (seen: "…, 2020").
+    out = [f"Good {part}! It's {now.strftime('%A, %B %d, %Y')}, {now.strftime('%H:%M')}."]
 
     if _web_enabled():
         w = _weather_now()
