@@ -67,7 +67,7 @@ def build_agent(model: str | None = None, *, route: bool = True,
         or os.environ.get("CTWIN_MODEL")
         or cfg.get("model")
         or cfg.get("llm", {}).get("model")
-        or "qwen2.5:7b"
+        or "qwen2.5:14b"   # best local tool-caller you have; falls back if absent
     )
     host = os.environ.get("CTWIN_OLLAMA_HOST") or cfg.get("host") or "http://localhost:11434"
 

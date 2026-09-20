@@ -4,10 +4,10 @@
   "models": {
     "primary": {
       "provider": "ollama",
-      "name": "qwen2.5:7b",
+      "name": "qwen2.5:14b",
       "role": "default_reasoning",
-      "comment": "Installed + instruct-tuned. Was qwen3:14b (NOT installed) — that mismatch made every route fail and is why Vera 'didn't understand'. Repoint to a real model.",
-      "targetLatencyMs": 3500
+      "comment": "Default reasoning is the 14b — the best local TOOL-CALLER installed. The 7b would half-act and interrogate ('which amenity?') instead of calling the skill; the 14b actually invokes tools and follows the 'act, don't interrogate' DNA. Ollama loads it on demand and unloads after idle, so this is powerful without being always-hot. (Battery-saver still drops to the 3b fastFallback via rule_low_power.)",
+      "targetLatencyMs": 6000
     },
     "fastFallback": {
       "provider": "ollama",
