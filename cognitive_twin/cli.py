@@ -608,6 +608,27 @@ def _control_command(rest: list[str]) -> int:
     return 0
 
 
+def _adblock_command(rest: list[str]) -> int:
+    """`ctwin adblock [status|setup|pause|resume|start|stop|restart]` — control a
+    self-hosted AdGuard Home ad-blocker running on an always-on box you own
+    (never this machine). Mutating actions confirm first."""
+    from . import adblock
+    adblock.set_confirm(_ask_yn)      # y/N gate on any change
+    sub = rest[0] if rest else "status"
+    if sub == "setup":
+        print(adblock.setup_hint())
+    elif sub == "status":
+        print(adblock.status())
+    elif sub in ("pause", "resume"):
+        print(adblock.set_protection(sub == "resume"))
+    elif sub in adblock._CONTAINER_OPS:
+        print(adblock.container(sub))
+    else:
+        print("usage: ctwin adblock [status|setup|pause|resume|start|stop|restart]")
+        return 2
+    return 0
+
+
 def _twin_command(rest: list[str]) -> int:
     """`ctwin twin [list|new <name>|use <name>|rm <name>]` — manage multiple twins.
 
@@ -789,6 +810,8 @@ def main(argv: list[str] | None = None) -> int:
         return _day_command(raw[1:])
     if raw and raw[0] == "control":
         return _control_command(raw[1:])
+    if raw and raw[0] == "adblock":
+        return _adblock_command(raw[1:])
     if raw and raw[0] == "media":
         return _media_command(raw[1:])
     if raw and raw[0] == "persona":
