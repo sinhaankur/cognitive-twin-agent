@@ -308,6 +308,13 @@ def _check_egress() -> tuple[bool, str, str]:
         # (Ollama at localhost). The only egress is to that local model — the same
         # on-device door the LLM clients use; nothing goes to a cloud. See rag.py.
         "rag.py",
+        # opt-in ad-blocker control: talks to a self-hosted AdGuard Home you run on
+        # an always-on box you own (never this machine). Off by default; loopback
+        # for the read API by default; container control requires an explicit
+        # non-local box host + confirm hook, over an allow-listed ssh docker call.
+        # Sends only your AdGuard admin credential (from Keychain) to your own box —
+        # never conversation, persona, or memory. See adblock.py.
+        "adblock.py",
     }
     unknown = [h for h in hits if h.split(":")[0].split("/")[-1] not in known]
     if unknown:
