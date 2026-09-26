@@ -136,6 +136,104 @@ def read_screen_text(max_chars: int = 1200) -> str:
     return out[:max_chars] + ("…[truncated]" if len(out) > max_chars else "")
 
 
+# ---- Safari activity bridge (read-only) ---------------------------------------
+# Let Vera connect to the browser and UNDERSTAND what you're doing — the current
+# tab, what it says, and everything open across windows — so she can help in
+# context ("what's this page about?", "summarise what I'm reading", "which of my
+# tabs is the booking one?"). All READ-ONLY: nothing is clicked, typed, opened, or
+# closed. Safari must allow Apple Events (Develop menu → "Allow JavaScript from
+# Apple Events" for page text). Works with Safari; Chrome/Arc could be added the
+# same way. Every call is gated by is_enabled() and uses argv osascript.
+
+def _safari_running() -> bool:
+    out = _osascript(
+        'tell application "System Events" to (name of processes) contains "Safari"'
+    )
+    return out.strip().lower() == "true"
+
+
+def safari_current_tab() -> str:
+    """The active Safari tab's title + URL — the single 'what am I looking at' read."""
+    if (err := _require_enabled()):
+        return err
+    if not _safari_running():
+        return "[safari] Safari isn't running."
+    out = _osascript(
+        'tell application "Safari"\n'
+        '  if (count of windows) is 0 then return "[safari] No open windows."\n'
+        '  set t to current tab of front window\n'
+        '  return (name of t) & "\n" & (URL of t)\n'
+        'end tell'
+    )
+    if out.startswith("["):
+        return out
+    title, _, url = out.strip().partition("\n")
+    return f"Current Safari tab: {title.strip()}\n{url.strip()}"
+
+
+def safari_read_page(max_chars: int = 4000) -> str:
+    """The readable text of the active Safari tab (via document innerText), so Vera
+    can summarise or answer questions about what you're actually reading. Needs
+    Safari → Develop → 'Allow JavaScript from Apple Events'."""
+    if (err := _require_enabled()):
+        return err
+    if not _safari_running():
+        return "[safari] Safari isn't running."
+    out = _osascript(
+        'tell application "Safari"\n'
+        '  if (count of windows) is 0 then return "[safari] No open windows."\n'
+        '  set t to current tab of front window\n'
+        '  try\n'
+        '    return do JavaScript "document.body.innerText" in t\n'
+        '  on error errMsg\n'
+        '    return "[safari-error] " & errMsg\n'
+        '  end try\n'
+        'end tell',
+        timeout=12.0,
+    )
+    if out.startswith("[safari-error]"):
+        return (out + "  (Enable Safari → Develop menu → 'Allow JavaScript from "
+                "Apple Events' to let Vera read page text.)")
+    if out.startswith("["):
+        return out
+    text = " ".join(out.split())
+    if not text:
+        return "[safari] The page exposed no readable text."
+    return text[:max_chars] + ("…[truncated]" if len(text) > max_chars else "")
+
+
+def safari_activity(max_tabs: int = 40) -> str:
+    """A snapshot of ALL open Safari tabs across every window — Vera's read of your
+    current browsing activity. Read-only; titles + URLs only."""
+    if (err := _require_enabled()):
+        return err
+    if not _safari_running():
+        return "[safari] Safari isn't running."
+    out = _osascript(
+        'set outp to ""\n'
+        'tell application "Safari"\n'
+        '  repeat with w in windows\n'
+        '    repeat with t in tabs of w\n'
+        '      set outp to outp & (name of t) & " || " & (URL of t) & "\n"\n'
+        '    end repeat\n'
+        '  end repeat\n'
+        'end tell\n'
+        'return outp',
+        timeout=12.0,
+    )
+    if out.startswith("["):
+        return out
+    rows = [r for r in out.split("\n") if r.strip()]
+    if not rows:
+        return "[safari] No open tabs."
+    lines = []
+    for r in rows[:max_tabs]:
+        title, _, url = r.partition(" || ")
+        lines.append(f"- {title.strip()}  ({url.strip()})")
+    more = f"\n…and {len(rows) - max_tabs} more" if len(rows) > max_tabs else ""
+    return f"Open Safari tabs ({len(rows)}):\n" + "\n".join(lines) + more
+
+
 # ---- screenshot + on-device OCR (read-only) -----------------------------------
 # The Accessibility tree (read_screen_text) misses text that apps draw as pixels
 # — a browser <canvas>, a video frame, VS Code's editor, an image. For those we

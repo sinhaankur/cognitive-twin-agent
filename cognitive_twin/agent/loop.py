@@ -246,6 +246,30 @@ class Agent:
                 ctx = _memory.summary_for_prompt()
             if ctx:
                 parts.append(ctx)
+            # Ground this turn in the user's own documents/notes via the on-device
+            # RAG engine — retrieve the passages most relevant to THIS message and
+            # let Vera answer from them, not from the model's training alone. Fully
+            # local (chunk/embed/retrieve on the user's backend). Gated: if no index
+            # has been built (rag: index ...), retrieve() returns nothing and this is
+            # a no-op, so installs without a corpus behave exactly as before.
+            try:
+                from .. import rag as _rag
+                if "default" in _rag.list_indexes():
+                    hits = _rag.retrieve_reranked(user_input, name="default", k=4)
+                    if hits:
+                        snippets = "\n".join(
+                            f"- {h.text.strip()[:500]}" for h in hits if getattr(h, "text", "").strip()
+                        )
+                        if snippets:
+                            mode = "semantic+keyword" if _rag.embeddings_available() else "keyword-only"
+                            parts.append(
+                                "From your own documents (on-device retrieval · "
+                                f"{mode}). Ground your answer in these when they're "
+                                "relevant; say so if they don't cover the question:\n"
+                                f"{snippets}"
+                            )
+            except Exception:
+                pass
             # what's on their plate today (the day shadow — local task ledger)
             try:
                 from .. import shadow as _shadow
