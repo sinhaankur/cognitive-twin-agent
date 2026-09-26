@@ -15,7 +15,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 def _fresh():
     os.environ["CTWIN_MEMORY_DIR"] = tempfile.mkdtemp()
-    from cognitive_twin import security, mental_model
+    # import THEN reload (reload needs the module already in sys.modules), so this
+    # is robust to whatever earlier tests left behind.
+    import cognitive_twin.security as security
+    import cognitive_twin.mental_model as mental_model
     importlib.reload(security)
     importlib.reload(mental_model)
     return mental_model
