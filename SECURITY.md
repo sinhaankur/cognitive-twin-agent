@@ -144,6 +144,26 @@ None of this changes the security kernel (`security.py`) or the sealed stores �
 sync is a layer *above* the one sealed path, which is exactly why the foundation
 was built first. A per-device diagram is in the project [README](./README.md).
 
+## Screen & browser access (opt-in, read-only)
+
+Vera can *see what you're working on* to help in context — the frontmost app, the
+visible window text, and your **Safari activity** (current tab, the page's readable
+text, and all open tabs). This lives in `control.py` and is governed by three rules:
+
+- **Off by default.** Every action is gated by `control.is_enabled()`; nothing runs
+  until you turn control on. Disabled → each function returns a clear no-op message.
+- **Read is read-only.** The Safari bridge (`safari_current_tab`, `safari_read_page`,
+  `safari_activity`) and the screen reads only *observe* — they never click, type,
+  open, or close anything. Only the mutating actions (open app/url/shortcut) go
+  through the confirmation hook, and a denial means nothing runs.
+- **No shell interpolation.** All of it uses `osascript` via argv (`subprocess.run`
+  with a list), never a shell string — page URLs/titles can't inject a command.
+- **On-device.** What Vera reads from your screen or browser is used to answer *you*,
+  in the same local turn; it is not sent anywhere. Reading a page's text needs Safari
+  → Develop → "Allow JavaScript from Apple Events", which you grant explicitly.
+
+Chrome/Arc could be added the same read-only way; only Safari is wired today.
+
 ## Honest threat model
 
 At-rest sealing protects your **files** — backups, a copied disk, another account

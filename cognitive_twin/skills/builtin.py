@@ -604,6 +604,33 @@ def read_active_app() -> str:
     return app_context.read_active().as_prompt()
 
 
+# ---- Safari activity bridge (opt-in, read-only) ------------------------------
+# Vera connects to the browser and understands what the user is doing. Read-only:
+# never clicks, types, opens, or closes anything.
+
+@R.add("safari_tab", "See the user's CURRENT Safari tab (title + URL). Read-only. "
+       "Use when they ask 'what am I looking at?' or refer to 'this page'.")
+def safari_tab() -> str:
+    from .. import control
+    return control.safari_current_tab()
+
+
+@R.add("safari_read", "Read the text of the user's current Safari page so you can "
+       "summarise it or answer questions about what they're reading. Read-only. "
+       "Use for 'summarise this', 'what does this page say', 'explain this article'.")
+def safari_read() -> str:
+    from .. import control
+    return control.safari_read_page()
+
+
+@R.add("safari_activity", "See ALL the user's open Safari tabs across every window "
+       "— a snapshot of their current browsing activity (titles + URLs). Read-only. "
+       "Use for 'what am I working on?', 'which tab is X?', 'what have I got open?'.")
+def safari_activity() -> str:
+    from .. import control
+    return control.safari_activity()
+
+
 @R.add("open_app", "Open a macOS app by name (asks the user to confirm first).",
        {"type": "object", "properties": {"name": {"type": "string", "description": "app name, e.g. Safari"}},
         "required": ["name"]})

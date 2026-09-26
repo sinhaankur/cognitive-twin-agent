@@ -24,10 +24,10 @@
     },
     "companion": {
       "provider": "ollama",
-      "name": "qwen2.5:14b",
+      "name": "empathia-tiny:latest",
       "role": "emotional_companion",
-      "comment": "Emotional / check-in / reflective turns route here — and now to the DEEPER 14b, not the fast 7b. Feeling turns need nuance: the 7b would open warmly then reflexively drift to 'shall I list your tasks?'; the 14b holds the moment and stays present. Her warmth still comes from her persona (persona.py _INNATE); the bigger model just follows it better. Loaded on-demand by Ollama, so everyday task turns stay light on the 7b.",
-      "targetLatencyMs": 6000
+      "comment": "Emotional / check-in / reflective turns route to OUR OWN model — empathia-tiny, tuned for warmth and presence, not a stock qwen. This is the model that makes Vera *hers*, not a generic assistant; it is tiny + on-device (fast, private, works offline). Warmth is reinforced by persona.py _INNATE. If it ever drifts to 'shall I list your tasks?', the fix is the model/persona — not swapping in a stock 14b, because companionship IS the point. (Was temporarily pointed at qwen2.5:14b for nuance; restored to empathia-tiny 2026-09-26.)",
+      "targetLatencyMs": 2500
     }
   },
   "routingRules": [
