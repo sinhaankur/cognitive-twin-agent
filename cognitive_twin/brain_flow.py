@@ -74,8 +74,20 @@ def _hippocampus(text: str) -> str | None:
     except Exception:
         pass
 
-    # grounded life-memory: retrieve real shared history / documents (RAG). Gated —
-    # no index → nothing, so this is a no-op on a corpus-less install.
+    # life-memory: her real shared history — past conversations (and notes) recalled
+    # from the SEALED life index (Charter §7). "remember when you…" made real, or
+    # honest silence. Built from memory.entries(); no history → empty.
+    try:
+        from . import life_memory
+        lm = life_memory.context_for_prompt(text)
+        if lm:
+            recalled.append(lm)
+    except Exception:
+        pass
+
+    # grounded documents: the manual RAG docs index (rag: index <folder>). Distinct
+    # from life-memory — this is reference material, not shared history. Gated —
+    # no index → nothing, so this is a no-op when the person hasn't indexed docs.
     try:
         from . import rag
         if "default" in rag.list_indexes():
@@ -86,9 +98,9 @@ def _hippocampus(text: str) -> str | None:
             if snippets:
                 mode = "semantic+keyword" if rag.embeddings_available() else "keyword-only"
                 recalled.append(
-                    "From what you actually remember (on-device recall · "
-                    f"{mode}) — speak from it when it fits, and if it doesn't cover "
-                    "the question, say so plainly rather than inventing a memory:\n"
+                    "From your reference documents (on-device retrieval · "
+                    f"{mode}) — use them when relevant; say so if they don't cover "
+                    "the question:\n"
                     f"{snippets}")
     except Exception:
         pass

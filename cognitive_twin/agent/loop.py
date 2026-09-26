@@ -348,6 +348,15 @@ class Agent:
                         _mm.observe(user_input)
                     except Exception:
                         pass
+                    # keep her life-memory (Charter §7) fresh so recent moments are
+                    # recallable. Rebuilding re-embeds the whole log, so do it every
+                    # few turns, not every turn — cheap + eventually-consistent.
+                    try:
+                        from .. import life_memory as _lm
+                        if _mm.load().get("turns", 0) % 5 == 0:
+                            _lm.build_index()
+                    except Exception:
+                        pass
                 return AgentResult(
                     answer=answer, steps=step, tool_calls=used, route=decision
                 )
