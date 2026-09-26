@@ -266,6 +266,18 @@ class Agent:
                 ctx = _memory.summary_for_prompt()
             if ctx:
                 parts.append(ctx)
+            # The living MENTAL MODEL of the person (Companion Charter §3 — the
+            # hippocampus's "what I know about them right now": recent feelings,
+            # the people in their life, the threads they keep returning to). Built
+            # by her own deterministic logic from the turns, not a model. Empty
+            # until she's known them a little (honest — no invented backstory).
+            try:
+                from .. import mental_model as _mm
+                mm_ctx = _mm.context_for_prompt()
+                if mm_ctx:
+                    parts.append(mm_ctx)
+            except Exception:
+                pass
             # Ground this turn in the user's own documents/notes via the on-device
             # RAG engine — retrieve the passages most relevant to THIS message and
             # let Vera answer from them, not from the model's training alone. Fully
@@ -371,6 +383,13 @@ class Agent:
                     try:
                         from .. import soul as _soul
                         _soul.evolve_personality()
+                    except Exception:
+                        pass
+                    # update her living model of the PERSON from this turn
+                    # (Companion Charter §3). Deterministic; sealed via the kernel.
+                    try:
+                        from .. import mental_model as _mm
+                        _mm.observe(user_input)
                     except Exception:
                         pass
                 return AgentResult(
