@@ -245,61 +245,17 @@ class Agent:
                     _mirror.observe(user_input)
                 except Exception:
                     pass
-            # the limbic + frontal read of THIS message: Vera's own felt state and
-            # the stance she takes, decided by her own deterministic logic (not the
-            # model). The model writes within it — this is what makes her feel like
-            # a mind, not a context-follower. Works with or without a model.
-            # (feel.directive reads the mirror lean too — voice + wording adapt.)
+            # THE BRAIN FLOW (Companion Charter §6) — one ordered pass through the
+            # organs, composed in charter order so behaviour comes from the anatomy,
+            # not a persona string: limbic (feel) → hippocampus (recall = memory +
+            # mental model + RAG life-memory) → frontal (stance, folded into feel) →
+            # cortex (the LLM below, which writes WITHIN this, never as its source).
+            # All deterministic + on-device; the model is the last, smallest step.
             try:
-                from .. import feel as _feel
-                d = _feel.directive(user_input)
-                if d:
-                    parts.append(d)
-            except Exception:
-                pass
-            # Recall memories relevant to *this* message (falls back to the
-            # standing habit summary when nothing specific matches). This is what
-            # makes the twin feel like it remembers you, not just your stats.
-            try:
-                ctx = _memory.context_for(user_input)
-            except Exception:
-                ctx = _memory.summary_for_prompt()
-            if ctx:
-                parts.append(ctx)
-            # The living MENTAL MODEL of the person (Companion Charter §3 — the
-            # hippocampus's "what I know about them right now": recent feelings,
-            # the people in their life, the threads they keep returning to). Built
-            # by her own deterministic logic from the turns, not a model. Empty
-            # until she's known them a little (honest — no invented backstory).
-            try:
-                from .. import mental_model as _mm
-                mm_ctx = _mm.context_for_prompt()
-                if mm_ctx:
-                    parts.append(mm_ctx)
-            except Exception:
-                pass
-            # Ground this turn in the user's own documents/notes via the on-device
-            # RAG engine — retrieve the passages most relevant to THIS message and
-            # let Vera answer from them, not from the model's training alone. Fully
-            # local (chunk/embed/retrieve on the user's backend). Gated: if no index
-            # has been built (rag: index ...), retrieve() returns nothing and this is
-            # a no-op, so installs without a corpus behave exactly as before.
-            try:
-                from .. import rag as _rag
-                if "default" in _rag.list_indexes():
-                    hits = _rag.retrieve_reranked(user_input, name="default", k=4)
-                    if hits:
-                        snippets = "\n".join(
-                            f"- {h.text.strip()[:500]}" for h in hits if getattr(h, "text", "").strip()
-                        )
-                        if snippets:
-                            mode = "semantic+keyword" if _rag.embeddings_available() else "keyword-only"
-                            parts.append(
-                                "From your own documents (on-device retrieval · "
-                                f"{mode}). Ground your answer in these when they're "
-                                "relevant; say so if they don't cover the question:\n"
-                                f"{snippets}"
-                            )
+                from .. import brain_flow as _brain
+                flow = _brain.compose(user_input).as_prompt()
+                if flow:
+                    parts.append(flow)
             except Exception:
                 pass
             # what's on their plate today (the day shadow — local task ledger)
