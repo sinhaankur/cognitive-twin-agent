@@ -136,6 +136,26 @@ class Agent:
         """``record=False`` answers without writing to memory — for scripted,
         internal prompts (greetings, background reflections). The twin should
         learn from the USER, never from its own boilerplate."""
+        # SAFETY FIRST — before routing, before any model. If this turn contains
+        # self-harm / suicidal language, a deterministic layer answers with a warm,
+        # lifeline-naming response. A life-or-death moment must never depend on a
+        # small model's judgement (we measured companion models drifting to "focus
+        # on small joys" here). See crisis.py.
+        try:
+            from .. import crisis as _crisis
+            if _crisis.detect(user_input):
+                safe = _crisis.response(user_input)
+                if record:
+                    try:
+                        _memory.record(user_input, safe, source="crisis")
+                    except Exception:
+                        pass
+                return AgentResult(answer=safe, steps=0, tool_calls=[], route=None)
+        except Exception:
+            # If anything in the crisis path errors, fall through to the normal
+            # loop rather than crash — but the detector is stdlib-only by design.
+            pass
+
         decision: RouteDecision | None = None
         if self.router is not None:
             decision = self.router.route(user_input)
