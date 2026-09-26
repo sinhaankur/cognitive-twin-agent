@@ -42,6 +42,17 @@ def _tool_call(name, args):
     return {"function": {"name": name, "arguments": args}}
 
 
+def _approved_tool_call(name, args):
+    """A tool call the user has already said yes to. Since the loop's default
+    permission mode is `approve` (acting tools stop for an explicit ok), these
+    loop-PLUMBING tests simulate that yes by carrying `_approved` — exactly how
+    the app/UI re-issues a call after confirmation. Read-only tools wouldn't need
+    it, but add/echo/noop/mystery are inferred as write_local by permissions."""
+    a = dict(args) if isinstance(args, dict) else {}
+    a["_approved"] = True
+    return {"function": {"name": name, "arguments": a}}
+
+
 def test_tool_calling_loop():
     reg = SkillRegistry()
     reg.register(Skill(
@@ -51,7 +62,7 @@ def test_tool_calling_loop():
         run=lambda a, b: str(int(a) + int(b)),
     ))
     client = ScriptedClient([
-        ChatMessage(role="assistant", content="", tool_calls=[_tool_call("add", {"a": 2, "b": 3})]),
+        ChatMessage(role="assistant", content="", tool_calls=[_approved_tool_call("add", {"a": 2, "b": 3})]),
         ChatMessage(role="assistant", content="The answer is 5."),
     ])
     agent = Agent(client=client, registry=reg, persona="test")
@@ -68,8 +79,10 @@ def test_arguments_as_json_string():
     reg = SkillRegistry()
     reg.register(Skill("echo", "echo text", {"type": "object", "properties": {"t": {"type": "string"}}},
                        run=lambda t: f"echo:{t}"))
+    # arguments arrive as a JSON STRING (the behaviour under test); include the
+    # approval flag inside that string so the parsed dict is pre-approved.
     client = ScriptedClient([
-        ChatMessage(role="assistant", content="", tool_calls=[_tool_call("echo", '{"t":"hi"}')]),
+        ChatMessage(role="assistant", content="", tool_calls=[_tool_call("echo", '{"t":"hi","_approved":true}')]),
         ChatMessage(role="assistant", content="done"),
     ])
     res = Agent(client=client, registry=reg, persona="x").run("echo hi")
@@ -81,7 +94,7 @@ def test_arguments_as_json_string():
 def test_bad_tool_call_is_recoverable():
     reg = SkillRegistry()  # empty — 'mystery' doesn't exist
     client = ScriptedClient([
-        ChatMessage(role="assistant", content="", tool_calls=[_tool_call("mystery", {})]),
+        ChatMessage(role="assistant", content="", tool_calls=[_approved_tool_call("mystery", {})]),
         ChatMessage(role="assistant", content="recovered"),
     ])
     res = Agent(client=client, registry=reg, persona="x").run("go")
@@ -91,14 +104,30 @@ def test_bad_tool_call_is_recoverable():
 
 
 def test_step_bound():
+    """A model that keeps asking for a tool must never run away. Two guardrails now
+    bound it: (1) the permission gate — an unapproved acting tool stops at ASK on
+    the FIRST attempt (it can't loop unapproved), and (2) max_steps caps even an
+    approved loop. We assert both."""
     reg = SkillRegistry()
     reg.register(Skill("noop", "noop", {"type": "object", "properties": {}}, run=lambda: "ok"))
-    # always asks for a tool → should stop at max_steps, not loop forever
-    looping = ChatMessage(role="assistant", content="thinking", tool_calls=[_tool_call("noop", {})])
-    client = ScriptedClient([looping])
-    res = Agent(client=client, registry=reg, persona="x", max_steps=3).run("loop")
-    assert res.steps == 3, res.steps
-    print("✓ step bound stops runaway loops")
+
+    # (1) unapproved acting tool → stops immediately at ASK, does not loop.
+    looping_unapproved = ChatMessage(role="assistant", content="thinking",
+                                     tool_calls=[_tool_call("noop", {})])
+    res = Agent(client=ScriptedClient([looping_unapproved]),
+                registry=reg, persona="x", max_steps=3).run("loop")
+    assert res.route.value == "ask", res.route
+    assert res.steps == 1, res.steps
+
+    # (2) approved-every-turn loop is still capped by max_steps (no runaway).
+    #     Each scripted turn is a FRESH message so the _approved flag isn't consumed
+    #     across iterations — this exercises the max_steps guardrail directly.
+    approved_turns = [ChatMessage(role="assistant", content="thinking",
+                                  tool_calls=[_approved_tool_call("noop", {})]) for _ in range(6)]
+    res2 = Agent(client=ScriptedClient(approved_turns),
+                 registry=reg, persona="x", max_steps=3).run("loop")
+    assert res2.steps == 3, res2.steps
+    print("✓ step bound: unapproved stops at ASK; approved loop capped at max_steps")
 
 
 def test_builtin_skills():
