@@ -213,6 +213,40 @@ reporting. Skills compose — "build a landing page and deploy it" = `scaffold �
 build → site.preview → deploy`, each gated. This is how a 4B model AUTOMATES reliably:
 the skills carry correctness, the model orchestrates + fills the creative parts.
 
+## Research — the stack that's actually good (2026, verified)
+Researched the real tooling so this is grounded, not guessed. The findings point to
+a clean, coherent **all-Qwen3 on-device stack** — elegant because helmsman-4b IS
+Qwen3-4B, so model + embeddings + fine-tune all share one family:
+
+- **Inference: llama.cpp / llama-cpp-python.** Runs GGUF with **Metal (Apple Silicon
+  first-class)**, Qwen3 supported, 4-bit quant, **GBNF grammars for structured output /
+  reliable tool-calling**, OpenAI-compatible `llama serve`. This is the independent,
+  no-cloud, no-Ollama runtime. ✓ (verified at github.com/ggerganov/llama.cpp)
+- **Embeddings/RAG: Qwen3-Embedding (0.6B).** The 8B tops the MTEB multilingual board
+  (#1, 70.58); the **0.6B** is the right on-device size — 1024-dim, Matryoshka (can
+  shrink dims for speed), 100+ langs incl. **code** (key for indexing his repos), and
+  **same family as helmsman** so query/doc space aligns with the generator. Pairs with
+  **Qwen3-Reranker** for the retrieve→rerank step rag.py already supports. ✓
+- **Fine-tune: Unsloth.** 2× faster, **70% less VRAM**, QLoRA + full + GRPO/DPO,
+  supports **Qwen3**, **runs on macOS/Apple Silicon** (not NVIDIA-only), **exports
+  GGUF** directly. So the "copy of him" fine-tune is feasible on his own Mac. ✓
+  (verified at github.com/unslothai/unsloth)
+- **Agent correctness: grammar-constrained tool-calls + deterministic skills.** The
+  model emits tool calls under a GBNF grammar (can't malform), the skills carry the
+  real work — how a 4B automates reliably.
+
+### "Not just another LLM" — what makes it NOT generic
+The point isn't the model; a bare Qwen3-4B is "just another LLM" (and took him wrong).
+helmsman is different on four axes a plain model can't be:
+1. **Neural engine, not a chat loop** — behaviour flows through the brain organs; the
+   LLM is the last/smallest step, inside HIS felt-state + stance + recall.
+2. **Grounded in HIS 40 repos + decisions** via RAG — it knows his world; no paid
+   general model does.
+3. **His doctrine as enforced rules** — ground-or-abstain, cite-or-admit, never-
+   autonomous, the per-project rules — so it steers right where generic tools steer wrong.
+4. **Fine-tuned on him** — commits, decisions, voice — so even the weights lean his way.
+A generic LLM has none of these. That's the moat: not a bigger model, a model that is HIM.
+
 ## Build order
 1. **Package (Route 1)** — `model/loader.py` (llama-cpp + GGUF), copy `mind/` with
    deps trimmed, `helmsman.ask()`, cli. Runs the full companion stack on helmsman-4b
