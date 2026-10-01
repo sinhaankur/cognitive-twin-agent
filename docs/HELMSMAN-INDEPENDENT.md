@@ -247,6 +247,36 @@ helmsman is different on four axes a plain model can't be:
 4. **Fine-tuned on him** — commits, decisions, voice — so even the weights lean his way.
 A generic LLM has none of these. That's the moat: not a bigger model, a model that is HIM.
 
+## Free distribution — ghcr.io (and how the whole $0 stack fits)
+How helmsman reaches people (and you, on any machine) for **$0**, plus a plain-English
+teaching note on each piece — because understanding the pieces is the point.
+
+**ghcr.io = GitHub Container Registry.** A *container registry* is a place to store
+**Docker images** — a Docker image is your app + everything it needs to run (Python,
+llama-cpp, the model loader, the runtime) frozen into one downloadable bundle, so
+anyone runs it with one command and gets the exact same thing, no "works on my machine".
+- **It's FREE and UNLIMITED for PUBLIC images** (storage AND download) — verified in
+  GitHub's docs. Private images get a small free tier then metered.
+- So helmsman ships as `ghcr.io/sinhaankur/helmsman:latest` → anyone does
+  `docker pull ghcr.io/sinhaankur/helmsman && docker run ...` → the full independent
+  LLM+RAG runs on their machine. On-device, no cloud, no Claude, no cost to you.
+- The GGUF weights stay on **Hugging Face** (also free, built for big model files);
+  the image pulls them on first run, OR a fatter image bundles them. (Teaching note:
+  keep multi-GB weights on HF, keep the image lean — registries aren't for huge blobs.)
+
+**Where each free host fits (the mental model):**
+| Need | Host | Free? | Why this one |
+|---|---|---|---|
+| Static site (portfolio/UE) | **GitHub Pages** | ✓ | serves HTML/JS, no server needed |
+| Build + deploy on push | **GitHub Actions** | ✓ (public) | CI runs the build, pushes to Pages |
+| Heavy textures (16K maps) | **Cloudflare R2** | ✓ ($0 egress) | big static files, free download |
+| **Container images** (helmsman/Vera/rag-engine) | **ghcr.io** | ✓ (public) | run-anywhere app bundles |
+| Model weights (GGUF) | **Hugging Face** | ✓ | built for large model files |
+
+Teaching takeaway: a static SITE doesn't need a container (Pages/R2 cover it); an
+APP/engine does (ghcr.io). That's why ghcr.io is the right free home for the AI
+engines, not the website. Everything above is $0 and open — matching the doctrine.
+
 ## Build order
 1. **Package (Route 1)** — `model/loader.py` (llama-cpp + GGUF), copy `mind/` with
    deps trimmed, `helmsman.ask()`, cli. Runs the full companion stack on helmsman-4b
