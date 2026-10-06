@@ -66,3 +66,33 @@ def learn(events: list[dict[str, Any]]) -> dict[str, int]:
         known.add(prompt)
         learned += 1
     return {"learned": learned, "skipped": skipped}
+
+
+def learn_places(places: list[dict[str, Any]]) -> dict[str, int]:
+    """Store PLACES you've been (from photo location metadata) as memories, so
+    Vera knows where you've travelled. Metadata only, on-device, dedup-safe.
+    Each record: a place name, how many photos, and the date span of the visit."""
+    from . import memory
+    known = {e.get("prompt") for e in memory.entries() if e.get("source") == "photos-places"}
+    learned = skipped = 0
+    for p in places or []:
+        name = (p.get("region") or p.get("place") or "").strip()
+        if not name:
+            continue
+        prompt = f"a place you've been: {name}"
+        if prompt in known:
+            skipped += 1
+            continue
+        photos_n = p.get("photos")
+        first, last = p.get("first"), p.get("last")
+        span = (f"{first} → {last}" if first and last and first != last
+                else (first or last or ""))
+        gist = "from your photos' location metadata (opt-in)"
+        if photos_n:
+            gist += f": {photos_n} photos"
+        if span:
+            gist += f", {span}"
+        memory.record(prompt, gist, source="photos-places")
+        known.add(prompt)
+        learned += 1
+    return {"places_learned": learned, "places_skipped": skipped}

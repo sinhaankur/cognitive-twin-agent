@@ -613,9 +613,15 @@ class _Handler(BaseHTTPRequestHandler):
             # life events derived from Photos METADATA (album titles + dates,
             # never pixels) — sent only while the opt-in "Read my Photos"
             # switch is on. Stored as ordinary memories, dedup-safe.
+            # Also accepts "places": where you've been, from photo location
+            # metadata (opt-in, on-device; reverse-geocoded in the app).
             from .. import photos
             data = self._read_json()
-            result = photos.learn(data.get("events") or [])
+            result = {}
+            if data.get("events"):
+                result = photos.learn(data.get("events") or [])
+            if data.get("places"):
+                result = {**result, **photos.learn_places(data.get("places") or [])}
             self._json(200, {"ok": True, **result})
         elif self.path == "/api/portrait/build":
             # Build the 3D likeness from ONE chosen photo (opt-in "See a loved one
