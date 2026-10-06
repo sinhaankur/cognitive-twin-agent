@@ -66,7 +66,77 @@
   <div id="answer"></div>
   <div id="status">tap to speak</div>
 
+  <!-- Visible chat: the conversation + the RAG sources that grounded each reply,
+       so you can SEE what Vera retrieved. -->
+  <div id="chat" aria-live="polite"></div>
+  <style>
+    /* Chat palette ADAPTS to the OS appearance (dark/light) — dark is the default
+       (matches the orb), overridden by the light block below. */
+    :root {
+      --chat-you-bg: #0a84ff; --chat-you-fg: #fff;
+      --chat-vera-bg: #1b1e28; --chat-vera-fg: #e9ecf2; --chat-vera-bd: #2a2e3c;
+      --chat-muted: #8b93a7;
+      --chip-bg: #14161d; --chip-bd: #262a36; --chip-fg: #9aa3b5; --chip-strong: #c7cfde;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --chat-you-bg: #0a84ff; --chat-you-fg: #fff;
+        --chat-vera-bg: #ffffff; --chat-vera-fg: #1d1d1f; --chat-vera-bd: #e3e3e6;
+        --chat-muted: #86868b;
+        --chip-bg: #f2f2f4; --chip-bd: #e3e3e6; --chip-fg: #6e6e73; --chip-strong: #1d1d1f;
+      }
+    }
+    #chat {
+      position: fixed; left: 50%; transform: translateX(-50%);
+      bottom: 150px; width: min(680px, 92vw); max-height: 48vh;
+      overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
+      padding: 4px 2px; scrollbar-width: thin;
+    }
+    #chat:empty { display: none; }
+    .msg { max-width: 82%; padding: 9px 13px; border-radius: 14px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+    .msg.you { align-self: flex-end; background: var(--chat-you-bg); color: var(--chat-you-fg); border-bottom-right-radius: 5px; }
+    .msg.vera { align-self: flex-start; background: var(--chat-vera-bg); color: var(--chat-vera-fg); border: 1px solid var(--chat-vera-bd); border-bottom-left-radius: 5px; }
+    .msg.thinking { color: var(--chat-muted); font-style: italic; }
+    .sources { align-self: flex-start; max-width: 82%; display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 2px 2px; }
+    .src-chip { font-size: 11px; color: var(--chip-fg); background: var(--chip-bg); border: 1px solid var(--chip-bd); border-radius: 999px; padding: 2px 9px; }
+    .src-chip b { color: var(--chip-strong); font-weight: 600; }
+    @media (max-width: 640px) { #chat { bottom: 170px; max-height: 42vh; } .msg { max-width: 90%; } }
+  </style>
+
   <a href="/controls" style="position:fixed;top:16px;right:18px;color:#8b93a7;text-decoration:none;font-size:13px" title="Automation control panel">⚙ Controls</a>
+
+  <!-- KILL SWITCH: one tap halts every outward/mutating capability (net, screen
+       control, email). Vera stays on-device + dormant until you release it. -->
+  <button id="kill" title="Kill switch — halt all outward actions; Vera goes dormant">🛑 Kill switch</button>
+  <style>
+    #kill {
+      position: fixed; top: 14px; left: 18px; z-index: 50;
+      font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px;
+      border: 1px solid #3a2326; background: #1a1012; color: #ff6b6b; cursor: pointer;
+    }
+    #kill.on { background: #ff3b30; border-color: #ff3b30; color: #fff; }
+    @media (prefers-color-scheme: light) {
+      #kill { background: #fff0f0; border-color: #ffd0d0; color: #d70015; }
+      #kill.on { background: #d70015; border-color: #d70015; color: #fff; }
+    }
+  </style>
+  <script>
+    (function(){
+      const btn = document.getElementById("kill");
+      const refresh = () => fetch("/api/lockdown").then(r=>r.json()).then(s=>{
+        btn.classList.toggle("on", !!s.locked);
+        btn.textContent = s.locked ? "🛑 Locked down — tap to release" : "🛑 Kill switch";
+      }).catch(()=>{});
+      btn.addEventListener("click", async () => {
+        const s = await fetch("/api/lockdown").then(r=>r.json()).catch(()=>({locked:false}));
+        const next = !s.locked;
+        if (next && !confirm("Engage the kill switch? Vera halts ALL outward actions (internet, screen control, email) and goes dormant until you release it.")) return;
+        await fetch("/api/lockdown",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({on:next})}).catch(()=>{});
+        refresh();
+      });
+      refresh();
+    })();
+  </script>
 
   <div class="row">
     <button id="mic" class="primary"><span class="dot" id="micdot"></span> Speak</button>

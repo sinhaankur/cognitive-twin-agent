@@ -20,3 +20,4 @@ macos/Vera/AppIcon.icns
 ios/Anita.xcodeproj/
 ios/DerivedData/
 *.xcuserstate
+.venv/

@@ -54,6 +54,10 @@ def send(*, to: str | list[str], subject: str, body: str,
          from_addr: str | None = None, html: str | None = None) -> dict[str, Any]:
     """Send one email over your Gmail SMTP. Returns {ok, to} or raises
     EmailSendError. This is the ONLY path that sends — call it explicitly."""
+    from . import security
+    if security.is_locked():
+        raise EmailSendError(
+            "Vera is in lockdown — sending email is halted until you release the kill switch.")
     user, password, host, port = _config()
     if not (user and password):
         raise EmailSendError(

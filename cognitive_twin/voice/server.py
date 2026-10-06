@@ -136,6 +136,11 @@ class _Handler(BaseHTTPRequestHandler):
                 "stt_local": stt.is_available(),
                 "model": model,
             })
+        elif self.path == "/api/lockdown":
+            # Kill-switch status: is Vera dormant (halted from reaching out/acting)?
+            from .. import security
+            self._json(200, {"locked": security.is_locked()})
+            return
         elif self.path == "/api/models":
             agent = self.server.agent  # type: ignore[attr-defined]
             backend = getattr(agent, "backend", None)
@@ -251,6 +256,48 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
 
     def do_POST(self) -> None:
+        if self.path == "/api/lockdown":
+            # Trip or release the GLOBAL KILL SWITCH. Body: {"on": true/false}.
+            # On → Vera halts all outward/mutating capability (net, control, email)
+            # and stays dormant until explicitly released. Never auto-releases.
+            from .. import security
+            data = self._read_json()
+            if bool(data.get("on")):
+                security.lockdown(reason=(data.get("reason") or "UI kill switch"))
+            else:
+                security.release_lockdown()
+            self._json(200, {"locked": security.is_locked()})
+            return
+        if self.path == "/api/rag":
+            # Visible RAG: return the top passages Vera would ground an answer on,
+            # pooled across EVERY index (not just "default"), each tagged with its
+            # source index. The chat UI shows these as a "Sources" strip so you can
+            # SEE what grounded the reply. Read-only, on-device.
+            data = self._read_json()
+            query = (data.get("text") or "").strip()
+            try:
+                from .. import rag
+                pooled = []
+                for name in rag.list_indexes():
+                    try:
+                        for h in rag.retrieve_reranked(query, name=name, k=4):
+                            if getattr(h, "text", "").strip():
+                                pooled.append({
+                                    "index": name,
+                                    "score": round(float(getattr(h, "score", 0.0)), 3),
+                                    "text": h.text.strip()[:400],
+                                    "source": getattr(h, "source", "") or name,
+                                })
+                    except Exception:
+                        continue
+                pooled.sort(key=lambda d: d["score"], reverse=True)
+                self._json(200, {
+                    "hits": pooled[:5],
+                    "mode": "semantic+keyword" if rag.embeddings_available() else "keyword-only",
+                })
+            except Exception as e:
+                self._json(200, {"hits": [], "mode": "unavailable", "error": str(e)})
+            return
         if self.path == "/api/controls/set":
             # Flip one automation/data-source toggle. Body: {"key":..., "on":bool}
             from .. import controls

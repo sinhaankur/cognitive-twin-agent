@@ -90,11 +90,26 @@ def _hippocampus(text: str) -> str | None:
     # no index → nothing, so this is a no-op when the person hasn't indexed docs.
     try:
         from . import rag
-        if "default" in rag.list_indexes():
-            hits = rag.retrieve_reranked(text, name="default", k=4)
+        indexes = rag.list_indexes()
+        if indexes:
+            # Search EVERY index, not just "default" — the real knowledge lives in
+            # universe-engine / veradocs / veraskills / ue-docs (235+ chunks), and
+            # only searching "default" (1 chunk) is why RAG kept missing. Pool the
+            # hits across indexes and keep the best by score.
+            pooled: list = []
+            for name in indexes:
+                try:
+                    for h in rag.retrieve_reranked(text, name=name, k=4):
+                        if getattr(h, "text", "").strip():
+                            # tag which index it came from for the citation
+                            setattr(h, "_index", name)
+                            pooled.append(h)
+                except Exception:
+                    continue
+            pooled.sort(key=lambda h: getattr(h, "score", 0.0), reverse=True)
+            top = pooled[:5]
             snippets = "\n".join(
-                f"- {h.text.strip()[:500]}" for h in hits
-                if getattr(h, "text", "").strip())
+                f"- [{getattr(h, '_index', 'doc')}] {h.text.strip()[:500]}" for h in top)
             if snippets:
                 mode = "semantic+keyword" if rag.embeddings_available() else "keyword-only"
                 recalled.append(

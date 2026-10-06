@@ -57,6 +57,13 @@ class ControlDenied(Exception):
 
 
 def _require_enabled() -> str | None:
+    try:
+        from . import security
+        if security.is_locked():
+            return ("[lockdown] Vera is in lockdown — screen control is halted "
+                    "until you release the kill switch.")
+    except Exception:
+        return "[lockdown] Lockdown state unknown — control halted (fail-safe)."
     if not _enabled:
         return ("[control disabled] Screen control is off. Enable it explicitly "
                 "(set CTWIN_CONTROL=1) — it's off by default for safety.")

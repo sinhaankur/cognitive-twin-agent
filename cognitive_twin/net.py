@@ -142,6 +142,8 @@ def _check(url: str, *, approved: bool, saving: bool) -> str | None:
 def fetch_text(url: str, *, approved: bool = False, max_chars: int = 20000) -> str:
     """Fetch a page/text from an allowed host. Read-only (never saves). Returns
     the text (trimmed) or a clear status string."""
+    if security.is_locked():
+        return "Vera is in lockdown — reaching the internet is halted until you release the kill switch."
     blk = _check(url, approved=approved, saving=False)
     if blk:
         return blk
@@ -164,6 +166,8 @@ def fetch_text(url: str, *, approved: bool = False, max_chars: int = 20000) -> s
 def download(url: str, *, approved: bool = False) -> str:
     """Download a file from an allowed host into the sandbox. Needs approval
     unless in 'auto' mode. Returns where it landed, or a status string."""
+    if security.is_locked():
+        return "Vera is in lockdown — downloads are halted until you release the kill switch."
     blk = _check(url, approved=approved, saving=True)
     if blk:
         return blk

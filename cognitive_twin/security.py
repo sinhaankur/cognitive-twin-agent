@@ -57,6 +57,68 @@ def path(name: str) -> Path:
     return home() / name
 
 
+# ── GLOBAL KILL SWITCH (panic / lockdown) ────────────────────────────────────
+#
+# One flag that halts EVERY outward/mutating capability at once — network egress,
+# screen control, email send, actions. If Vera (or you) ever feel she's breaching
+# boundaries, trip this and she goes dormant: she can still think + answer from
+# what's already on-device, but she cannot reach out, act, or send until you
+# explicitly release it. Fail-safe: any error reading the flag is treated as
+# LOCKED, never as open.
+_LOCK_FILE = "lockdown.flag"
+
+
+def is_locked() -> bool:
+    """True when the kill switch is engaged (also honours the env override)."""
+    if os.environ.get("CTWIN_LOCKDOWN", "").strip() in {"1", "true", "yes", "on"}:
+        return True
+    try:
+        return (home() / _LOCK_FILE).exists()
+    except Exception:
+        return True  # fail safe: unknown state = locked
+
+
+def lockdown(reason: str = "manual") -> dict:
+    """Engage the kill switch. Records who/why in the sealed audit."""
+    try:
+        f = home() / _LOCK_FILE
+        f.write_text(f"{reason}\n", encoding="utf-8")
+        _chmod_owner(f)
+    except Exception:
+        pass
+    try:
+        append_line(path("audit.log"), {"event": "lockdown", "reason": reason})
+    except Exception:
+        pass
+    return {"locked": True, "reason": reason}
+
+
+def release_lockdown() -> dict:
+    """Release the kill switch — only you do this; it's never automatic."""
+    try:
+        (home() / _LOCK_FILE).unlink(missing_ok=True)
+    except Exception:
+        pass
+    try:
+        append_line(path("audit.log"), {"event": "lockdown_released"})
+    except Exception:
+        pass
+    return {"locked": False}
+
+
+class Locked(Exception):
+    """Raised by guard() when a capability runs while the kill switch is on."""
+
+
+def guard(action: str = "this") -> None:
+    """Capability modules call this before any outward/mutating action. Raises
+    Locked when the kill switch is engaged, so nothing reaches out while dormant."""
+    if is_locked():
+        raise Locked(
+            f"Vera is in lockdown — {action} is halted. She stays on-device and "
+            "dormant until you release the kill switch.")
+
+
 def _chmod_owner(p: Path) -> None:
     try:
         os.chmod(p, _OWNER_ONLY)
