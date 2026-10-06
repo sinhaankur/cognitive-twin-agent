@@ -1,4 +1,5 @@
 import Photos
+import CoreLocation
 
 /// Her window into your Photos — strictly behind the "Read my Photos" switch.
 /// Nothing runs until the user flips it ON (and macOS asks its own permission
@@ -30,8 +31,78 @@ enum PhotosReader {
             DispatchQueue.global(qos: .utility).async {
                 let (events, scanned) = scan()
                 post(["events": events, "scanned": scanned])
-                completion("read \(events.count) life events from \(scanned) photos' metadata")
+                // Places you've been — from photo location metadata (opt-in, on-
+                // device). Reverse-geocoding is async, so it posts separately when
+                // the place names resolve. Nothing leaves this Mac but the geocode
+                // lookup, which Apple does without identifying you.
+                scanPlaces { places in
+                    if !places.isEmpty { post(["places": places]) }
+                    completion("read \(events.count) life events + \(places.count) places you've been, from \(scanned) photos' metadata")
+                }
             }
+        }
+    }
+
+    /// Cluster photo GPS into PLACES you've visited, reverse-geocode the biggest
+    /// clusters to names (city/region), and hand back lightweight place records:
+    /// where, how many photos, first/last date. Metadata only — never pixels.
+    private static func scanPlaces(completion: @escaping ([[String: Any]]) -> Void) {
+        let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd"
+        // gather located photos
+        struct Shot { let lat: Double; let lon: Double; let date: Date }
+        var shots: [Shot] = []
+        let opts = PHFetchOptions()
+        opts.predicate = NSPredicate(format: "location != nil")
+        let assets = PHAsset.fetchAssets(with: .image, options: opts)
+        assets.enumerateObjects { a, _, _ in
+            guard let loc = a.location, let d = a.creationDate else { return }
+            shots.append(Shot(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude, date: d))
+        }
+        guard !shots.isEmpty else { completion([]); return }
+
+        // cluster by a coarse grid (~0.1° ≈ 11 km) so a trip collapses to a place
+        struct Cluster { var lat = 0.0; var lon = 0.0; var n = 0; var first: Date; var last: Date }
+        var grid: [String: Cluster] = [:]
+        for s in shots {
+            let key = "\(Int((s.lat*10).rounded()))_\(Int((s.lon*10).rounded()))"
+            if var c = grid[key] {
+                c.lat += s.lat; c.lon += s.lon; c.n += 1
+                c.first = min(c.first, s.date); c.last = max(c.last, s.date)
+                grid[key] = c
+            } else {
+                grid[key] = Cluster(lat: s.lat, lon: s.lon, n: 1, first: s.date, last: s.date)
+            }
+        }
+        // top places by photo count (a proxy for "a real visit")
+        let top = grid.values.filter { $0.n >= 3 }.sorted { $0.n > $1.n }.prefix(12)
+        guard !top.isEmpty else { completion([]); return }
+
+        let geocoder = CLGeocoder()
+        var out: [[String: Any]] = []
+        let group = DispatchGroup()
+        for c in top {
+            group.enter()
+            let loc = CLLocation(latitude: c.lat / Double(c.n), longitude: c.lon / Double(c.n))
+            geocoder.reverseGeocodeLocation(loc) { marks, _ in
+                defer { group.leave() }
+                let p = marks?.first
+                let name = [p?.locality, p?.administrativeArea, p?.country]
+                    .compactMap { $0 }.first ?? "Unknown place"
+                let region = [p?.locality, p?.administrativeArea, p?.country]
+                    .compactMap { $0 }.joined(separator: ", ")
+                out.append([
+                    "place": name,
+                    "region": region.isEmpty ? name : region,
+                    "photos": c.n,
+                    "first": fmt.string(from: c.first),
+                    "last": fmt.string(from: c.last),
+                ])
+            }
+            // be gentle with the geocoder's rate limit
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        group.notify(queue: .global(qos: .utility)) {
+            completion(out.sorted { (($0["photos"] as? Int) ?? 0) > (($1["photos"] as? Int) ?? 0) })
         }
     }
 
