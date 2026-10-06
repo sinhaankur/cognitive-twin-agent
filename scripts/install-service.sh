@@ -44,6 +44,10 @@ rsync -a --delete \
   --exclude '__pycache__' --exclude '*.pyc' \
   "$REPO/cognitive_twin" "$VERA_HOME/"
 rsync -a --delete "$REPO/policies" "$VERA_HOME/" 2>/dev/null || true
+# system_dna.md IS Vera's character — without it she runs the bland generic
+# persona ("pragmatic, concise, no fluff"), which is why the chat felt like
+# "talking to a prompt". It must live at VERA_HOME (parents[2] of the package).
+cp -f "$REPO/system_dna.md" "$VERA_HOME/" 2>/dev/null || true
 cp -f "$REPO/agent_config.example.json" "$VERA_HOME/" 2>/dev/null || true
 [ -f "$REPO/agent_config.json" ] && cp -f "$REPO/agent_config.json" "$VERA_HOME/" || true
 install -m 0755 "$REPO/scripts/vera-brain.sh" "$VERA_HOME/vera-brain.sh"

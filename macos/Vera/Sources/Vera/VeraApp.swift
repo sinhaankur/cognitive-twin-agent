@@ -3,6 +3,8 @@ import AppKit
 import Carbon.HIToolbox
 import Foundation
 import ServiceManagement
+import PDFKit
+import UniformTypeIdentifiers
 
 @main
 struct VeraApp: App {
@@ -477,8 +479,20 @@ final class AppModel: ObservableObject {
         return ok
     }
     @Published var availableModels: [String] = []
-    @Published var speakReplies = true        // toggle voice talk-back
+    // TEXT-FIRST: she replies in text by default and only speaks when you turn
+    // the speaker on (or talk to her by voice — see handle()). Persisted so your
+    // choice sticks. This is what you asked for: "text only unless I tell it to
+    // be audio." Voice input still gets a spoken reply (a conversation you started
+    // out loud stays out loud).
+    @Published var speakReplies = UserDefaults.standard.object(forKey: "vera.speakReplies") as? Bool ?? false {
+        didSet { UserDefaults.standard.set(speakReplies, forKey: "vera.speakReplies") }
+    }
     @Published var turns: [ChatTurn] = []     // the chat conversation
+    // A file you've attached to send with your next message (name + extracted
+    // text). On-device: the text is read locally and included as context; nothing
+    // is uploaded anywhere. Cleared after the message is sent.
+    @Published var pendingAttachment: Attachment?
+    struct Attachment: Identifiable { let id = UUID(); let name: String; let text: String }
     @Published var hasThoughtWaiting = false  // she has a reflection to share → orb glows
     @Published var clonedVoiceReady = false   // her actual (cloned) voice is set up
     @Published var activityEnabled = false    // she learns from your device activity
@@ -675,7 +689,9 @@ final class AppModel: ObservableObject {
 
     func start() {
         voice.requestPermission()
-        voice.onFinal = { [weak self] text in self?.handle(text) }
+        // voice input → speak the reply back (you spoke to her, she speaks to you),
+        // even when the chat is text-first.
+        voice.onFinal = { [weak self] text in self?.handle(text, spoken: true) }
         // the ear tells the voice when the room needs isolation ("if needed")
         ear.onNoise = { [weak self] noisy in self?.voice.isolateVoice = noisy }
         enableLaunchAtLogin()      // so Anita is always there after a reboot
@@ -947,8 +963,56 @@ final class AppModel: ObservableObject {
     /// Submit a typed question (from the input bar).
     func submitText(_ text: String) {
         voice.stopSpeaking()
-        handle(text)
+        // fold any attached file in as context for THIS message, then clear it
+        var toSend = text
+        if let a = pendingAttachment {
+            let clip = String(a.text.prefix(16_000))   // keep the prompt sane
+            toSend = "[Attached file: \(a.name)]\n\(clip)\n\n\(text)"
+            pendingAttachment = nil
+        }
+        handle(toSend)
     }
+
+    /// Attach a file to the NEXT message. Reads its text on-device (PDF via PDFKit,
+    /// everything else as UTF-8/latin-1 text) — nothing is uploaded. Big files are
+    /// truncated when sent. Unreadable/binary files are reported, not sent.
+    func attachFile(_ url: URL) {
+        Task.detached { [weak self] in
+            let name = url.lastPathComponent
+            var text = ""
+            let ext = url.pathExtension.lowercased()
+            let needsScope = url.startAccessingSecurityScopedResource()
+            defer { if needsScope { url.stopAccessingSecurityScopedResource() } }
+            if ext == "pdf", let doc = PDFDocument(url: url) {
+                var parts: [String] = []
+                for i in 0..<doc.pageCount {
+                    if let p = doc.page(at: i)?.string { parts.append(p) }
+                }
+                text = parts.joined(separator: "\n")
+            } else if let s = try? String(contentsOf: url, encoding: .utf8) {
+                text = s
+            } else if let d = try? Data(contentsOf: url),
+                      let s = String(data: d, encoding: .isoLatin1) {
+                text = s
+            }
+            let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            await MainActor.run {
+                if clean.isEmpty {
+                    self?.turns.append(ChatTurn(
+                        text: "I couldn't read any text from \(name). If it's an image or scanned PDF, I can't see inside it yet.",
+                        isUser: false))
+                } else {
+                    self?.pendingAttachment = Attachment(name: name, text: clean)
+                }
+            }
+        }
+    }
+
+    /// True when the reply to the CURRENT turn should be spoken: either the
+    /// speaker is on, OR this turn came in by voice (a conversation you started
+    /// out loud stays out loud). Text-first otherwise.
+    private var speakThisTurn = false
+    func shouldSpeakReply() -> Bool { speakReplies || speakThisTurn }
 
     /// Load installed models (for the settings picker). Apple Intelligence is
     /// offered first when it's available on this Mac (most private option).
@@ -1007,9 +1071,12 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func handle(_ text: String) {
+    private func handle(_ text: String, spoken: Bool = false) {
         // A new request cancels whatever it was saying (no pile-ups).
         voice.stopSpeaking()
+        // Remember whether THIS turn should be spoken (voice input → yes), so the
+        // reply paths below speak only when appropriate (text-first otherwise).
+        speakThisTurn = spoken
         transcript = text
         turns.append(ChatTurn(text: text, isUser: true))
 
@@ -1052,7 +1119,7 @@ final class AppModel: ObservableObject {
                     // full text (speakReply) and keeps its own path.
                     let streamSpeak = await MainActor.run { () -> Bool in
                         self.streamSpokenUpTo = 0
-                        return self.speakReplies && !self.clonedVoiceReady
+                        return self.shouldSpeakReply() && !self.clonedVoiceReady
                     }
                     let reply = try await agent.askStream(text) { partial in
                         Task { @MainActor in
@@ -1077,7 +1144,7 @@ final class AppModel: ObservableObject {
                             self.phase = .speaking
                             self.speakStreamSentences(answerText, final: true)
                         }
-                        else if self.speakReplies { self.speakReply(answerText) }
+                        else if self.shouldSpeakReply() { self.speakReply(answerText) }
                         else { self.phase = .idle }
                     }
                     return
@@ -1085,7 +1152,7 @@ final class AppModel: ObservableObject {
                 await MainActor.run {
                     self.answer = answerText
                     self.turns.append(ChatTurn(text: answerText, isUser: false))
-                    if self.speakReplies {
+                    if self.shouldSpeakReply() {
                         self.speakReply(answerText)
                     } else {
                         self.phase = .idle
@@ -1120,7 +1187,7 @@ final class AppModel: ObservableObject {
                         if let m = recoveredModel { self.modelName = m }
                         self.answer = recoveredText
                         self.turns.append(ChatTurn(text: recoveredText, isUser: false))
-                        if self.speakReplies { self.speakReply(recoveredText) }
+                        if self.shouldSpeakReply() { self.speakReply(recoveredText) }
                         else { self.phase = .idle }
                     } else {
                         // Still nothing after waking — now it's a real problem.
