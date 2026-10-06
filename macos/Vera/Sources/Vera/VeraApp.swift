@@ -5,6 +5,7 @@ import Foundation
 import ServiceManagement
 import PDFKit
 import UniformTypeIdentifiers
+import AVFoundation
 
 @main
 struct VeraApp: App {
@@ -654,6 +655,64 @@ final class AppModel: ObservableObject {
             voice.speak(text)
         }
     }
+    // --- Voice picker (native, app-side) -------------------------------------
+    // The chosen system voice id; empty = auto-pick the warmest installed. Native
+    // AVSpeechSynthesis runs IN the app (GUI context), so this actually plays and
+    // can be previewed — unlike the background brain service, which macOS won't
+    // let speak. Persisted. Fixes "the voice is too robotic" by letting you choose.
+    @Published var voiceID: String =
+        UserDefaults.standard.string(forKey: "vera.voiceID") ?? "" {
+        didSet {
+            UserDefaults.standard.set(voiceID, forKey: "vera.voiceID")
+            voice.preferredVoiceID = voiceID.isEmpty ? nil : voiceID
+        }
+    }
+
+    struct VoiceOption: Identifiable, Hashable {
+        let id: String        // AVSpeechSynthesisVoice.identifier ("" = Auto)
+        let label: String     // "Ava (Premium)" etc.
+        let quality: Int      // 0 default, 1 enhanced, 2 premium
+    }
+
+    /// Installed English voices, best quality first, for the Settings picker.
+    func installedVoices() -> [VoiceOption] {
+        var out: [VoiceOption] = [VoiceOption(id: "", label: "Auto (warmest installed)", quality: 3)]
+        let en = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
+        let mapped = en.map { v -> VoiceOption in
+            let q: Int
+            let tag: String
+            switch v.quality {
+            case .premium:  q = 2; tag = " (Premium)"
+            case .enhanced: q = 1; tag = " (Enhanced)"
+            default:        q = 0; tag = ""
+            }
+            let region = v.language == "en-US" ? "" : " · \(v.language)"
+            return VoiceOption(id: v.identifier, label: "\(v.name)\(tag)\(region)", quality: q)
+        }
+        .sorted { ($0.quality, $1.label) > ($1.quality, $0.label) }
+        out.append(contentsOf: mapped)
+        return out
+    }
+
+    /// Speak a short sample so the user can hear a voice before choosing it.
+    func previewVoice(_ id: String) {
+        let prev = voice.preferredVoiceID
+        voice.preferredVoiceID = id.isEmpty ? nil : id
+        voice.speak("Hi — this is how I sound.")
+        // restore the active preference after the sample (don't change selection)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            self?.voice.preferredVoiceID = prev
+        }
+    }
+
+    /// Open macOS's spoken-content voice download so the user can install the
+    /// high-quality (Premium/Enhanced) voices that don't ship by default.
+    func openVoiceDownloads() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.universalaccess?SpeakableItems") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     // The twin's name — the user's to choose. Defaults to Anita.
     @Published var assistantName: String =
         UserDefaults.standard.string(forKey: "assistantName") ?? "Anita Sinha" {
@@ -689,6 +748,8 @@ final class AppModel: ObservableObject {
 
     func start() {
         voice.requestPermission()
+        // apply the saved voice choice (empty = auto-pick the warmest installed)
+        voice.preferredVoiceID = voiceID.isEmpty ? nil : voiceID
         // voice input → speak the reply back (you spoke to her, she speaks to you),
         // even when the chat is text-first.
         voice.onFinal = { [weak self] text in self?.handle(text, spoken: true) }
