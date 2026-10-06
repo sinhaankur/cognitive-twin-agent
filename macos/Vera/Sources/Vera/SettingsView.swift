@@ -185,6 +185,20 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
+                Section("Health & activity") {
+                    if !model.healthStatus.isEmpty {
+                        Text(model.healthStatus)
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    Button {
+                        importHealthExport()
+                    } label: {
+                        Label("Import Apple Health export…", systemImage: "heart.text.square")
+                    }
+                    Text("On iPhone: Health → your photo → Export All Health Data → AirDrop the file here, then pick it. \(model.assistantName) reads it on this Mac (workout counts + active days + steps only — never raw records, nothing uploaded) so she can speak to how you've been moving.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
                 Section("Memory") {
                     Toggle("See a loved one in 3D",
                            isOn: $model.portrait3DEnabled)
@@ -245,7 +259,7 @@ struct SettingsView: View {
         }
         .padding(22)
         .frame(width: 420, height: 480)
-        .onAppear { model.refreshModels(); model.refreshPortrait(); model.loadPersonality() }
+        .onAppear { model.refreshModels(); model.refreshPortrait(); model.loadPersonality(); model.loadHealthStatus() }
         .onDisappear { model.savePersonality() }
         .sheet(isPresented: $exporting) {
             VStack(alignment: .leading, spacing: 10) {
@@ -267,6 +281,17 @@ struct SettingsView: View {
             }
             .padding(18)
             .frame(width: 360)
+        }
+    }
+
+    // Pick an Apple Health export (.zip or export.xml) and hand it to the brain.
+    private func importHealthExport() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.zip, .xml, .data]
+        if panel.runModal() == .OK, let url = panel.url {
+            model.importHealthExport(url.path)
         }
     }
 

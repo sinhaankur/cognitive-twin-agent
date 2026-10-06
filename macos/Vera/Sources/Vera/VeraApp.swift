@@ -736,6 +736,27 @@ final class AppModel: ObservableObject {
         Task { await agent.setPersonality(dials) }
     }
 
+    // --- Health & activity (from an Apple Health export, opt-in) --------------
+    @Published var healthStatus = ""
+
+    func loadHealthStatus() {
+        Task {
+            let s = await agent.healthActivity()
+            await MainActor.run { self.healthStatus = s }
+        }
+    }
+
+    func importHealthExport(_ path: String) {
+        healthStatus = "Reading your Health export…"
+        Task {
+            let result = await agent.importHealth(path)
+            let status = await agent.healthActivity()
+            await MainActor.run {
+                self.healthStatus = result.isEmpty ? status : result
+            }
+        }
+    }
+
     // The twin's name — the user's to choose. Defaults to Anita.
     @Published var assistantName: String =
         UserDefaults.standard.string(forKey: "assistantName") ?? "Anita Sinha" {

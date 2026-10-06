@@ -291,6 +291,20 @@ class Agent:
                                      "photos, opt-in): " + recap)
             except Exception:
                 pass
+            # HEALTH / ACTIVITY recap — only when they ask about fitness/working out
+            # (from an Apple Health export, opt-in). So she can speak to how you've
+            # been moving instead of guessing.
+            try:
+                low = user_input.lower()
+                if any(w in low for w in ("workout", "work out", "working out", "exercise",
+                                          "fitness", "gym", "run", "steps", "active",
+                                          "how am i doing", "health")):
+                    from .. import health as _health
+                    hr = _health.recap()
+                    if hr:
+                        parts.append(hr)
+            except Exception:
+                pass
             # what she can see right now (opt-in camera → motion cues only;
             # empty unless the user turned the eye on in the voice UI)
             try:

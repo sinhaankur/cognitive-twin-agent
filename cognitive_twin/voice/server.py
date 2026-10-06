@@ -189,6 +189,13 @@ class _Handler(BaseHTTPRequestHandler):
             if prompt:
                 data["thought_path"] = brain.thought_path(prompt)
             self._json(200, data)
+        elif self.path == "/api/health/activity":
+            # Vera's health/activity summary (from an Apple Health export, opt-in).
+            # NB: distinct from /api/health (the server liveness check).
+            from .. import health as _health
+            self._json(200, {"enabled": _health.is_enabled(),
+                             "summary": _health.load(),
+                             "status": _health.status()})
         elif self.path == "/api/personality":
             # The current personality dials (warmth / humor / playfulness).
             from .. import personality
@@ -281,6 +288,20 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
 
     def do_POST(self) -> None:
+        if self.path == "/api/health/import":
+            # Import an Apple Health export (parsed locally). Body: {"path": "..."}.
+            from .. import health as _health
+            data = self._read_json()
+            res = _health.import_export((data or {}).get("path") or "")
+            self._json(200, res)
+            return
+        if self.path == "/api/health/activity":
+            # Toggle the health sense on/off. Body: {"on": true/false}.
+            from .. import health as _health
+            data = self._read_json()
+            _health.enable(bool((data or {}).get("on", True)))
+            self._json(200, {"enabled": _health.is_enabled()})
+            return
         if self.path == "/api/personality":
             # Set personality dials. Body: {"warmth":0.7,"humor":0.4,...}.
             from .. import personality

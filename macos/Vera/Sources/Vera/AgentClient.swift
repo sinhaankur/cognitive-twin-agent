@@ -43,6 +43,35 @@ final class AgentClient {
         }
     }
 
+    /// GET /api/health/activity — the health/activity summary + status string.
+    func healthActivity() async -> String {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/health/activity"))
+        req.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (obj["status"] as? String) ?? ""
+        } catch { return "" }
+    }
+
+    /// POST /api/health/import — parse an Apple Health export at `path`. Returns a
+    /// short result string (summary or error).
+    func importHealth(_ path: String) async -> String {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/health/import"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["path": path])
+        req.timeoutInterval = 120   // big exports take a moment to parse
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            if let err = obj["error"] as? String { return "Couldn't read it: \(err)" }
+            let n = (obj["total_workouts"] as? Int) ?? 0
+            let ad = (obj["active_days_30d"] as? Int) ?? 0
+            return "Read \(n) workouts · \(ad) active days in the last 30."
+        } catch { return "Couldn't reach the brain." }
+    }
+
     /// GET /api/personality — the current tone dials (warmth/humor/playfulness).
     func personality() async -> [String: Double] {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/personality"))
