@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// The chat view — appears when you click the floating orb (like Siri today).
-/// A scrolling conversation + an input bar with a mic. This is item #2 of the
-/// two-thing app.
+/// The chat view — opens from the floating orb. A calm, premium conversation:
+/// her replies read as clean, generous text (not a loud bubble); your messages
+/// sit in a soft accent bubble; a warm empty state when there's nothing yet.
+/// Text-first, markdown, file attach, and the voice toggle all live here.
 struct ChatPanel: View {
     @ObservedObject var model: AppModel
     @State private var typed = ""
@@ -10,117 +11,163 @@ struct ChatPanel: View {
     @FocusState private var focused: Bool
     private let timer = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
+    // Vera's palette — warm sandstone gold (matches the orb), used sparingly.
+    private static let gold = Color(red: 0.86, green: 0.68, blue: 0.38)
+
     var body: some View {
         VStack(spacing: 0) {
             header
-            Divider().opacity(0.3)
             conversation
             inputBar
         }
+        .background(Color.black.opacity(0.001))     // let the window material show
         .onReceive(timer) { _ in
             phase += 0.05 + model.amplitude * 0.30
             model.syncPhase()
         }
     }
 
+    // MARK: - Header
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 11) {
             SiriOrb(amplitude: model.amplitude, phase: phase, tint: model.tint, brightness: model.brightness)
-                .frame(width: 30, height: 30)
-            VStack(alignment: .leading, spacing: 1) {
+                .frame(width: 32, height: 32)
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
-                    Text(model.assistantName).font(.system(size: 13, weight: .semibold))
+                    Text(model.assistantName)
+                        .font(.system(size: 14, weight: .semibold))
                     if model.clonedVoiceReady {
                         Image(systemName: "heart.fill")
                             .font(.system(size: 9)).foregroundStyle(.pink)
                             .help("Speaking in her voice")
                     }
                 }
-                Text(model.serverUp
-                     ? (model.clonedVoiceReady ? "her voice" : SettingsView.displayName(model.modelName))
-                     : "waking…")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(model.serverUp ? Color.green.opacity(0.9) : Color.orange.opacity(0.9))
+                        .frame(width: 5, height: 5)
+                    Text(model.serverUp
+                         ? (model.clonedVoiceReady ? "her voice" : SettingsView.displayName(model.modelName))
+                         : "waking…")
+                        .font(.system(size: 10.5, design: .default))
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer()
-            // Text-first: she replies in text unless you turn the speaker on.
-            Button { model.speakReplies.toggle() } label: {
-                Image(systemName: model.speakReplies ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(model.speakReplies ? Color.cyan : Color.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(model.speakReplies
-                  ? "She speaks her replies aloud. Click for text-only."
-                  : "Text-only replies. Click to let her speak aloud. (Talking to her by voice always gets a spoken reply.)")
-            Button { model.toggleEye?() } label: {
-                Image(systemName: model.eyeOn ? "eye.fill" : "eye.slash")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(model.eyeOn ? Color.cyan : Color.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(model.eyeOn
-                  ? "She can see you — face cues only (a smile, a nod), on-device. Click to stop."
-                  : "Let her see you (opt-in): face cues only, on-device, nothing stored.")
-            Button { model.ear.toggle() } label: {
-                Image(systemName: "ear")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(model.ear.on ? Color.cyan : Color.secondary)
-            }
-            .buttonStyle(.plain)
-            .help(model.ear.on
-                  ? "She hears the room — sound types only (music, typing), never recorded. Click to stop."
-                  : "Let her hear the room (opt-in): sound types only, on-device, never recorded.")
-            Button { model.openSettings?() } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Settings")
+            headerButtons
         }
-        .padding(.horizontal, 14).padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .padding(.top, 14).padding(.bottom, 12)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
+        }
     }
 
+    private var headerButtons: some View {
+        HStack(spacing: 2) {
+            iconButton(model.speakReplies ? "speaker.wave.2.fill" : "speaker.slash.fill",
+                       on: model.speakReplies,
+                       help: model.speakReplies
+                        ? "Speaking replies aloud. Click for text-only."
+                        : "Text-only. Click to let her speak aloud. (Voice input always gets a spoken reply.)") {
+                model.speakReplies.toggle()
+            }
+            iconButton(model.eyeOn ? "eye.fill" : "eye.slash", on: model.eyeOn,
+                       help: model.eyeOn
+                        ? "She can see you — face cues only, on-device. Click to stop."
+                        : "Let her see you (opt-in): face cues only, on-device.") {
+                model.toggleEye?()
+            }
+            iconButton("ear", on: model.ear.on,
+                       help: model.ear.on
+                        ? "Hearing the room — sound types only, never recorded. Click to stop."
+                        : "Let her hear the room (opt-in): sound types only, never recorded.") {
+                model.ear.toggle()
+            }
+            iconButton("gearshape", on: false, help: "Settings") {
+                model.openSettings?()
+            }
+        }
+    }
+
+    private func iconButton(_ name: String, on: Bool, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: name)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(on ? Self.gold : Color.secondary)
+                .frame(width: 30, height: 30)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(on ? Self.gold.opacity(0.14) : Color.clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    // MARK: - Conversation
     private var conversation: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(model.turns) { turn in
-                        TurnBubble(turn: turn)
-                            .id(turn.id)
+                if model.turns.isEmpty && model.phase != .thinking {
+                    emptyState
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(model.turns) { turn in
+                            TurnBubble(turn: turn)
+                                .id(turn.id)
+                        }
+                        if model.phase == .thinking {
+                            ThinkingRow(phase: phase)
+                                .id("thinking")
+                                .transition(.opacity)
+                        }
                     }
-                    if model.phase == .thinking {
-                        // Three dots that breathe in sequence — riding the same
-                        // 60 fps phase the mark uses, so "alive" reads consistently.
-                        ThinkingDots(phase: phase)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .transition(.opacity)
-                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 18).padding(.bottom, 14)
                 }
-                .padding(.vertical, 12)
             }
+            .animation(.easeOut(duration: 0.28), value: model.turns.count)
             .onChange(of: model.turns.count) { _ in
                 if let last = model.turns.last {
-                    withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
-            // streaming grows the LAST bubble without changing the count —
-            // keep the newest words on screen as they arrive
             .onChange(of: model.turns.last?.text) { _ in
                 if let last = model.turns.last, !last.isUser {
                     proxy.scrollTo(last.id, anchor: .bottom)
                 }
             }
+            .onChange(of: model.phase) { p in
+                if p == .thinking { withAnimation { proxy.scrollTo("thinking", anchor: .bottom) } }
+            }
         }
     }
 
-    // When mic/speech is DENIED, the mic button would silently do nothing
-    // ("mic isn't working" / "hi Anita doesn't listen"). Show a clear, one-click
-    // fix instead of leaving the user guessing.
+    // A warm, calm first impression instead of a blank panel.
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            SiriOrb(amplitude: 0.2, phase: phase, tint: model.tint, brightness: model.brightness)
+                .frame(width: 56, height: 56)
+                .opacity(0.9)
+            VStack(spacing: 5) {
+                Text("I'm here.")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("Say anything — how your day went, what you're working on, or nothing in particular.")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 260)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 56).padding(.bottom, 30)
+    }
+
+    // MARK: - Input
     private var micPermissionBanner: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 9) {
             Image(systemName: "mic.slash.fill").foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Microphone access is off").font(.system(size: 12, weight: .semibold))
@@ -132,21 +179,17 @@ struct ChatPanel: View {
                 .font(.system(size: 11, weight: .semibold))
                 .buttonStyle(.borderedProminent).controlSize(.small)
         }
-        .padding(.horizontal, 12).padding(.vertical, 8)
+        .padding(.horizontal, 12).padding(.vertical, 9)
         .background(Color.orange.opacity(0.12))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.orange.opacity(0.3)))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .padding(.horizontal, 12)
+        .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Color.orange.opacity(0.3)))
+        .clipShape(RoundedRectangle(cornerRadius: 11))
     }
 
     private var inputBar: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 7) {
             if model.voice.permissionDenied { micPermissionBanner }
-            // While listening, your words appear live ABOVE the field (the
-            // Siri detail) — the field itself never goes away: no state may
-            // ever take typing from the user.
             if model.voice.isListening {
-                HStack(spacing: 6) {
+                HStack(spacing: 7) {
                     Image(systemName: "waveform")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color.red)
@@ -155,27 +198,33 @@ struct ChatPanel: View {
                         .font(.system(size: 12))
                         .foregroundStyle(model.voice.transcript.isEmpty ? .secondary : .primary)
                         .lineLimit(1)
-                        .truncationMode(.head)      // keep the newest words visible
+                        .truncationMode(.head)
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 6)
+                .transition(.opacity)
             }
-            // a file you've attached shows as a removable chip above the field
             if let a = model.pendingAttachment {
-                HStack(spacing: 6) {
-                    Image(systemName: "doc.text").font(.system(size: 11))
-                    Text(a.name).font(.system(size: 11)).lineLimit(1)
+                HStack(spacing: 7) {
+                    Image(systemName: "doc.text.fill").font(.system(size: 11)).foregroundStyle(Self.gold)
+                    Text(a.name).font(.system(size: 11.5)).lineLimit(1)
                     Button { model.pendingAttachment = nil } label: {
-                        Image(systemName: "xmark.circle.fill").font(.system(size: 11))
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 12))
                     }.buttonStyle(.plain).foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                 }
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 9).fill(.white.opacity(0.05)))
+                .transition(.opacity)
             }
             inputRow
         }
-        .padding(12)
+        .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 13)
+        .animation(.easeOut(duration: 0.2), value: model.voice.isListening)
+        .animation(.easeOut(duration: 0.2), value: model.pendingAttachment != nil)
+        .overlay(alignment: .top) {
+            Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
+        }
     }
 
     private func pickFile() {
@@ -189,86 +238,103 @@ struct ChatPanel: View {
         }
     }
 
+    private var canSend: Bool {
+        !typed.trimmingCharacters(in: .whitespaces).isEmpty || model.pendingAttachment != nil
+    }
+
     private var inputRow: some View {
-        HStack(spacing: 8) {
-            // attach a file (on-device: its text is read locally, never uploaded)
+        HStack(spacing: 10) {
             Button(action: pickFile) {
                 Image(systemName: "paperclip")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 30)
+                    .frame(width: 26, height: 30)
+                    .contentShape(Rectangle())
             }.buttonStyle(.plain)
             .help("Attach a file (PDF, text, code) — read on-device, nothing uploaded")
 
-            TextField(model.voice.isListening ? "type to cancel listening…" : "Ask your twin…",
-                      text: $typed)
+            TextField(model.voice.isListening ? "type to cancel listening…" : "Message \(model.assistantName)…",
+                      text: $typed, axis: .vertical)
                 .textFieldStyle(.plain)
+                .font(.system(size: 13.5))
+                .lineLimit(1...6)
                 .focused($focused)
                 .onSubmit(send)
                 .onChange(of: typed) { v in
-                    // typing is an interruption too — keyboard wins over mic
                     if model.voice.isListening && !v.isEmpty {
                         model.voice.stopListening(submit: false)
                     }
                 }
-                .padding(.vertical, 9).padding(.leading, 14)
+                .padding(.vertical, 8)
 
             Button(action: { model.micTapped() }) {
                 Image(systemName: model.voice.isSpeaking ? "stop.fill"
                       : model.voice.isListening ? "waveform" : "mic.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 30, height: 30)
                     .background(Circle().fill(
                         model.voice.isSpeaking ? Color.orange
-                        : model.voice.isListening ? Color.red : Color.accentColor))
+                        : model.voice.isListening ? Color.red : Self.gold))
             }.buttonStyle(.plain)
+            .help(model.voice.isListening ? "Stop listening" : "Talk to her")
 
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 26)).foregroundStyle(Color.accentColor)
-            }.buttonStyle(.plain).padding(.trailing, 8)
-            .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty && model.pendingAttachment == nil)
+                    .font(.system(size: 27))
+                    .foregroundStyle(canSend ? Self.gold : Color.secondary.opacity(0.5))
+                    .animation(.easeOut(duration: 0.15), value: canSend)
+            }.buttonStyle(.plain)
+            .disabled(!canSend)
         }
-        .background(Capsule().fill(.ultraThinMaterial)
-            .overlay(Capsule().strokeBorder(.white.opacity(0.12))))
+        .padding(.leading, 14).padding(.trailing, 6)
+        .background(
+            Capsule(style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(Capsule(style: .continuous).strokeBorder(
+                    focused ? Self.gold.opacity(0.35) : .white.opacity(0.1), lineWidth: 1))
+        )
+        .animation(.easeOut(duration: 0.2), value: focused)
     }
 
     private func send() {
         let t = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        // allow sending a bare attachment (with a sensible default ask)
         guard !t.isEmpty || model.pendingAttachment != nil else { return }
         typed = ""
         model.submitText(t.isEmpty ? "Here's a file — take a look." : t)
     }
 }
 
-/// Three amber dots that pulse in sequence while Vera thinks — a small, alive
-/// touch that matches the hexagon mark's amber and its breathing cadence.
-private struct ThinkingDots: View {
+/// A single typing indicator that matches the identity — a small orb-gold pill
+/// with three breathing dots, aligned like one of her replies.
+private struct ThinkingRow: View {
     let phase: CGFloat
-    private var amber: Color { Color(red: 0.81, green: 0.60, blue: 0.17) }
+    private var gold: Color { Color(red: 0.86, green: 0.68, blue: 0.38) }
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             ForEach(0..<3, id: \.self) { i in
                 Circle()
-                    .fill(amber)
-                    .frame(width: 5, height: 5)
-                    .opacity(0.35 + 0.5 * (0.5 + 0.5 * sin(Double(phase) * 0.9 - Double(i) * 0.9)))
+                    .fill(gold)
+                    .frame(width: 5.5, height: 5.5)
+                    .opacity(0.3 + 0.55 * (0.5 + 0.5 * sin(Double(phase) * 0.9 - Double(i) * 0.9)))
             }
         }
-        .padding(.horizontal, 13).padding(.vertical, 9)
-        .background(amber.opacity(0.08))
-        .clipShape(Capsule())
+        .padding(.horizontal, 13).padding(.vertical, 10)
+        .background(
+            Capsule().fill(gold.opacity(0.08))
+                .overlay(Capsule().strokeBorder(gold.opacity(0.14), lineWidth: 1))
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
+/// One turn. Her replies read as clean, generous text with a subtle gold accent
+/// bar — not a loud bubble (that's what made it feel dated). Your messages sit in
+/// a soft accent bubble, right-aligned. Markdown-rendered, selectable.
 private struct TurnBubble: View {
     let turn: ChatTurn
-    private var amber: Color { Color(red: 0.95, green: 0.74, blue: 0.36) }
+    private var gold: Color { Color(red: 0.86, green: 0.68, blue: 0.38) }
 
-    // Render her replies as MARKDOWN (bold, lists, `code`, links) so answers read
-    // like a real chat — Claude-grade legibility. User text stays verbatim.
     private var rendered: AttributedString {
         if turn.isUser { return AttributedString(turn.text) }
         if let a = try? AttributedString(
@@ -280,40 +346,42 @@ private struct TurnBubble: View {
     }
 
     var body: some View {
-        Text(rendered)
-            .font(.system(size: 13))
-            .lineSpacing(2)                          // her words breathe — easier to read
-            .textSelection(.enabled)                 // let the user copy replies
-            // legible on the dark window: user text is white on accent; her text
-            // is a warm off-white on a real amber glass, not near-invisible grey
-            .foregroundStyle(turn.isUser ? Color.white
-                             : Color(red: 0.97, green: 0.95, blue: 0.90))
-            .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(bubbleFill)
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(turn.isUser ? .clear : amber.opacity(0.35), lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: turn.isUser ? Color.accentColor.opacity(0.28)
-                          : amber.opacity(0.18), radius: 5, y: 2)
-            .frame(maxWidth: 300, alignment: turn.isUser ? .trailing : .leading)
-            .frame(maxWidth: .infinity, alignment: turn.isUser ? .trailing : .leading)
-            .padding(.horizontal, 12)
+        if turn.isUser {
+            // your message — a soft accent bubble, right-aligned, max 78% width
+            HStack {
+                Spacer(minLength: 40)
+                Text(turn.text)
+                    .font(.system(size: 13.5))
+                    .lineSpacing(2.5)
+                    .textSelection(.enabled)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(
+                        RoundedRectangle(cornerRadius: 17, style: .continuous)
+                            .fill(gold.opacity(0.9))
+                    )
+            }
             .transition(.asymmetric(
-                insertion: .move(edge: turn.isUser ? .trailing : .leading)
-                    .combined(with: .opacity),
+                insertion: .move(edge: .trailing).combined(with: .opacity),
                 removal: .opacity))
-    }
-
-    // The user speaks in the accent; Vera speaks in a warm amber glass — her
-    // replies read as "hers" (matching the hexagon mark), warm and legible, a
-    // soft top-to-bottom gradient so the bubble has depth instead of a flat wash.
-    private var bubbleFill: some ShapeStyle {
-        turn.isUser
-            ? AnyShapeStyle(Color.accentColor)
-            : AnyShapeStyle(LinearGradient(
-                colors: [amber.opacity(0.26), amber.opacity(0.15)],
-                startPoint: .top, endPoint: .bottom))
+        } else {
+            // her reply — generous clean text with a thin gold accent on the left
+            HStack(alignment: .top, spacing: 11) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(gold.opacity(0.55))
+                    .frame(width: 2.5)
+                    .padding(.vertical, 2)
+                Text(rendered)
+                    .font(.system(size: 14))
+                    .lineSpacing(3.5)
+                    .textSelection(.enabled)
+                    .foregroundStyle(Color(red: 0.95, green: 0.93, blue: 0.89))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .transition(.asymmetric(
+                insertion: .move(edge: .leading).combined(with: .opacity),
+                removal: .opacity))
+        }
     }
 }
