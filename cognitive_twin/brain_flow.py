@@ -99,7 +99,14 @@ def _hippocampus(text: str) -> str | None:
             pooled: list = []
             for name in indexes:
                 try:
-                    for h in rag.retrieve_reranked(text, name=name, k=4):
+                    # Use PLAIN retrieve (vector + keyword), NOT retrieve_reranked:
+                    # reranking fires an expand-query + rerank LLM call PER index,
+                    # so across several indexes it added ~10 model calls and ~30-60s
+                    # to EVERY turn — the reason the chat felt frozen and heavy.
+                    # Plain retrieve is near-instant and already scores well; we pool
+                    # by score across indexes and keep the top few. (Vera must be a
+                    # catalyst, not a tax.)
+                    for h in rag.retrieve(text, name=name, k=4):
                         if getattr(h, "text", "").strip():
                             # tag which index it came from for the citation
                             setattr(h, "_index", name)

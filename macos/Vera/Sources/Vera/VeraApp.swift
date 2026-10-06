@@ -680,6 +680,7 @@ final class AppModel: ObservableObject {
         ear.onNoise = { [weak self] noisy in self?.voice.isolateVoice = noisy }
         enableLaunchAtLogin()      // so Anita is always there after a reboot
         autoUpdate()               // she keeps herself current — nothing to download
+        installBrainServiceIfNeeded()  // run the brain as a launchd service (non-TCC)
         ensureServer()
         launchVizServer()          // the Mind (Brain view + browser) on :7879
         startWatchdog()            // keep her alive if the brain ever stops
@@ -837,7 +838,13 @@ final class AppModel: ObservableObject {
                 return
             }
             ensureOllama()        // her brain's brain — start it if it's down
-            launchPythonServer()
+            // Prefer the launchd SERVICE (runs from a non-TCC location, so it
+            // doesn't hit the "~/Documents is locked" hang that killed the old
+            // app-spawned child). If the service is installed, just (re)start it;
+            // only fall back to spawning if it isn't installed yet.
+            if !startBrainService() {
+                launchPythonServer()
+            }
             // poll until it answers
             for _ in 0..<30 {
                 try? await Task.sleep(nanoseconds: 500_000_000)
@@ -870,6 +877,45 @@ final class AppModel: ObservableObject {
                 do { try p.run(); ollamaProcess = p; return } catch {}
             }
         }
+    }
+
+    /// First-run: install the brain as a launchd service if it isn't already.
+    /// Best-effort — runs the repo's install script (which syncs the brain OUT of
+    /// ~/Documents into a non-TCC location and loads the LaunchAgent). If the repo
+    /// isn't reachable (or already installed), this is a quiet no-op and the app
+    /// falls back to its own spawn.
+    private func installBrainServiceIfNeeded() {
+        let label = "com.sinhaankur.vera.brain"
+        let plist = NSHomeDirectory() + "/Library/LaunchAgents/\(label).plist"
+        if FileManager.default.fileExists(atPath: plist) { return }  // already installed
+        let env = ProcessInfo.processInfo.environment
+        let repo = env["CTWIN_REPO"] ?? (NSHomeDirectory() + "/Documents/cognitive-twin-agent")
+        let script = repo + "/scripts/install-service.sh"
+        guard FileManager.default.isExecutableFile(atPath: script) else { return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/bash")
+        p.arguments = [script]
+        p.currentDirectoryURL = URL(fileURLWithPath: repo)
+        try? p.run()   // detached; ensureServer()'s health poll waits for it
+    }
+
+    /// Start (or kick) the launchd-managed brain SERVICE if it's installed.
+    /// Returns true if the service exists and we asked launchd to (re)start it —
+    /// launchd then keeps it alive from a non-TCC location. Returns false if the
+    /// service isn't installed (caller falls back to spawning). This is the fix
+    /// for the app-spawned child hanging on ~/Documents (TCC "Operation not
+    /// permitted").
+    private func startBrainService() -> Bool {
+        let label = "com.sinhaankur.vera.brain"
+        let plist = NSHomeDirectory() + "/Library/LaunchAgents/\(label).plist"
+        guard FileManager.default.fileExists(atPath: plist) else { return false }
+        let uid = getuid()
+        // kickstart -k: (re)start the service now, even if it was running
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        p.arguments = ["kickstart", "-k", "gui/\(uid)/\(label)"]
+        do { try p.run(); p.waitUntilExit() } catch { return false }
+        return true
     }
 
     private func launchPythonServer() {
@@ -1046,16 +1092,43 @@ final class AppModel: ObservableObject {
                     }
                 }
             } catch {
+                // Don't dead-end on the FIRST miss: the usual cause is the local
+                // brain still waking (model cold-loading, or the server just
+                // (re)started). Wake it, wait for health, and retry ONCE before
+                // ever showing an error — this is what made the chat read as
+                // "brain not reachable" when it was really just warming up.
                 await MainActor.run {
-                    // The failure must LAND IN THE CHAT — without a bubble the
-                    // typed message just vanishes and the whole panel reads as
-                    // broken (the original bug: errors only set `answer`).
-                    self.turns.removeAll { !$0.isUser && $0.text.isEmpty }   // drop a dead stream bubble
-                    let msg = "I couldn't answer that — my local brain isn't reachable. Give me a few seconds and try again."
-                    self.answer = msg
-                    self.turns.append(ChatTurn(text: msg, isUser: false))
-                    self.phase = .idle
-                    self.ensureServer() // kick the watchdog now, not in 5s
+                    self.turns.removeAll { !$0.isUser && $0.text.isEmpty }  // drop dead stream bubble
+                    self.ensureServer()                                    // kick it awake now
+                }
+                var recovered = false
+                var recoveredText = ""
+                var recoveredModel: String? = nil
+                for _ in 0..<12 {                       // up to ~18s of waking
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    if await self.agent.health() {
+                        if let r = try? await self.agent.ask(text) {
+                            recoveredText = r.answer
+                            recoveredModel = r.model
+                            recovered = true
+                        }
+                        break
+                    }
+                }
+                await MainActor.run {
+                    if recovered && !recoveredText.isEmpty {
+                        if let m = recoveredModel { self.modelName = m }
+                        self.answer = recoveredText
+                        self.turns.append(ChatTurn(text: recoveredText, isUser: false))
+                        if self.speakReplies { self.speakReply(recoveredText) }
+                        else { self.phase = .idle }
+                    } else {
+                        // Still nothing after waking — now it's a real problem.
+                        let msg = "I'm still waking up — my local brain isn't answering yet. Give me a few more seconds and try again."
+                        self.answer = msg
+                        self.turns.append(ChatTurn(text: msg, isUser: false))
+                        self.phase = .idle
+                    }
                 }
             }
         }

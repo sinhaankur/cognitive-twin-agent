@@ -40,6 +40,16 @@ def _embed_model() -> str:
     return os.environ.get("CTWIN_EMBED_MODEL", "nomic-embed-text")
 
 
+def _default_model() -> str:
+    """The right-sized local chat model for this machine (for optional reranking).
+    Device-aware so we never pin a 14B on a laptop; fail-soft to a safe small one."""
+    try:
+        from . import device_model
+        return device_model.pick_default()
+    except Exception:
+        return "qwen2.5:7b"
+
+
 def _rag_dir() -> str:
     d = os.path.expanduser("~/.cognitive-twin/rag")
     os.makedirs(d, exist_ok=True)
@@ -282,7 +292,7 @@ def rerank(query: str, hits: list[Hit], keep: int = 4) -> list[Hit]:
     listing = "\n".join(f"[{i+1}] {h.text[:240]}" for i, h in enumerate(hits))
     try:
         from .llm.ollama_client import OllamaClient, ChatMessage
-        model = os.environ.get("CTWIN_MODEL") or "qwen2.5:14b"
+        model = os.environ.get("CTWIN_MODEL") or _default_model()
         client = OllamaClient(host=_ollama_host(), model=model)
         reply = client.chat([
             ChatMessage(role="system", content=(
@@ -313,7 +323,7 @@ def expand_query(query: str) -> str:
     the original query plus keywords; falls back to the raw query if no LLM."""
     try:
         from .llm.ollama_client import OllamaClient, ChatMessage
-        model = os.environ.get("CTWIN_MODEL") or "qwen2.5:14b"
+        model = os.environ.get("CTWIN_MODEL") or _default_model()
         client = OllamaClient(host=_ollama_host(), model=model)
         reply = client.chat([
             ChatMessage(role="system", content=(
@@ -371,7 +381,7 @@ def answer(query: str, name: str = "default", k: int = 4) -> str:
     # generate with Vera's local backend; degrade to the top passage if it's down
     try:
         from .llm.ollama_client import OllamaClient, ChatMessage
-        model = os.environ.get("CTWIN_MODEL") or "qwen2.5:14b"
+        model = os.environ.get("CTWIN_MODEL") or _default_model()
         client = OllamaClient(host=_ollama_host(), model=model)
         reply = client.chat([
             ChatMessage(role="system", content=_SYSTEM),

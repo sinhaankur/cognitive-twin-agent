@@ -277,10 +277,14 @@ class Agent:
                 pass
         system_content = "\n\n".join(parts)
 
-        messages: list[ChatMessage] = [
-            ChatMessage(role="system", content=system_content),
-            ChatMessage(role="user", content=user_input),
-        ]
+        # Conversation memory: carry the last few turns so she SEES what you just
+        # said and short follow-ups make sense ("now try", "and the travel?").
+        # Without this every turn was isolated — the "it doesn't see what I said"
+        # bug. Capped to history_turns so the prompt stays small (low CPU/RAM).
+        messages: list[ChatMessage] = [ChatMessage(role="system", content=system_content)]
+        if self.history:
+            messages.extend(self.history[-(self.history_turns * 2):])
+        messages.append(ChatMessage(role="user", content=user_input))
         # Local models choke when handed all ~60 tools at once — they get
         # decision paralysis and call NOTHING (the "you have no projects" bug even
         # though list_projects works). Send only the tools RELEVANT to this
@@ -332,6 +336,13 @@ class Agent:
             if not reply.tool_calls:
                 # model produced a final answer
                 answer = reply.content.strip()
+                # remember this exchange so the NEXT turn has context (follow-ups,
+                # "it", "that", "now try"). Trimmed to history_turns pairs.
+                if record and answer:
+                    self.history.append(ChatMessage(role="user", content=user_input))
+                    self.history.append(ChatMessage(role="assistant", content=answer))
+                    if len(self.history) > self.history_turns * 2:
+                        self.history = self.history[-(self.history_turns * 2):]
                 if self.use_memory and record:
                     _memory.record(user_input, answer,
                                    model=getattr(self.client, "model", None))

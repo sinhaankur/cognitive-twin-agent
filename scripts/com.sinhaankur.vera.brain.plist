@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Vera's brain as a user LaunchAgent. launchd owns its lifecycle: starts at
+     login, restarts if it ever crashes, binds the port before the app looks,
+     and writes stdout/stderr to a real log we can read. The app just connects
+     to 127.0.0.1:7878 — it never spawns or babysits Python again.
+
+     __PLACEHOLDERS__ are filled in by scripts/install-service.sh. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sinhaankur.vera.brain</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__VERA_HOME__/vera-brain.sh</string>
+  </array>
+
+  <!-- start at login and keep it alive (restart on crash) -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <!-- restart if it exits non-zero; don't thrash on a clean stop -->
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <!-- don't hot-loop if it fails fast: wait 5s between relaunches -->
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+
+  <key>WorkingDirectory</key>
+  <string>__VERA_HOME__</string>
+
+  <!-- the brain's own environment (model stays light via device_model) -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>VERA_HOME</key>   <string>__VERA_HOME__</string>
+    <key>CTWIN_WEB</key>    <string>1</string>
+    <key>COQUI_TOS_AGREED</key><string>1</string>
+    <key>PYTHONUNBUFFERED</key><string>1</string>
+    <key>PYTHONPATH</key><string>__VERA_HOME__</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+
+  <!-- real logs so failures are visible, not a black hole -->
+  <key>StandardOutPath</key>
+  <string>__LOGDIR__/brain.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOGDIR__/brain.err.log</string>
+
+  <!-- a background service: nice to the machine so it's a catalyst, not a drag -->
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+</dict>
+</plist>
