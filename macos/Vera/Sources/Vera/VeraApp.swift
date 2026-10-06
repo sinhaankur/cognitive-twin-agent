@@ -713,6 +713,29 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // --- Personality dials (tone, not identity) ------------------------------
+    // Warmth / Humor / Playfulness, 0–1. Modulate how she expresses herself; the
+    // warm-companion core stays. Lives in the sealed brain; mirrored here for the UI.
+    @Published var warmth = 0.7
+    @Published var humor = 0.4
+    @Published var playfulness = 0.45
+
+    func loadPersonality() {
+        Task {
+            let d = await agent.personality()
+            await MainActor.run {
+                if let v = d["warmth"] { self.warmth = v }
+                if let v = d["humor"] { self.humor = v }
+                if let v = d["playfulness"] { self.playfulness = v }
+            }
+        }
+    }
+
+    func savePersonality() {
+        let dials = ["warmth": warmth, "humor": humor, "playfulness": playfulness]
+        Task { await agent.setPersonality(dials) }
+    }
+
     // The twin's name — the user's to choose. Defaults to Anita.
     @Published var assistantName: String =
         UserDefaults.standard.string(forKey: "assistantName") ?? "Anita Sinha" {

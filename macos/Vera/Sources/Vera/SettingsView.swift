@@ -139,6 +139,17 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
+                Section("Personality") {
+                    personalitySlider("Warmth", value: $model.warmth,
+                                      low: "Matter-of-fact", high: "Tender")
+                    personalitySlider("Humor", value: $model.humor,
+                                      low: "Earnest", high: "Witty & joking")
+                    personalitySlider("Playfulness", value: $model.playfulness,
+                                      low: "Calm", high: "Nerdy & playful")
+                    Text("Tunes how she expresses herself — her warm-companion character underneath stays the same. Takes effect on her next reply.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
                 Section("Customize") {
                     HStack {
                         Text("Name your twin")
@@ -234,7 +245,8 @@ struct SettingsView: View {
         }
         .padding(22)
         .frame(width: 420, height: 480)
-        .onAppear { model.refreshModels(); model.refreshPortrait() }
+        .onAppear { model.refreshModels(); model.refreshPortrait(); model.loadPersonality() }
+        .onDisappear { model.savePersonality() }
         .sheet(isPresented: $exporting) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Export her memory").font(.headline)
@@ -256,6 +268,23 @@ struct SettingsView: View {
             .padding(18)
             .frame(width: 360)
         }
+    }
+
+    // A labelled 0–1 slider with low/high end-labels, saving as you release.
+    @ViewBuilder
+    private func personalitySlider(_ title: String, value: Binding<Double>,
+                                   low: String, high: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.system(size: 13, weight: .medium))
+            Slider(value: value, in: 0...1) { editing in
+                if !editing { model.savePersonality() }   // persist on release
+            }
+            HStack {
+                Text(low); Spacer(); Text(high)
+            }
+            .font(.system(size: 10)).foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
     }
 
     /// Pick one photo; the local pipeline builds the 3D likeness on this Mac.

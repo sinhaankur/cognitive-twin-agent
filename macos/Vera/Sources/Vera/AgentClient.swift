@@ -43,6 +43,32 @@ final class AgentClient {
         }
     }
 
+    /// GET /api/personality — the current tone dials (warmth/humor/playfulness).
+    func personality() async -> [String: Double] {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/personality"))
+        req.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (obj["dials"] as? [String: Double]) ?? [:]
+        } catch { return [:] }
+    }
+
+    /// POST /api/personality — set tone dials. Returns the saved values.
+    @discardableResult
+    func setPersonality(_ dials: [String: Double]) async -> [String: Double] {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/personality"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: dials)
+        req.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (obj["dials"] as? [String: Double]) ?? dials
+        } catch { return dials }
+    }
+
     /// GET /api/models — list installed local models.
     func models() async -> [String] {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/models"))
