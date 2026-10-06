@@ -110,26 +110,27 @@ class Persona:
 
 # ---- load / save (local, owner-only) -----------------------------------------
 def load() -> Persona:
-    path = _file()
-    if not path.is_file():
+    # Read via the security kernel: decrypts a SEALED persona (and still reads
+    # legacy plaintext, which the next save() re-seals).
+    from . import security
+    data = security.read_state(_file(), default=None)
+    if not data:
         return Persona()
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
         # only keep known fields, so old/extra keys never crash us
         known = {f for f in Persona().__dataclass_fields__}  # type: ignore[attr-defined]
         return Persona(**{k: v for k, v in data.items() if k in known})
-    except (OSError, json.JSONDecodeError, TypeError):
+    except (TypeError, ValueError):
         return Persona()
 
 
 def save(p: Persona) -> None:
-    path = _file()
-    existed = path.exists()
+    # Seal at rest via the kernel — never raw plaintext (closes the leak the
+    # security doctor flagged on persona.json).
+    from . import security
     try:
-        path.write_text(json.dumps(asdict(p), ensure_ascii=False, indent=2), encoding="utf-8")
-        if not existed:
-            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)  # 0600
-    except OSError:
+        security.write_state(_file(), asdict(p))
+    except Exception:
         pass
 
 

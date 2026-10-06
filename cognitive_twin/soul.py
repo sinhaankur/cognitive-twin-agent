@@ -39,23 +39,20 @@ def _dir() -> Path:
 
 
 def _read(name: str) -> dict[str, Any]:
-    p = _dir() / name
-    try:
-        if p.is_file():
-            return json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        pass
-    return {}
+    # Read through the security kernel so a SEALED soul/persona is decrypted here
+    # (and legacy plaintext is still read, then re-sealed on next write). This
+    # closes the leak where soul.json/persona.json sat on disk unsealed.
+    from . import security
+    return security.read_state(_dir() / name, default={}) or {}
 
 
 def _write(name: str, data: dict[str, Any]) -> None:
-    p = _dir() / name
-    existed = p.exists()
+    # Seal at rest via the kernel — the ONLY way personal state should hit disk
+    # (ChaCha20-Poly1305, device-bound key). No more raw plaintext writes.
+    from . import security
     try:
-        p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        if not existed:
-            os.chmod(p, stat.S_IRUSR | stat.S_IWUSR)  # 0600
-    except OSError:
+        security.write_state(_dir() / name, data)
+    except Exception:
         pass
 
 
