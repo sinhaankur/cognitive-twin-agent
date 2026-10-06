@@ -17,16 +17,16 @@
     },
     "deepPlanner": {
       "provider": "ollama",
-      "name": "qwen2.5:14b",
+      "name": "qwen2.5:7b",
       "role": "high_complexity_planning",
-      "comment": "The heavy brain for genuinely complex/high-risk planning + drive. Loaded ON DEMAND by Ollama only when a rule escalates here — everyday turns stay on the light 7B, so Vera is powerful WITHOUT being heavy by default. (Ollama unloads it after idle, freeing RAM.)",
-      "targetLatencyMs": 9000
+      "comment": "Deeper planning uses the 7B (the 14B was removed — it pinned ~15 GB and made the machine drag; the 7B is plenty for a local companion+agent). Everyday turns use the same 7B; genuinely complex turns still route here but without the heavy cost. Light by default, powerful enough.",
+      "targetLatencyMs": 6000
     },
     "companion": {
       "provider": "ollama",
-      "name": "empathia-tiny:latest",
+      "name": "empathia-tiny-opt:latest",
       "role": "emotional_companion",
-      "comment": "Emotional / check-in / reflective turns route to OUR OWN model — empathia-tiny, tuned for warmth and presence, not a stock qwen. This is the model that makes Vera *hers*, not a generic assistant; it is tiny + on-device (fast, private, works offline). Warmth is reinforced by persona.py _INNATE. If it ever drifts to 'shall I list your tasks?', the fix is the model/persona — not swapping in a stock 14b, because companionship IS the point. (Was temporarily pointed at qwen2.5:14b for nuance; restored to empathia-tiny 2026-09-26.)",
+      "comment": "Emotional / check-in / reflective turns route to OUR OWN model — empathia-tiny-opt, tuned for warmth and presence, not a stock qwen. This is the model that makes Vera *hers*; tiny + on-device (fast, private, offline). Warmth is reinforced by persona.py _INNATE + system_dna.md. If it drifts to 'shall I list your tasks?', fix the model/persona — companionship IS the point. (empathia-tiny was removed; -opt is the optimized build.)",
       "targetLatencyMs": 2500
     }
   },
