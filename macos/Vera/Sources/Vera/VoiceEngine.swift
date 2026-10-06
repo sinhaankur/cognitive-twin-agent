@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import Speech
+import AppKit
 
 /// Native, on-device voice: Apple's Speech framework for listening and
 /// AVSpeechSynthesizer for talking back. No cloud, no extra dependencies.
@@ -116,6 +117,26 @@ final class VoiceEngine: ObservableObject {
     var permissionsGranted: Bool {
         SFSpeechRecognizer.authorizationStatus() == .authorized
             && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    }
+
+    /// True when mic OR speech was explicitly DENIED (not just "not yet asked").
+    /// A denied permission can't be re-prompted — the user must grant it in
+    /// System Settings. The UI uses this to show a visible, actionable banner
+    /// instead of the mic button silently doing nothing ("mic isn't working").
+    var permissionDenied: Bool {
+        SFSpeechRecognizer.authorizationStatus() == .denied
+            || AVCaptureDevice.authorizationStatus(for: .audio) == .denied
+            || SFSpeechRecognizer.authorizationStatus() == .restricted
+            || AVCaptureDevice.authorizationStatus(for: .audio) == .restricted
+    }
+
+    /// Open the exact System Settings pane to grant the mic (or speech) so the
+    /// user can fix a denied permission in one click.
+    func openPrivacySettings(speech: Bool = false) {
+        let key = speech ? "Privacy_SpeechRecognition" : "Privacy_Microphone"
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(key)") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     func toggleListening() {

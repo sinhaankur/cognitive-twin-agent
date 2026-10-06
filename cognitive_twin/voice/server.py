@@ -182,6 +182,16 @@ class _Handler(BaseHTTPRequestHandler):
             if prompt:
                 data["thought_path"] = brain.thought_path(prompt)
             self._json(200, data)
+        elif self.path == "/api/voices":
+            # Installed macOS `say` voices + which one Vera uses now, so the app's
+            # Settings can offer a switcher (fixes "the voice is too robotic" —
+            # the user can pick a better/Enhanced one, or we tell them to install).
+            # tts is imported at module level (line 29) — don't re-import locally
+            # (that shadows it and breaks /api/health's tts reference).
+            self._json(200, {
+                "voices": tts.voices(),
+                "current": tts.best_voice() or "",
+            })
         elif self.path == "/api/voice/clone/status":
             from .. import voice_clone
             self._json(200, {"ready": voice_clone.is_ready(), "status": voice_clone.status()})
@@ -260,6 +270,26 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
 
     def do_POST(self) -> None:
+        if self.path == "/api/voice/system":
+            # Set the macOS `say` voice Vera speaks with (persisted via env for
+            # this process). Body: {"voice": name}. (tts is module-level, line 29.)
+            data = self._read_json()
+            name = (data.get("voice") or "").strip()
+            if name:
+                os.environ["CTWIN_VOICE"] = name
+                tts._chosen_voice = name  # take effect immediately
+            self._json(200, {"current": tts.best_voice() or ""})
+            return
+        if self.path == "/api/voice/preview":
+            # Speak a short sample in a given (or current) voice so the user can
+            # hear it before committing — fixes "the voice is too robotic" by
+            # letting them audition the better ones. (tts is module-level.)
+            data = self._read_json()
+            name = (data.get("voice") or "").strip() or None
+            sample = (data.get("text") or "Hi — this is how I sound.").strip()
+            tts.speak(sample, voice=name, blocking=False)
+            self._json(200, {"ok": True})
+            return
         if self.path == "/api/lockdown":
             # Trip or release the GLOBAL KILL SWITCH. Body: {"on": true/false}.
             # On → Vera halts all outward/mutating capability (net, control, email)
