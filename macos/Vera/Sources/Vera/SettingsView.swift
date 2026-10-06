@@ -117,6 +117,26 @@ struct SettingsView: View {
 
                 Section("Voice") {
                     Toggle("Speak replies aloud", isOn: $model.speakReplies)
+                    Text("Off = text-first. When off, she still speaks back if you talk to her by voice.")
+                        .font(.caption).foregroundStyle(.secondary)
+
+                    // Choose + preview her voice (native, plays from the app).
+                    Picker("Her voice", selection: $model.voiceID) {
+                        ForEach(model.installedVoices()) { v in
+                            Text(v.label).tag(v.id)
+                        }
+                    }
+                    HStack {
+                        Button {
+                            model.previewVoice(model.voiceID)
+                        } label: { Label("Preview", systemImage: "play.circle") }
+                        Spacer()
+                        Button {
+                            model.openVoiceDownloads()
+                        } label: { Label("Get better voices…", systemImage: "arrow.down.circle") }
+                    }
+                    Text("The best voices (Ava, Zoe, Samantha — Premium/Enhanced) aren't installed by default. Get them in System Settings → Accessibility → Spoken Content → System Voice → Manage Voices, then pick one here.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
 
                 Section("Customize") {
