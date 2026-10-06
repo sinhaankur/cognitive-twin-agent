@@ -43,6 +43,16 @@ struct ChatPanel: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            // Text-first: she replies in text unless you turn the speaker on.
+            Button { model.speakReplies.toggle() } label: {
+                Image(systemName: model.speakReplies ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(model.speakReplies ? Color.cyan : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .help(model.speakReplies
+                  ? "She speaks her replies aloud. Click for text-only."
+                  : "Text-only replies. Click to let her speak aloud. (Talking to her by voice always gets a spoken reply.)")
             Button { model.toggleEye?() } label: {
                 Image(systemName: model.eyeOn ? "eye.fill" : "eye.slash")
                     .font(.system(size: 14, weight: .medium))
@@ -126,13 +136,46 @@ struct ChatPanel: View {
                 }
                 .padding(.horizontal, 16)
             }
+            // a file you've attached shows as a removable chip above the field
+            if let a = model.pendingAttachment {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.text").font(.system(size: 11))
+                    Text(a.name).font(.system(size: 11)).lineLimit(1)
+                    Button { model.pendingAttachment = nil } label: {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 11))
+                    }.buttonStyle(.plain).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 16)
+            }
             inputRow
         }
         .padding(12)
     }
 
+    private func pickFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [.pdf, .plainText, .text, .sourceCode,
+                                     .json, .rtf, .commaSeparatedText, .data]
+        if panel.runModal() == .OK, let url = panel.url {
+            model.attachFile(url)
+        }
+    }
+
     private var inputRow: some View {
         HStack(spacing: 8) {
+            // attach a file (on-device: its text is read locally, never uploaded)
+            Button(action: pickFile) {
+                Image(systemName: "paperclip")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 30)
+            }.buttonStyle(.plain)
+            .help("Attach a file (PDF, text, code) — read on-device, nothing uploaded")
+
             TextField(model.voice.isListening ? "type to cancel listening…" : "Ask your twin…",
                       text: $typed)
                 .textFieldStyle(.plain)
@@ -161,7 +204,7 @@ struct ChatPanel: View {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 26)).foregroundStyle(Color.accentColor)
             }.buttonStyle(.plain).padding(.trailing, 8)
-            .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
+            .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty && model.pendingAttachment == nil)
         }
         .background(Capsule().fill(.ultraThinMaterial)
             .overlay(Capsule().strokeBorder(.white.opacity(0.12))))
@@ -169,9 +212,10 @@ struct ChatPanel: View {
 
     private func send() {
         let t = typed.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { return }
+        // allow sending a bare attachment (with a sensible default ask)
+        guard !t.isEmpty || model.pendingAttachment != nil else { return }
         typed = ""
-        model.submitText(t)
+        model.submitText(t.isEmpty ? "Here's a file — take a look." : t)
     }
 }
 
@@ -199,8 +243,20 @@ private struct TurnBubble: View {
     let turn: ChatTurn
     private var amber: Color { Color(red: 0.95, green: 0.74, blue: 0.36) }
 
+    // Render her replies as MARKDOWN (bold, lists, `code`, links) so answers read
+    // like a real chat — Claude-grade legibility. User text stays verbatim.
+    private var rendered: AttributedString {
+        if turn.isUser { return AttributedString(turn.text) }
+        if let a = try? AttributedString(
+            markdown: turn.text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            return a
+        }
+        return AttributedString(turn.text)
+    }
+
     var body: some View {
-        Text(turn.text)
+        Text(rendered)
             .font(.system(size: 13))
             .lineSpacing(2)                          // her words breathe — easier to read
             .textSelection(.enabled)                 // let the user copy replies
