@@ -266,6 +266,22 @@ class Agent:
                     parts.append(today)
             except Exception:
                 pass
+            # LIFE RECAP — only when they ask about their recent life ("weekend",
+            # "lately", "where have I been", "what did I do"). Folds in the moments
+            # + places she learned from Photos (opt-in), so she can actually recall
+            # your days instead of guessing. Gated so it doesn't bloat every prompt.
+            try:
+                low = user_input.lower()
+                if any(w in low for w in ("weekend", "lately", "recently", "these days",
+                                          "where have i", "where did i", "what did i do",
+                                          "my week", "been up to", "places i")):
+                    from .. import photos as _photos
+                    recap = _photos.life_recap(days=10)
+                    if recap:
+                        parts.append("What you've been up to recently (from your "
+                                     "photos, opt-in): " + recap)
+            except Exception:
+                pass
             # what she can see right now (opt-in camera → motion cues only;
             # empty unless the user turned the eye on in the voice UI)
             try:

@@ -96,3 +96,66 @@ def learn_places(places: list[dict[str, Any]]) -> dict[str, int]:
         known.add(prompt)
         learned += 1
     return {"places_learned": learned, "places_skipped": skipped}
+
+
+def learn_moments(moments: list[dict[str, Any]]) -> dict[str, int]:
+    """Store LIFE MOMENTS (recent outings/sessions from photo metadata) as memories
+    so Vera can recall your days — 'a full Saturday in Pune, lots of photos'. Each
+    moment: day, weekday, part of day, photo count, span, and place if known.
+    Metadata only, on-device, dedup-safe by day+part."""
+    from . import memory
+    known = {e.get("prompt") for e in memory.entries() if e.get("source") == "photos-moments"}
+    learned = skipped = 0
+    for m in moments or []:
+        day = (m.get("day") or "").strip()
+        if not day:
+            continue
+        weekday = m.get("weekday") or ""
+        part = m.get("part") or ""
+        place = m.get("place")
+        n = m.get("photos")
+        span = m.get("spanHours")
+        where = f" in {place}" if place else ""
+        prompt = f"a moment in your life: {weekday} {part}{where} ({day})"
+        if prompt in known:
+            skipped += 1
+            continue
+        bits = []
+        if n:
+            bits.append(f"{n} photos")
+        if isinstance(span, int) and span >= 1:
+            bits.append(f"over about {span}h")
+        gist = "from your photos (opt-in, metadata only)"
+        if bits:
+            gist += " — " + ", ".join(bits)
+        memory.record(prompt, gist, source="photos-moments")
+        known.add(prompt)
+        learned += 1
+    return {"moments_learned": learned, "moments_skipped": skipped}
+
+
+def life_recap(days: int = 7) -> str:
+    """A short, human recap of your recent life from what she's learned — moments,
+    places, events in the last `days`. For 'what did I do this weekend / lately'.
+    Reads only the sealed photo-memories; returns '' if she hasn't learned any."""
+    from . import memory
+    import datetime as _dt
+    cutoff = (_dt.date.today() - _dt.timedelta(days=days)).isoformat()
+    moments, places = [], []
+    for e in memory.entries():
+        src = e.get("source")
+        prompt = (e.get("prompt") or "")
+        ts = (e.get("ts") or "")[:10]
+        if src == "photos-moments" and ts >= cutoff:
+            moments.append(prompt.replace("a moment in your life: ", ""))
+        elif src == "photos-places" and ts >= cutoff:
+            places.append(prompt.replace("a place you've been: ", ""))
+    if not moments and not places:
+        return ""
+    parts = []
+    if moments:
+        parts.append("Lately: " + "; ".join(moments[:5]) + ".")
+    if places:
+        uniq = list(dict.fromkeys(places))
+        parts.append("Places: " + ", ".join(uniq[:5]) + ".")
+    return " ".join(parts)
