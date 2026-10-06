@@ -44,6 +44,17 @@ final class VoiceEngine: ObservableObject {
     // the speaking-state callbacks (which light up the orb) never fire.
     private var speechDelegate: SpeechDelegate?
 
+    // ---- Piper: Vera's bundled NEURAL voice (soft female, Her-like) ----
+    // The brain synthesizes a WAV at /api/voice/piper; we play it HERE (the app
+    // has the audio session the background service lacks). This is her default
+    // voice when available; AVSpeechSynthesis is the fallback.
+    @Published var piperEnabled = UserDefaults.standard.object(forKey: "vera.piperEnabled") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(piperEnabled, forKey: "vera.piperEnabled") }
+    }
+    var piperAvailable = false          // set from /api/health
+    private var piperPlayer: AVAudioPlayer?
+    private var piperDelegate: PiperPlayerDelegate?
+
     // ---- endpointing state (main actor) ----
     private var listenStart = Date.distantPast
     private var sessionStart = Date.distantPast    // any session, incl. muted watches
@@ -371,17 +382,67 @@ final class VoiceEngine: ObservableObject {
     func speak(_ text: String) {
         // Never stack utterances — stop anything in progress first.
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
+        stopPiper()
+        // Vera's own neural voice (soft female, Her-like) when available + enabled;
+        // otherwise the system voice. Piper synthesis is remote (the brain), so it
+        // runs async; the system fallback fires immediately if Piper can't.
+        if piperEnabled && piperAvailable {
+            speakWithPiper(text) { [weak self] ok in
+                if !ok { self?.speakWithSystem(text) }
+            }
+        } else {
+            speakWithSystem(text)
+        }
+        // the mic opens muted underneath her voice, hunting for interruption
+        startListening(hunting: true, over: text)
+    }
+
+    /// The system AVSpeechSynthesis path (fallback / when Piper is off).
+    private func speakWithSystem(_ text: String) {
+        if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
         let utter = AVSpeechUtterance(string: text)
-        // Warmer, more human delivery: a touch slower than default, natural pitch,
-        // gentle lead-in/out so it doesn't clip robotically.
         utter.voice = humaneVoice()
         utter.rate = 0.46
         utter.pitchMultiplier = 1.02
         utter.preUtteranceDelay = 0.05
         utter.postUtteranceDelay = 0.10
         synth.speak(utter)
-        // the mic opens muted underneath her voice, hunting for interruption
-        startListening(hunting: true, over: text)
+    }
+
+    /// Fetch a WAV from the brain's Piper endpoint and play it. `done(true)` on
+    /// successful playback start; `done(false)` to trigger the system fallback.
+    private func speakWithPiper(_ text: String, done: @escaping (Bool) -> Void) {
+        guard let url = URL(string: "http://127.0.0.1:7878/api/voice/piper") else { done(false); return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text, "length_scale": 1.12])
+        req.timeoutInterval = 30
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
+            guard let self else { return }
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard code == 200, let data, data.count > 44 else { DispatchQueue.main.async { done(false) }; return }
+            DispatchQueue.main.async {
+                do {
+                    let player = try AVAudioPlayer(data: data)
+                    let del = PiperPlayerDelegate { [weak self] in self?.speakingChanged(false) }
+                    player.delegate = del
+                    self.piperDelegate = del
+                    self.piperPlayer = player
+                    player.prepareToPlay()
+                    self.speakingChanged(true)   // light the orb like she's speaking
+                    player.play()
+                    done(true)
+                } catch {
+                    done(false)
+                }
+            }
+        }.resume()
+    }
+
+    private func stopPiper() {
+        piperPlayer?.stop()
+        piperPlayer = nil
     }
 
     // a barge-in (or tap-to-stop) empties the queue; any fragments still
@@ -474,6 +535,7 @@ final class VoiceEngine: ObservableObject {
         if synth.isSpeaking || synth.isPaused {
             synth.stopSpeaking(at: .immediate)
         }
+        stopPiper()                 // stop any neural-voice playback too
         if externalSpeech {
             externalSpeech = false
             // best-effort: tell the server to stop cloned playback
@@ -594,4 +656,14 @@ private final class SpeechDelegate: NSObject, AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ s: AVSpeechSynthesizer, didCancel u: AVSpeechUtterance) { onChange(s.isSpeaking) }
     func speechSynthesizer(_ s: AVSpeechSynthesizer, willSpeakRangeOfSpeechString r: NSRange,
                            utterance u: AVSpeechUtterance) { onWord() }
+}
+
+/// Bridges AVAudioPlayer's finish callback so the orb settles when Vera's neural
+/// (Piper) voice stops speaking.
+private final class PiperPlayerDelegate: NSObject, AVAudioPlayerDelegate {
+    let onDone: () -> Void
+    init(onDone: @escaping () -> Void) { self.onDone = onDone }
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        DispatchQueue.main.async { self.onDone() }
+    }
 }

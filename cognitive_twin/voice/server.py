@@ -134,11 +134,18 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/health":
             agent = self.server.agent  # type: ignore[attr-defined]
             model = getattr(agent.client, "model", None) or getattr(agent, "configured_model", None)
+            from . import piper_tts, kokoro_tts
             self._json(200, {
                 "ok": True,
                 "tts": tts.is_available(),
                 "stt_local": stt.is_available(),
                 "model": model,
+                # Vera's bundled neural voice (Kokoro preferred, Piper fallback) —
+                # the app uses it when present for a natural, human-sounding reply.
+                # Key kept as "piper" for app compatibility.
+                "piper": kokoro_tts.is_available() or piper_tts.is_available(),
+                "neural_voice": ("kokoro" if kokoro_tts.is_available()
+                                 else "piper" if piper_tts.is_available() else ""),
             })
         elif self.path == "/api/lockdown":
             # Kill-switch status: is Vera dormant (halted from reaching out/acting)?
@@ -279,6 +286,39 @@ class _Handler(BaseHTTPRequestHandler):
                 os.environ["CTWIN_VOICE"] = name
                 tts._chosen_voice = name  # take effect immediately
             self._json(200, {"current": tts.best_voice() or ""})
+            return
+        if self.path == "/api/voice/piper":
+            # Synthesize text to a WAV with Vera's bundled NEURAL voice and return
+            # the audio bytes. The brain (background service) can't PLAY audio, but
+            # it can synthesize — the app plays the WAV it gets back. Prefer Kokoro
+            # (expressive, human, emotional); fall back to Piper, then nothing.
+            # (Endpoint name kept for app compatibility.)
+            from . import kokoro_tts, piper_tts
+            data = self._read_json()
+            text = (data.get("text") or "").strip()
+            try:
+                ls = float(data.get("length_scale", 1.08))
+            except (TypeError, ValueError):
+                ls = 1.08
+            wav = None
+            if text and kokoro_tts.is_available():
+                # Kokoro speed: invert length_scale (ls>1 = slower → speed<1)
+                wav = kokoro_tts.synth_wav(text, speed=min(1.3, max(0.6, 1.0 / ls)))
+            if wav is None and text:
+                wav = piper_tts.synth_wav(text, length_scale=ls)
+            if wav:
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/wav")
+                self.send_header("Content-Length", str(len(wav)))
+                self.end_headers()
+                try:
+                    self.wfile.write(wav)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+            else:
+                # not available / failed → 204 so the app falls back to the system voice
+                self.send_response(204)
+                self.end_headers()
             return
         if self.path == "/api/voice/preview":
             # Speak a short sample in a given (or current) voice so the user can
@@ -690,8 +730,23 @@ def make_server(port: int = DEFAULT_PORT, model: str | None = None) -> Threading
     httpd.agent = build_agent(model, route=True, interactive_confirm=False)  # type: ignore[attr-defined]
     control.set_confirm(_voice_confirm)  # ensure our confirm wins after build
     _warm_voice_clone()  # preload engine detection + the XTTS model in the background
+    _warm_kokoro()       # preload the neural voice so the FIRST reply isn't a 15s wait
     _start_activity_sampler()  # observe device activity (only when enabled + not private)
     return httpd
+
+
+def _warm_kokoro() -> None:
+    """Spin up Vera's neural-voice worker in the background at startup, so the
+    model is loaded before the first reply (otherwise the first spoken answer
+    waits ~15-20s for the model and the client times out)."""
+    def warm() -> None:
+        try:
+            from . import kokoro_tts
+            if kokoro_tts.is_available():
+                kokoro_tts.synth_wav("ready")  # loads the model, result discarded
+        except Exception:
+            pass
+    threading.Thread(target=warm, daemon=True).start()
 
 
 def _start_activity_sampler() -> None:

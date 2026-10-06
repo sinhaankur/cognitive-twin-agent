@@ -28,6 +28,21 @@ final class AgentClient {
         }
     }
 
+    /// GET /api/health — the full payload, so the app can learn whether Vera's
+    /// bundled neural voice (Piper) is available. Returns nil if unreachable.
+    func healthInfo() async -> (up: Bool, piper: Bool)? {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/health"))
+        req.timeoutInterval = 4
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return (false, false) }
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (true, (obj["piper"] as? Bool) ?? false)
+        } catch {
+            return nil
+        }
+    }
+
     /// GET /api/models — list installed local models.
     func models() async -> [String] {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/models"))
