@@ -909,8 +909,11 @@ final class AppModel: ObservableObject {
         ensuringServer = true
         Task {
             defer { ensuringServer = false }
-            if await agent.health() {
-                await MainActor.run { self.serverUp = true }
+            if let info = await agent.healthInfo(), info.up {
+                await MainActor.run {
+                    self.serverUp = true
+                    self.voice.piperAvailable = info.piper   // use her neural voice
+                }
                 await greetOnLaunch()
                 return
             }
@@ -925,8 +928,11 @@ final class AppModel: ObservableObject {
             // poll until it answers
             for _ in 0..<30 {
                 try? await Task.sleep(nanoseconds: 500_000_000)
-                if await agent.health() {
-                    await MainActor.run { self.serverUp = true }
+                if let info = await agent.healthInfo(), info.up {
+                    await MainActor.run {
+                        self.serverUp = true
+                        self.voice.piperAvailable = info.piper
+                    }
                     await greetOnLaunch()
                     return
                 }
