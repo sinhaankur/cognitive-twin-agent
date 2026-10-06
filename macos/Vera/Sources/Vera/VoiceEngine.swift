@@ -115,6 +115,12 @@ final class VoiceEngine: ObservableObject {
             AVCaptureDevice.requestAccess(for: .audio) { micOK in
                 Task { @MainActor in
                     self.authorized = speechOK && micOK
+                    // publish exact state so the banner reflects reality (and
+                    // clears the moment both are granted)
+                    self.micDenied = (AVCaptureDevice.authorizationStatus(for: .audio) == .denied
+                                      || AVCaptureDevice.authorizationStatus(for: .audio) == .restricted)
+                    self.speechDenied = (SFSpeechRecognizer.authorizationStatus() == .denied
+                                         || SFSpeechRecognizer.authorizationStatus() == .restricted)
                     if !self.authorized {
                         NSLog("[Vera voice] not authorized — speech:\(speechOK) mic:\(micOK)")
                     }
@@ -130,16 +136,29 @@ final class VoiceEngine: ObservableObject {
             && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     }
 
-    /// True when mic OR speech was explicitly DENIED (not just "not yet asked").
-    /// A denied permission can't be re-prompted — the user must grant it in
-    /// System Settings. The UI uses this to show a visible, actionable banner
-    /// instead of the mic button silently doing nothing ("mic isn't working").
-    var permissionDenied: Bool {
-        SFSpeechRecognizer.authorizationStatus() == .denied
-            || AVCaptureDevice.authorizationStatus(for: .audio) == .denied
-            || SFSpeechRecognizer.authorizationStatus() == .restricted
-            || AVCaptureDevice.authorizationStatus(for: .audio) == .restricted
+    /// A published mirror of the permission state so SwiftUI re-renders the banner
+    /// the moment access changes (TCC status itself isn't observable). Refreshed on
+    /// launch, when the app becomes active, and after a permission request. Starts
+    /// nil = "not yet checked" so the banner never flashes before we actually know.
+    @Published var micDenied: Bool? = nil
+    @Published var speechDenied: Bool? = nil
+
+    /// Re-read the live TCC status and publish it. Call when the window appears or
+    /// the app becomes active (e.g. after the user flips the toggle in Settings).
+    func refreshPermissionState() {
+        let mic = AVCaptureDevice.authorizationStatus(for: .audio)
+        let sp = SFSpeechRecognizer.authorizationStatus()
+        DispatchQueue.main.async {
+            self.micDenied = (mic == .denied || mic == .restricted)
+            self.speechDenied = (sp == .denied || sp == .restricted)
+            self.authorized = (mic == .authorized && sp == .authorized)
+        }
     }
+
+    /// True only when something is ACTUALLY blocked (checked, not just un-asked).
+    /// The banner reads this; it can't be a false positive because it's driven by
+    /// refreshPermissionState() re-reading the live status.
+    var permissionDenied: Bool { (micDenied == true) || (speechDenied == true) }
 
     /// Open the exact System Settings pane to grant the mic (or speech) so the
     /// user can fix a denied permission in one click.

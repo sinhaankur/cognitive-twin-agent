@@ -25,6 +25,16 @@ struct ChatPanel: View {
             phase += 0.05 + model.amplitude * 0.30
             model.syncPhase()
         }
+        .onAppear {
+            focused = true
+            model.voice.refreshPermissionState()   // live status, no stale banner
+        }
+        // re-check when the app comes back to the front (e.g. after the user
+        // flipped the toggle in System Settings) so the banner clears itself.
+        .onReceive(NotificationCenter.default.publisher(
+            for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.voice.refreshPermissionState()
+        }
     }
 
     // MARK: - Header
@@ -166,16 +176,32 @@ struct ChatPanel: View {
     }
 
     // MARK: - Input
+    // Name the ACTUAL missing permission (mic vs speech) — the old banner always
+    // said "microphone" even when speech recognition was the blocked one, which
+    // read as a false alarm when mic was clearly enabled in System Settings.
+    private var deniedWhat: String {
+        let mic = model.voice.micDenied == true
+        let speech = model.voice.speechDenied == true
+        if mic && speech { return "Microphone & Speech Recognition" }
+        if speech { return "Speech Recognition" }
+        return "Microphone"
+    }
+    // only speech is missing (mic is fine) → open the Speech pane instead of Mic
+    private var openSpeechPane: Bool {
+        model.voice.speechDenied == true && model.voice.micDenied != true
+    }
     private var micPermissionBanner: some View {
         HStack(spacing: 9) {
             Image(systemName: "mic.slash.fill").foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Microphone access is off").font(.system(size: 12, weight: .semibold))
-                Text("She can't hear you until you allow it. (Typing still works.)")
+                Text("\(deniedWhat) access is off").font(.system(size: 12, weight: .semibold))
+                Text("She can't hear you until you allow it in System Settings → Privacy. (Typing works.)")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            Button("Allow…") { model.voice.openPrivacySettings() }
+            Button("Open…") {
+                model.voice.openPrivacySettings(speech: openSpeechPane)
+            }
                 .font(.system(size: 11, weight: .semibold))
                 .buttonStyle(.borderedProminent).controlSize(.small)
         }
