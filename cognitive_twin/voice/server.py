@@ -268,6 +268,18 @@ class _Handler(BaseHTTPRequestHandler):
                 security.release_lockdown()
             self._json(200, {"locked": security.is_locked()})
             return
+        if self.path == "/api/thought":
+            # "How she thinks": one legible pass — the retrieved docs (RAG across
+            # all indexes), the felt state (mood/stress), the faculty path, and the
+            # route — so the app can SHOW the pipeline simply, not a noisy galaxy.
+            data = self._read_json()
+            query = (data.get("text") or "").strip()
+            try:
+                from .. import viz
+                self._json(200, viz._thought(query))
+            except Exception as e:
+                self._json(200, {"q": query, "error": str(e)})
+            return
         if self.path == "/api/rag":
             # Visible RAG: return the top passages Vera would ground an answer on,
             # pooled across EVERY index (not just "default"), each tagged with its

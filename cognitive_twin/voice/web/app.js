@@ -90,6 +90,13 @@
       body: JSON.stringify({ text }),
     }).then((r) => r.json()).catch(() => ({ hits: [] }));
 
+    // "How she thinks": the full legible pipeline (retrieval + feeling + path)
+    // for the 🧠 panel, so the Mind is comprehensible, not a noisy galaxy.
+    fetch("/api/thought", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }).then((r) => r.json()).then((t) => { if (window.renderMind) window.renderMind(t); }).catch(() => {});
+
     try {
       const res = await fetch("/api/ask", {
         method: "POST",

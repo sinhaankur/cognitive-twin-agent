@@ -153,14 +153,24 @@ def _thought(q: str) -> dict[str, Any]:
     try:
         from . import rag
         indexes = rag.list_indexes()
-        hits = rag.retrieve(q, name="default", k=3) if "default" in indexes else []
+        # Search EVERY index (not just "default") + keep the best by score — the
+        # same fix as brain_flow, so the Mind view shows the REAL retrieval.
+        pooled = []
+        for name in indexes:
+            try:
+                for h in rag.retrieve_reranked(q, name=name, k=3):
+                    if getattr(h, "text", "").strip():
+                        pooled.append((name, h))
+            except Exception:
+                continue
+        pooled.sort(key=lambda t: getattr(t[1], "score", 0.0), reverse=True)
         out["retrieval"] = {
             "indexes": indexes,
             "hits": [
-                {"source": h.source, "ordinal": h.ordinal,
+                {"index": name, "source": h.source, "ordinal": h.ordinal,
                  "score": round(h.score, 3),
                  "preview": (h.text[:120] + "…") if len(h.text) > 121 else h.text}
-                for h in hits
+                for name, h in pooled[:4]
             ],
             "mode": "semantic+keyword" if rag.embeddings_available() else "keyword-only",
         }
