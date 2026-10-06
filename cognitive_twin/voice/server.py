@@ -662,6 +662,8 @@ class _Handler(BaseHTTPRequestHandler):
                 result = photos.learn(data.get("events") or [])
             if data.get("places"):
                 result = {**result, **photos.learn_places(data.get("places") or [])}
+            if data.get("moments"):
+                result = {**result, **photos.learn_moments(data.get("moments") or [])}
             self._json(200, {"ok": True, **result})
         elif self.path == "/api/portrait/build":
             # Build the 3D likeness from ONE chosen photo (opt-in "See a loved one

@@ -37,7 +37,12 @@ enum PhotosReader {
                 // lookup, which Apple does without identifying you.
                 scanPlaces { places in
                     if !places.isEmpty { post(["places": places]) }
-                    completion("read \(events.count) life events + \(places.count) places you've been, from \(scanned) photos' metadata")
+                    // life moments — recent outings/sessions, so she can recap
+                    // your days ("a full Saturday in Pune"). Posts separately.
+                    scanMoments { moments in
+                        if !moments.isEmpty { post(["moments": moments]) }
+                        completion("read \(events.count) life events + \(places.count) places + \(moments.count) moments from \(scanned) photos' metadata")
+                    }
                 }
             }
         }
@@ -103,6 +108,87 @@ enum PhotosReader {
         }
         group.notify(queue: .global(qos: .utility)) {
             completion(out.sorted { (($0["photos"] as? Int) ?? 0) > (($1["photos"] as? Int) ?? 0) })
+        }
+    }
+
+    /// LIFE MOMENTS — cluster recent photos into distinct outings/sessions so Vera
+    /// can recall your life: "a full Saturday, lots of photos", "an evening out".
+    /// A moment = a burst of photos within a time gap; tagged with its day, part of
+    /// day, count, span, and (when the cluster is located) a place name. Metadata
+    /// only — timestamps + coarse location, never pixels or people. Recent window
+    /// so it stays about your life NOW, and cheap. Posts the top moments.
+    private static func scanMoments(completion: @escaping ([[String: Any]]) -> Void) {
+        let cal = Calendar.current
+        let fmtDay = DateFormatter(); fmtDay.dateFormat = "yyyy-MM-dd"
+        struct Shot { let date: Date; let loc: CLLocation? }
+        var shots: [Shot] = []
+        let opts = PHFetchOptions()
+        opts.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
+        // last ~120 days — "life so far, lately"
+        if let since = cal.date(byAdding: .day, value: -120, to: Date()) {
+            opts.predicate = NSPredicate(format: "creationDate >= %@", since as NSDate)
+        }
+        let assets = PHAsset.fetchAssets(with: .image, options: opts)
+        assets.enumerateObjects { a, _, _ in
+            guard let d = a.creationDate else { return }
+            shots.append(Shot(date: d, loc: a.location))
+        }
+        guard shots.count >= 3 else { completion([]); return }
+
+        // split into moments: a new moment starts after a >3h gap
+        struct Moment { var first: Date; var last: Date; var n: Int; var loc: CLLocation? }
+        var moments: [Moment] = []
+        for s in shots {
+            if var m = moments.last, s.date.timeIntervalSince(m.last) < 3 * 3600 {
+                m.last = s.date; m.n += 1
+                if m.loc == nil { m.loc = s.loc }
+                moments[moments.count - 1] = m
+            } else {
+                moments.append(Moment(first: s.date, last: s.date, n: 1, loc: s.loc))
+            }
+        }
+        // keep real moments (several photos), most recent + biggest first
+        let picked = moments.filter { $0.n >= 4 }
+            .sorted { $0.last > $1.last }
+            .prefix(20)
+        guard !picked.isEmpty else { completion([]); return }
+
+        func partOfDay(_ d: Date) -> String {
+            switch cal.component(.hour, from: d) {
+            case 5..<12: return "morning"
+            case 12..<17: return "afternoon"
+            case 17..<21: return "evening"
+            default: return "night"
+            }
+        }
+        let geocoder = CLGeocoder()
+        var out: [[String: Any]] = []
+        let group = DispatchGroup()
+        for m in picked {
+            var rec: [String: Any] = [
+                "day": fmtDay.string(from: m.first),
+                "weekday": cal.weekdaySymbols[cal.component(.weekday, from: m.first) - 1],
+                "part": partOfDay(m.first),
+                "photos": m.n,
+                "spanHours": Int(m.last.timeIntervalSince(m.first) / 3600),
+            ]
+            if let loc = m.loc {
+                group.enter()
+                geocoder.reverseGeocodeLocation(loc) { marks, _ in
+                    if let p = marks?.first {
+                        rec["place"] = [p.locality, p.administrativeArea].compactMap { $0 }.first
+                    }
+                    out.append(rec); group.leave()
+                }
+                Thread.sleep(forTimeInterval: 0.2)
+            } else {
+                out.append(rec)
+            }
+        }
+        group.notify(queue: .global(qos: .utility)) {
+            completion(out.sorted {
+                (($0["day"] as? String) ?? "") > (($1["day"] as? String) ?? "")
+            })
         }
     }
 
