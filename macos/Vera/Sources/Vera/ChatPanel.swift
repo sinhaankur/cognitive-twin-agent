@@ -116,8 +116,32 @@ struct ChatPanel: View {
         }
     }
 
+    // When mic/speech is DENIED, the mic button would silently do nothing
+    // ("mic isn't working" / "hi Anita doesn't listen"). Show a clear, one-click
+    // fix instead of leaving the user guessing.
+    private var micPermissionBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "mic.slash.fill").foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Microphone access is off").font(.system(size: 12, weight: .semibold))
+                Text("She can't hear you until you allow it. (Typing still works.)")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button("Allow…") { model.voice.openPrivacySettings() }
+                .font(.system(size: 11, weight: .semibold))
+                .buttonStyle(.borderedProminent).controlSize(.small)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Color.orange.opacity(0.12))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.orange.opacity(0.3)))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 12)
+    }
+
     private var inputBar: some View {
         VStack(spacing: 5) {
+            if model.voice.permissionDenied { micPermissionBanner }
             // While listening, your words appear live ABOVE the field (the
             // Siri detail) — the field itself never goes away: no state may
             // ever take typing from the user.
