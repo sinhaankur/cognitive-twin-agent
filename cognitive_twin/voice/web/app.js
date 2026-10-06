@@ -44,13 +44,52 @@
     if (!h.tts) setStatus("voice replies off (no macOS say) — text only");
   }).catch(() => {});
 
+  // --- visible chat box -----------------------------------------------------
+  const elChat = document.getElementById("chat");
+  function bubble(role, text, cls) {
+    const d = document.createElement("div");
+    d.className = "msg " + role + (cls ? " " + cls : "");
+    d.textContent = text;
+    elChat.appendChild(d);
+    elChat.scrollTop = elChat.scrollHeight;
+    return d;
+  }
+  function showSources(hits) {
+    if (!hits || !hits.length) return;
+    const row = document.createElement("div");
+    row.className = "sources";
+    const seen = new Set();
+    for (const h of hits) {
+      const key = (h.source || h.index) + "";
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const chip = document.createElement("span");
+      chip.className = "src-chip";
+      chip.title = (h.text || "").slice(0, 200);
+      chip.innerHTML = `<b>${h.index}</b> · ${(h.source || "").split("/").pop()} · ${Math.round((h.score || 0) * 100)}%`;
+      row.appendChild(chip);
+    }
+    elChat.appendChild(row);
+    elChat.scrollTop = elChat.scrollHeight;
+  }
+
   // --- talk to the agent ----------------------------------------------------
   async function ask(text) {
     if (!text) return;
     elTranscript.textContent = text;
     elAnswer.textContent = "";
+    bubble("you", text);
+    const thinking = bubble("vera", "thinking…", "thinking");
     setStatus("thinking…");
     setWave(0.04, 0.05); // quiet, slow shimmer while thinking
+
+    // In parallel: the RAG sources that would ground this answer, so the chat
+    // SHOWS what was retrieved (the "visible RAG" part), across all indexes.
+    const ragP = fetch("/api/rag", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    }).then((r) => r.json()).catch(() => ({ hits: [] }));
+
     try {
       const res = await fetch("/api/ask", {
         method: "POST",
@@ -60,9 +99,15 @@
       const data = await res.json();
       const answer = data.answer || "(no answer)";
       if (data.route && data.route.model) elModelPill.textContent = data.route.model;
+      thinking.classList.remove("thinking");
+      thinking.textContent = answer;
       elAnswer.textContent = answer;
+      const rag = await ragP;
+      showSources(rag.hits);
       speak(answer);
     } catch (e) {
+      thinking.classList.remove("thinking");
+      thinking.textContent = "couldn't reach the agent";
       setStatus("couldn't reach the agent");
       setWave(0.12, 0.1);
     }
