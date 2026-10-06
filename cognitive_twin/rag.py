@@ -102,6 +102,32 @@ class Chunk:
     text: str
 
 
+def _split_long(p: str, max_chars: int, overlap: int) -> list[str]:
+    """Split one over-long paragraph at SENTENCE boundaries (not mid-word), with a
+    little overlap, so chunks stay coherent — raw char-slicing broke sentences and
+    hurt both embeddings and readability."""
+    import re as _re
+    sentences = _re.split(r"(?<=[.!?])\s+", p)
+    out: list[str] = []
+    buf = ""
+    for s in sentences:
+        if len(s) > max_chars:                       # a single giant sentence: hard-slice it
+            if buf:
+                out.append(buf); buf = ""
+            for i in range(0, len(s), max_chars - overlap):
+                out.append(s[i:i + max_chars])
+            continue
+        if buf and len(buf) + 1 + len(s) > max_chars:
+            out.append(buf)
+            tail = buf[-overlap:] if overlap else ""
+            buf = (tail + " " + s).strip() if tail else s
+        else:
+            buf = (buf + " " + s).strip() if buf else s
+    if buf:
+        out.append(buf)
+    return out
+
+
 def _chunk_text(text: str, max_chars: int = 1200, overlap: int = 150) -> list[str]:
     paras = [p.strip() for p in _PARA.split(text) if p.strip()]
     chunks: list[str] = []
@@ -110,8 +136,7 @@ def _chunk_text(text: str, max_chars: int = 1200, overlap: int = 150) -> list[st
         if len(p) > max_chars:
             if buf:
                 chunks.append(buf); buf = ""
-            for i in range(0, len(p), max_chars - overlap):
-                chunks.append(p[i:i + max_chars])
+            chunks.extend(_split_long(p, max_chars, overlap))   # sentence-aware now
             continue
         if buf and len(buf) + 2 + len(p) > max_chars:
             chunks.append(buf)
@@ -261,13 +286,26 @@ class Hit:
     score: float
 
 
-def retrieve(query: str, name: str = "default", k: int = 4, alpha: float = 0.6) -> list[Hit]:
+def retrieve(query: str, name: str = "default", k: int = 4, alpha: float | None = None,
+             min_score: float = 0.5, per_source: int = 2) -> list[Hit]:
+    """Hybrid retrieval, quality-tuned (no LLM, so it stays fast + on-device):
+      - ADAPTIVE blend: lean on semantics for natural-language questions, on
+        keywords for short/terse ones (a 2-word query is usually a keyword hunt).
+      - RELEVANCE FLOOR: drop weak hits (below `min_score`) so irrelevant passages
+        never pollute the context — a top reason answers felt off.
+      - SOURCE DIVERSITY: cap how many chunks come from any ONE document, so the k
+        slots aren't all the same file and the model sees a fuller picture.
+    """
     idx = _load_index(name)
     if not idx or not idx.get("chunks"):
         return []
     chunks = idx["chunks"]
     kw = _keyword_scores(chunks, query)
     vecs = idx.get("vectors")
+    if alpha is None:
+        # adaptive: short query → keyword-weighted; longer prose → semantic-weighted
+        qn = len(_tokens(query))
+        alpha = 0.45 if qn <= 2 else (0.6 if qn <= 6 else 0.72)
     if vecs and embeddings_available():
         try:
             qv = embed_one(query)
@@ -276,9 +314,30 @@ def retrieve(query: str, name: str = "default", k: int = 4, alpha: float = 0.6) 
             final = kw
     else:
         final = kw
-    order = sorted(range(len(chunks)), key=lambda i: -final[i])[:k]
-    return [Hit(chunks[i]["source"], chunks[i]["ordinal"], chunks[i]["text"], final[i])
-            for i in order if final[i] > 0]
+    order = sorted(range(len(chunks)), key=lambda i: -final[i])
+    if not order or final[order[0]] <= 0:
+        return []
+    top = final[order[0]]
+    # RELATIVE floor: semantic cosine gives everything a ~0.4 baseline, so an
+    # absolute cutoff alone lets off-topic matches through. Keep a hit only if it's
+    # both reasonably strong (min_score) AND close enough to the BEST hit (within a
+    # band of the top score). An off-topic query — where even the top hit is weak —
+    # then yields little or nothing, instead of filler.
+    floor = max(min_score, top * 0.72)
+    out: list[Hit] = []
+    seen_src: dict[str, int] = {}
+    for i in order:
+        s = final[i]
+        if s < floor:
+            break                       # scores only descend — nothing better ahead
+        src = chunks[i]["source"]
+        if seen_src.get(src, 0) >= per_source:
+            continue                    # already enough from this document
+        seen_src[src] = seen_src.get(src, 0) + 1
+        out.append(Hit(src, chunks[i]["ordinal"], chunks[i]["text"], s))
+        if len(out) >= k:
+            break
+    return out
 
 
 # ---- rerank: widen the candidate pool, then keep the best few --------------
