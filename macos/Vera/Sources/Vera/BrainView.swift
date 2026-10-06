@@ -1,23 +1,23 @@
 import SwiftUI
 import WebKit
 
-/// The Mind — the whole app as a living galaxy.
+/// The Mind — one calm, legible, animated thinking pipeline.
 ///
-/// This view is a window onto the SAME visualization the browser gets: the
-/// local Visualize Engine (127.0.0.1:7879), whose Mind page renders the twin's
-/// real state — memories as stars in typed spiral arms, faculties as planets
-/// riding orbit trails, and a comet that flies an actual thought-path (recall →
-/// faculties → the model the policy really routes to). One visualization,
-/// everywhere; nothing leaves the machine.
-///
-/// The page's visual language is adapted from the author's Universe Engine
-/// (sinhaankur.com), rebuilt dependency-free in the agent (`cognitive_twin/viz.py`).
+/// This replaces the old noisy galaxy. It's a window onto the app server's
+/// `/mind` page (127.0.0.1:7878/mind): you ask her something and WATCH the
+/// thought move through her, step by step — your question → the memories &
+/// documents she actually retrieves (RAG, with sources + match %) → how she
+/// feels (mood + a readable stress bar) → her grounded answer. Every mark
+/// means something; the steps light up in sequence and then rest (calm, not a
+/// forever-churning starfield). Adapts to dark/light. Nothing leaves the
+/// machine. Data comes from the honest `/api/thought` endpoint — no invented
+/// steps. (The old galaxy engine at :7879 remains for the deep "details" view.)
 struct BrainView: View {
     @State private var serverUp = false
     @State private var checking = true
 
-    // the app always opens the HUMAN view; "details" stays one click away
-    private let mindURL = URL(string: "http://127.0.0.1:7879/?mode=simple")!
+    // the legible pipeline page, served by the app server (:7878)
+    private let mindURL = URL(string: "http://127.0.0.1:7878/mind")!
 
     var body: some View {
         ZStack {

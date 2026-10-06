@@ -116,6 +116,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._serve_file("app.js", "application/javascript; charset=utf-8")
         elif self.path == "/flow.js":
             self._serve_file("flow.js", "application/javascript; charset=utf-8")
+        elif self.path in ("/mind", "/mind.html"):
+            # The Mind — a calm, legible animated pipeline (question → retrieve →
+            # feel → answer). Replaces the noisy galaxy; everything in the app.
+            self._serve_file("mind.html", "text/html; charset=utf-8")
         elif self.path == "/eye":
             # the app's small preview window (see eye.html header note)
             self._serve_file("eye.html", "text/html; charset=utf-8")
