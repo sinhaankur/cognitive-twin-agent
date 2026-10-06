@@ -193,6 +193,15 @@ class Agent:
             who = _persona.to_prompt()
             if who:
                 parts.append(who)
+            # personality dials — user-tunable TONE (warmth / humor / playfulness),
+            # modulating how she expresses herself without changing who she is.
+            try:
+                from .. import personality as _pers
+                tone = _pers.prompt()
+                if tone:
+                    parts.append(tone)
+            except Exception:
+                pass
             # speak in a loved one's voice (e.g. learned from their texts)
             try:
                 from .. import voice_profile as _vp

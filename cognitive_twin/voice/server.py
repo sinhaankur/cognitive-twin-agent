@@ -189,6 +189,10 @@ class _Handler(BaseHTTPRequestHandler):
             if prompt:
                 data["thought_path"] = brain.thought_path(prompt)
             self._json(200, data)
+        elif self.path == "/api/personality":
+            # The current personality dials (warmth / humor / playfulness).
+            from .. import personality
+            self._json(200, {"dials": personality.load()})
         elif self.path == "/api/voices":
             # Installed macOS `say` voices + which one Vera uses now, so the app's
             # Settings can offer a switcher (fixes "the voice is too robotic" —
@@ -277,6 +281,13 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
 
     def do_POST(self) -> None:
+        if self.path == "/api/personality":
+            # Set personality dials. Body: {"warmth":0.7,"humor":0.4,...}.
+            from .. import personality
+            data = self._read_json()
+            dials = personality.save(data or {})
+            self._json(200, {"dials": dials})
+            return
         if self.path == "/api/voice/system":
             # Set the macOS `say` voice Vera speaks with (persisted via env for
             # this process). Body: {"voice": name}. (tts is module-level, line 29.)
