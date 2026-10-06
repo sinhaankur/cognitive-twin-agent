@@ -198,7 +198,14 @@ class MultiBackend:
         their bare names; OpenAI-backend models are prefixed with the label."""
         models: list[str] = []
         try:
-            models.extend(OllamaClient(host=self.ollama_host).available_models())
+            # Only CHAT models in the picker — embedding-only models (nomic-embed-text)
+            # can't answer; offering one makes Vera reply with errors. They stay
+            # available internally for RAG, just never as a chat choice.
+            from ..device_model import is_embedder
+            models.extend(
+                m for m in OllamaClient(host=self.ollama_host).available_models()
+                if not is_embedder(m)
+            )
         except Exception:  # noqa: BLE001 - a down backend just contributes nothing
             pass
         if self.openai_base:

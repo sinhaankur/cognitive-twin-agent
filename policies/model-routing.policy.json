@@ -4,10 +4,10 @@
   "models": {
     "primary": {
       "provider": "ollama",
-      "name": "qwen2.5:14b",
+      "name": "qwen2.5:7b",
       "role": "default_reasoning",
-      "comment": "Default reasoning is the 14b — the best local TOOL-CALLER installed. The 7b would half-act and interrogate ('which amenity?') instead of calling the skill; the 14b actually invokes tools and follows the 'act, don't interrogate' DNA. Ollama loads it on demand and unloads after idle, so this is powerful without being always-hot. (Battery-saver still drops to the 3b fastFallback via rule_low_power.)",
-      "targetLatencyMs": 6000
+      "comment": "Default reasoning is the LIGHT 7b — fast and kind to the machine (the 14b pinned ~15 GB of RAM on a 32 GB laptop and made everyday chat slow + the whole system drag; Vera must be a catalyst, not a tax). 7b handles everyday low-risk turns well; genuinely complex or high-risk turns escalate to the 14b deepPlanner on demand (Ollama loads it only then, unloads when idle). Battery-saver drops further to the 3b fastFallback. This delivers 'powerful without being heavy by default'. Device-aware: device_model may pick an even smaller default on low-RAM machines.",
+      "targetLatencyMs": 3000
     },
     "fastFallback": {
       "provider": "ollama",

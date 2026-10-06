@@ -52,6 +52,16 @@ def _load_config() -> dict:
     return {}
 
 
+def _device_default_model() -> str:
+    """The right-sized local model for this machine (see device_model.pick_default).
+    Fail-soft: if anything goes wrong, a safe small default keeps Vera running."""
+    try:
+        from . import device_model
+        return device_model.pick_default()
+    except Exception:
+        return "qwen2.5:7b"
+
+
 def build_agent(model: str | None = None, *, route: bool = True,
                 interactive_confirm: bool = True) -> Agent:
     # Vera keeps herself light: compact the projects catalog + report footprint,
@@ -67,7 +77,10 @@ def build_agent(model: str | None = None, *, route: bool = True,
         or os.environ.get("CTWIN_MODEL")
         or cfg.get("model")
         or cfg.get("llm", {}).get("model")
-        or "qwen2.5:14b"   # best local tool-caller you have; falls back if absent
+        # No config? Size ONE local model to this machine instead of pinning a 14B
+        # (which eats ~15 GB of RAM and makes most devices struggle). device_model
+        # picks the largest installed chat model the RAM can comfortably hold.
+        or _device_default_model()
     )
     host = os.environ.get("CTWIN_OLLAMA_HOST") or cfg.get("host") or "http://localhost:11434"
 

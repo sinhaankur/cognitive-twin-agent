@@ -22,6 +22,16 @@ class OllamaError(RuntimeError):
     """Raised when the Ollama server is unreachable or returns an error."""
 
 
+def _keep_alive() -> str:
+    """How long Ollama keeps the model loaded when idle. Centralised in
+    device_model (default 5m) so a heavy model doesn't sit in RAM after a reply."""
+    try:
+        from ..device_model import KEEP_ALIVE
+        return KEEP_ALIVE
+    except Exception:
+        return "5m"
+
+
 @dataclass
 class ChatMessage:
     role: str                       # "system" | "user" | "assistant" | "tool"
@@ -95,6 +105,9 @@ class OllamaClient:
             "messages": [m.to_api() for m in messages],
             "stream": False,
             "options": {"temperature": self.temperature},
+            # Don't leave a big model resident after the reply — unload it when
+            # idle so the machine breathes (device_model.KEEP_ALIVE, default 5m).
+            "keep_alive": _keep_alive(),
         }
         if tools:
             payload["tools"] = tools
@@ -121,6 +134,7 @@ class OllamaClient:
             "messages": [m.to_api() for m in messages],
             "stream": True,
             "options": {"temperature": self.temperature},
+            "keep_alive": _keep_alive(),   # unload when idle (see chat())
         }
         if tools:
             payload["tools"] = tools
