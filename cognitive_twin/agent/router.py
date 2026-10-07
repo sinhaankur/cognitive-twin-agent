@@ -105,7 +105,14 @@ def load_policy(path: Path | None = None) -> dict[str, Any]:
 _COMPANION = re.compile(
     r"\b(feel(ing)?|lonely|overwhelmed|anxious|sad|tired|exhausted|stressed|"
     r"miss you|talk to me|just talk|check in|how are you|comfort|vent|"
-    r"proud of me|cheer me)\b",
+    r"proud of me|cheer me|"
+    # implicit emotional sharing — a person telling you about their day/state,
+    # not just the word 'sad'. Vera is a companion first; these should reach her.
+    r"hard day|rough day|bad day|long day|tough day|"
+    r"down today|low today|feeling down|feeling low|"
+    r"struggling|worried|scared|afraid|hurting|heartbroken|grief|grieving|"
+    r"a lot going on|too much going on|can'?t cope|had enough|"
+    r"happy|excited|grateful|relieved|at peace)\b",
     re.IGNORECASE,
 )
 

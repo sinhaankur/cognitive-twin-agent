@@ -24,9 +24,9 @@
     },
     "companion": {
       "provider": "ollama",
-      "name": "empathia-tiny-opt:latest",
+      "name": "vera-merged:latest",
       "role": "emotional_companion",
-      "comment": "Emotional / check-in / reflective turns route to OUR OWN model — empathia-tiny-opt, tuned for warmth and presence, not a stock qwen. This is the model that makes Vera *hers*; tiny + on-device (fast, private, offline). Warmth is reinforced by persona.py _INNATE + system_dna.md. If it drifts to 'shall I list your tasks?', fix the model/persona — companionship IS the point. (empathia-tiny was removed; -opt is the optimized build.)",
+      "comment": "Emotional / check-in / reflective turns route to OUR OWN trained model — vera-merged: our LoRA-fine-tuned conversation weights merged with Empathia's companion doctrine + warm sampling params. This is the model that makes Vera *hers*; light (3B), on-device, warm + present, and it passes the conversation+crisis eval. Falls back to empathia-tiny-opt / qwen if it isn't installed (see device_model._VERA_MODELS and _choose_fallback). If it drifts to 'shall I list your tasks?', fix the model/persona — companionship IS the point.",
       "targetLatencyMs": 2500
     }
   },
