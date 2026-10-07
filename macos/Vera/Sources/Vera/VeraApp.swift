@@ -678,6 +678,51 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // --- HER neural (Kokoro) voice — the real voices the user chooses from -----
+    // These are what make her sound human; the system voices above are only the
+    // fallback. Loaded from the server (GET /api/voices) and switched live
+    // (POST /api/voice/set). Default is af_heart — warm, natural, clear.
+    @Published var neuralVoices: [NeuralVoiceOption] = []
+    @Published var neuralVoiceID: String =
+        UserDefaults.standard.string(forKey: "vera.neuralVoiceID") ?? "af_heart"
+
+    struct NeuralVoiceOption: Identifiable, Hashable {
+        let id: String          // kokoro id, e.g. "af_heart"
+        let label: String
+    }
+
+    /// Load her neural voices from the server and reflect the current selection.
+    func refreshNeuralVoices() {
+        Task {
+            let (voices, current) = await agent.neuralVoices()
+            await MainActor.run {
+                self.neuralVoices = voices.map { NeuralVoiceOption(id: $0.id, label: $0.label) }
+                // honor a saved choice; else adopt the server's current.
+                let saved = UserDefaults.standard.string(forKey: "vera.neuralVoiceID")
+                if let saved, voices.contains(where: { $0.id == saved }) {
+                    self.neuralVoiceID = saved
+                    Task { await self.agent.setNeuralVoice(saved) }   // re-assert on launch
+                } else if !current.isEmpty {
+                    self.neuralVoiceID = current
+                }
+            }
+        }
+    }
+
+    /// Switch her neural voice live and persist the choice.
+    func selectNeuralVoice(_ id: String) {
+        neuralVoiceID = id
+        UserDefaults.standard.set(id, forKey: "vera.neuralVoiceID")
+        Task { await agent.setNeuralVoice(id) }
+    }
+
+    /// Preview her CURRENT neural voice by speaking a short line through the real
+    /// voice path (server synth → app playback), so the user hears exactly what
+    /// they'll get in chat.
+    func previewNeuralVoice() {
+        voice.speak("Hi, this is how I sound.")
+    }
+
     struct VoiceOption: Identifiable, Hashable {
         let id: String        // AVSpeechSynthesisVoice.identifier ("" = Auto)
         let label: String     // "Ava (Premium)" etc.
@@ -967,6 +1012,7 @@ final class AppModel: ObservableObject {
                 await MainActor.run {
                     self.serverUp = true
                     self.voice.piperAvailable = info.piper   // use her neural voice
+                    self.refreshNeuralVoices()               // load her Kokoro voices
                 }
                 await greetOnLaunch()
                 return
@@ -986,6 +1032,7 @@ final class AppModel: ObservableObject {
                     await MainActor.run {
                         self.serverUp = true
                         self.voice.piperAvailable = info.piper
+                        self.refreshNeuralVoices()
                     }
                     await greetOnLaunch()
                     return

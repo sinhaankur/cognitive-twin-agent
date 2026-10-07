@@ -120,8 +120,27 @@ struct SettingsView: View {
                     Text("Off = text-first. When off, she still speaks back if you talk to her by voice.")
                         .font(.caption).foregroundStyle(.secondary)
 
-                    // Choose + preview her voice (native, plays from the app).
-                    Picker("Her voice", selection: $model.voiceID) {
+                    // HER real (neural, Kokoro) voice — the warm human one. This is
+                    // the picker the user wants ("we had the voice options"). Shown
+                    // when the neural voices have loaded from the server.
+                    if !model.neuralVoices.isEmpty {
+                        Picker("Her voice", selection: Binding(
+                            get: { model.neuralVoiceID },
+                            set: { model.selectNeuralVoice($0) })) {
+                            ForEach(model.neuralVoices) { v in
+                                Text(v.label).tag(v.id)
+                            }
+                        }
+                        Button {
+                            model.previewNeuralVoice()
+                        } label: { Label("Preview her voice", systemImage: "play.circle") }
+                        Text("Her warm, human neural voice (Kokoro, on-device). af_heart is the recommended default.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Divider()
+                    }
+
+                    // System-voice fallback (used only if the neural voice is off/unavailable).
+                    Picker("System fallback voice", selection: $model.voiceID) {
                         ForEach(model.installedVoices()) { v in
                             Text(v.label).tag(v.id)
                         }

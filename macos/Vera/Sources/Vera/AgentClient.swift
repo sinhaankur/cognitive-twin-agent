@@ -111,6 +111,41 @@ final class AgentClient {
         }
     }
 
+    /// GET /api/voices — her NEURAL (Kokoro) voices + the current selection, so
+    /// Settings can show the real picker (the voices the user actually chooses).
+    func neuralVoices() async -> (voices: [(id: String, label: String)], current: String) {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/voices"))
+        req.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            let raw = (obj["voices"] as? [[String: Any]]) ?? []
+            let voices = raw.compactMap { v -> (id: String, label: String)? in
+                guard let id = v["id"] as? String else { return nil }
+                return (id, (v["label"] as? String) ?? id)
+            }
+            return (voices, (obj["current"] as? String) ?? "")
+        } catch {
+            return ([], "")
+        }
+    }
+
+    /// POST /api/voice/set — switch her neural voice (e.g. af_heart). Returns true
+    /// on success. Takes effect on her next spoken reply.
+    @discardableResult
+    func setNeuralVoice(_ id: String) async -> Bool {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/voice/set"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["voice": id])
+        req.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (obj["ok"] as? Bool) ?? false
+        } catch { return false }
+    }
+
     /// POST /api/speak — speak text aloud server-side, in the cloned voice if set
     /// up (falls back to the built-in voice). Returns true if it spoke as cloned.
     @discardableResult

@@ -46,7 +46,7 @@ VOICES: dict[str, str] = {
     "af_nicole":  "Nicole — soft, intimate US female",
     "af_sarah":   "Sarah — gentle, clear US female",
     "af_sky":     "Sky — bright, light US female",
-    "af_heart":   "Heart — tender US female",
+    "af_heart":   "Heart — warm, natural, clear US female (recommended)",
     "af_aoede":   "Aoede — melodic US female",
     "af_kore":    "Kore — steady US female",
     "af_jessica": "Jessica — friendly US female",
@@ -56,7 +56,9 @@ VOICES: dict[str, str] = {
     "bf_lily":    "Lily — light British female",
 }
 
-_DEFAULT_VOICE = "af_bella"
+# af_heart — warm, natural, clear: the best American-English voice for Vera's
+# primary narration / replies. The user's chosen default ("that has to be the one").
+_DEFAULT_VOICE = "af_heart"
 
 
 def _voice() -> str:

@@ -220,15 +220,24 @@ class _Handler(BaseHTTPRequestHandler):
             from .. import personality
             self._json(200, {"dials": personality.load()})
         elif self.path == "/api/voices":
-            # Installed macOS `say` voices + which one Vera uses now, so the app's
-            # Settings can offer a switcher (fixes "the voice is too robotic" —
-            # the user can pick a better/Enhanced one, or we tell them to install).
-            # tts is imported at module level (line 29) — don't re-import locally
-            # (that shadows it and breaks /api/health's tts reference).
-            self._json(200, {
-                "voices": tts.voices(),
-                "current": tts.best_voice() or "",
-            })
+            # Her NEURAL (Kokoro) voices — the ones the user actually chooses from
+            # ("we had the voice options, why isn't there one"). These are what make
+            # her sound human; the macOS `say` voices are only the fallback. Return
+            # the Kokoro catalogue + the current selection so Settings can show the
+            # real picker. Falls back to system voices only if Kokoro isn't present.
+            from . import kokoro_tts
+            if kokoro_tts.is_available():
+                self._json(200, {
+                    "engine": "kokoro",
+                    "voices": kokoro_tts.list_voices(),      # [{id,label}, …]
+                    "current": kokoro_tts.current_voice(),
+                })
+            else:
+                self._json(200, {
+                    "engine": "system",
+                    "voices": [{"id": v, "label": v} for v in tts.voices()],
+                    "current": tts.best_voice() or "",
+                })
         elif self.path == "/api/voice/clone/status":
             from .. import voice_clone
             self._json(200, {"ready": voice_clone.is_ready(), "status": voice_clone.status()})
@@ -327,6 +336,15 @@ class _Handler(BaseHTTPRequestHandler):
             data = self._read_json()
             dials = personality.save(data or {})
             self._json(200, {"dials": dials})
+            return
+        if self.path == "/api/voice/set":
+            # Switch her NEURAL (Kokoro) voice. Body: {"voice": id} (e.g. af_bella).
+            # This is the picker the user actually wants. Takes effect immediately.
+            from . import kokoro_tts
+            data = self._read_json()
+            vid = (data.get("voice") or "").strip()
+            ok = kokoro_tts.set_voice(vid) if vid else False
+            self._json(200, {"ok": ok, "current": kokoro_tts.current_voice()})
             return
         if self.path == "/api/voice/system":
             # Set the macOS `say` voice Vera speaks with (persisted via env for
@@ -810,17 +828,32 @@ def _warm_recall() -> None:
 
 
 def _warm_kokoro() -> None:
-    """Spin up Vera's neural-voice worker in the background at startup, so the
-    model is loaded before the first reply (otherwise the first spoken answer
-    waits ~15-20s for the model and the client times out)."""
-    def warm() -> None:
+    """Keep Vera's neural voice HOT so she speaks promptly.
+
+    Kokoro's first synth after idle is slow (~15-25s cold) and it drifts cold again
+    between replies — which made her chosen voice feel broken. So we don't just warm
+    once: we warm at startup AND re-synth a tiny phrase on a heartbeat, so the model
+    stays resident and warm synths stay ~0.3-1s. Fail-soft; purely background."""
+    def warm_loop() -> None:
+        import time
+        from . import kokoro_tts
+        # initial warm (loads the model)
         try:
-            from . import kokoro_tts
             if kokoro_tts.is_available():
-                kokoro_tts.synth_wav("ready")  # loads the model, result discarded
+                kokoro_tts.synth_wav("ready")
         except Exception:
             pass
-    threading.Thread(target=warm, daemon=True).start()
+        # heartbeat: keep it warm so it never falls back to the cold path. 60s is
+        # comfortably inside the window where the model stays resident, so synths
+        # stay on the warm (~fast) path instead of the 20-40s cold reload.
+        while True:
+            time.sleep(60)
+            try:
+                if kokoro_tts.is_available():
+                    kokoro_tts.synth_wav(".")   # tiny, cheap — just keeps it hot
+            except Exception:
+                pass
+    threading.Thread(target=warm_loop, daemon=True).start()
 
 
 def _start_activity_sampler() -> None:

@@ -490,7 +490,7 @@ final class VoiceEngine: ObservableObject {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text, "length_scale": 1.12])
-        req.timeoutInterval = 30
+        req.timeoutInterval = 120   // Kokoro cold synth can take a while; never time out into the robotic fallback
         URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
             guard let self else { return }
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
@@ -576,7 +576,7 @@ final class VoiceEngine: ObservableObject {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": t, "length_scale": 1.12])
-        req.timeoutInterval = 30
+        req.timeoutInterval = 120   // Kokoro cold synth can take a while; never time out into the robotic fallback
         URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
             guard let self else { return }
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0

@@ -108,7 +108,38 @@ rm -rf "/Applications/$APP"
 cp -R "$APP" "/Applications/$APP"
 rm -rf "$APP"
 
+# ---- activate the brain: make sure the LLM is actually there ----------------
+# A good install leaves Vera ready to think, not just installed. Check Ollama is
+# running and at least one chat model is pulled; start / pull if needed so the
+# first launch isn't "LLM missing". Entirely local; skipped gracefully if Ollama
+# isn't installed (the app still runs, just asks the user to set a model up).
+echo "[activate] Checking the local LLM (Ollama)..."
+if command -v ollama >/dev/null 2>&1; then
+  if ! curl -s -m 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+    echo "  Ollama not running — starting it..."
+    (ollama serve >/dev/null 2>&1 &) ; sleep 4
+  fi
+  MODELS="$(curl -s -m 5 http://127.0.0.1:11434/api/tags 2>/dev/null)"
+  if ! echo "$MODELS" | grep -qiE 'qwen|llama|mistral|empathia'; then
+    echo "  No chat model found — pulling a small one (qwen2.5:3b)..."
+    ollama pull qwen2.5:3b || echo "  (pull failed — pull a model later: ollama pull qwen2.5:3b)"
+  else
+    echo "  LLM ready."
+  fi
+else
+  echo "  Ollama isn't installed. Vera thinks on a local model via Ollama."
+  echo "  Install it from https://ollama.com, then: ollama pull qwen2.5:3b"
+fi
+
 echo ""
-echo "Installed: /Applications/$APP"
-echo "  Launch it:   open \"/Applications/$APP\""
-echo "  First launch asks for Microphone + Speech Recognition -- allow both."
+echo "============================================================"
+echo " Vera installed: /Applications/$APP"
+echo "============================================================"
+echo "  1. Launch:   open \"/Applications/$APP\""
+echo "  2. First launch asks for Microphone + Speech Recognition — allow BOTH."
+echo "     (Speech Recognition is separate from Microphone — grant it too, or"
+echo "      the mic can't transcribe.)"
+echo "  3. She speaks in her Kokoro neural voice by default; toggle in Settings."
+echo "  4. If the mic button does nothing, open System Settings ▸ Privacy &"
+echo "     Security ▸ Speech Recognition and enable Vera."
+echo "============================================================"
