@@ -81,10 +81,12 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-echo "[4/5] Code-signing (ad-hoc, with mic entitlement)..."
-# Entitlements so the microphone works reliably (the voice button). Without the
-# audio-input entitlement a hardened/ad-hoc signed app can be denied mic access
-# even with the Info.plist usage string present.
+echo "[4/5] Code-signing (stable identity so mic + speech grants STICK)..."
+# Entitlements so the microphone + speech recognition work reliably. Critically,
+# we sign with a STABLE identity (your Apple Development cert) when one exists,
+# NOT ad-hoc: an ad-hoc signature changes every rebuild, so macOS treats each
+# build as a new app and REVOKES the mic/speech grant — the root cause of "I
+# grant access, still it lacks / loops into error". A real cert keeps the grant.
 ENT="$(mktemp -t vera-entitlements).plist"
 cat > "$ENT" <<'ENTITLEMENTS'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -93,12 +95,27 @@ cat > "$ENT" <<'ENTITLEMENTS'
 <dict>
   <key>com.apple.security.device.audio-input</key><true/>
   <key>com.apple.security.device.microphone</key><true/>
+  <key>com.apple.security.personal-information.speech-recognition</key><true/>
 </dict>
 </plist>
 ENTITLEMENTS
-codesign --force --deep --sign - --entitlements "$ENT" "$APP" 2>/dev/null \
-  || codesign --force --deep --sign - "$APP" 2>/dev/null \
-  || echo "  (codesign skipped -- app still runs locally)"
+# Prefer a real "Apple Development" identity (stable, trusted by TCC). Fall back
+# to ad-hoc only if none is installed.
+SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
+  | grep -E 'Apple Development|Developer ID Application' | head -1 \
+  | sed -E 's/.*\) ([A-F0-9]{40}) .*/\1/')"
+if [ -n "$SIGN_ID" ]; then
+  echo "  using identity: $SIGN_ID"
+  codesign --force --deep --options runtime --sign "$SIGN_ID" \
+    --entitlements "$ENT" "$APP" \
+    && echo "  signed with your Apple Development identity (mic/speech grants persist)" \
+    || { echo "  (identity sign failed — falling back to ad-hoc)"; \
+         codesign --force --deep --sign - --entitlements "$ENT" "$APP" 2>/dev/null; }
+else
+  echo "  no Apple Development identity found — ad-hoc (mic may need re-granting each build)"
+  codesign --force --deep --sign - --entitlements "$ENT" "$APP" 2>/dev/null \
+    || echo "  (codesign skipped -- app still runs locally)"
+fi
 rm -f "$ENT"
 
 # ONE install per device: the app lives in /Applications and nowhere else.
