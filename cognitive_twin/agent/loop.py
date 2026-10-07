@@ -328,7 +328,18 @@ class Agent:
         # decision paralysis and call NOTHING (the "you have no projects" bug even
         # though list_projects works). Send only the tools RELEVANT to this
         # message. This makes tool-calling reliable and keeps each turn light.
-        tools = _relevant_tools(self.registry.tool_specs(), user_input)
+        #
+        # COMPANION turns get NO tools at all: when the router reads this as an
+        # emotional/check-in turn, she should just be present — tools only tempt the
+        # model toward "shall I list your tasks?" (the exact drift we fight) and add
+        # prompt-processing cost for nothing. Faster AND warmer.
+        _companion = decision is not None and (
+            getattr(decision, "model_key", None) == "companion"
+            or getattr(decision, "rule_id", None) == "rule_companion")
+        if _companion:
+            tools = []
+        else:
+            tools = _relevant_tools(self.registry.tool_specs(), user_input)
         used: list[tuple[str, dict[str, Any]]] = []
 
         # DETERMINISTIC AUTO-RUN: for unambiguous commands ("book an amenity",
