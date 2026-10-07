@@ -275,15 +275,22 @@ class Agent:
                     parts.append(today)
             except Exception:
                 pass
-            # LIFE RECAP — only when they ask about their recent life ("weekend",
-            # "lately", "where have I been", "what did I do"). Folds in the moments
-            # + places she learned from Photos (opt-in), so she can actually recall
-            # your days instead of guessing. Gated so it doesn't bloat every prompt.
+            # LIFE RECAP — only when they actually ASK to recall their recent life
+            # ("what did I do lately", "where have I been this week"). Folds in the
+            # moments + places from Photos (opt-in). IMPORTANT: this must be a
+            # genuine recall QUESTION — not just the word "lately"/"recently"
+            # appearing in emotional venting ("I've been overwhelmed lately", "I feel
+            # sad recently"), which used to trigger it and made her pivot to "what
+            # did you do this weekend?" mid-heartache. Require a recall phrase.
             try:
                 low = user_input.lower()
-                if any(w in low for w in ("weekend", "lately", "recently", "these days",
-                                          "where have i", "where did i", "what did i do",
-                                          "my week", "been up to", "places i")):
+                _recall_phrases = (
+                    "where have i", "where did i", "what did i do", "what have i done",
+                    "what did i get up to", "been up to", "what have i been doing",
+                    "remind me what i", "what's been going on with me", "my week so far",
+                    "recap my", "what did i do this weekend", "where did i go",
+                )
+                if any(p in low for p in _recall_phrases):
                     from .. import photos as _photos
                     recap = _photos.life_recap(days=10)
                     if recap:
