@@ -104,7 +104,7 @@ def load_policy(path: Path | None = None) -> dict[str, Any]:
 # it (reasoning cues below always win, so "I'm stressed, help me plan X" reasons).
 _COMPANION = re.compile(
     r"\b(feel(ing)?|lonely|overwhelmed|anxious|sad|tired|exhausted|stressed|"
-    r"miss you|talk to me|just talk|check in|how are you|comfort|vent|"
+    r"miss (you|her|him|them|my|mom|dad)|i miss|talk to me|just talk|check in|how are you|comfort|vent|"
     r"proud of me|cheer me|"
     # implicit emotional sharing — a person telling you about their day/state,
     # not just the word 'sad'. Vera is a companion first; these should reach her.
@@ -209,11 +209,14 @@ class Router:
         # ("break your tasks into smaller steps") instead of staying present.
         self._last_intent: str | None = None
 
-    # Task/question cues that should BREAK companion stickiness — if a follow-up is
-    # clearly a request to DO or LOOK UP something, it's not just venting anymore.
+    # Cues that BREAK companion stickiness — a follow-up that's clearly a request to
+    # DO / LOOK UP / ANSWER something isn't venting anymore, so it goes to the fast
+    # model (keeps the app snappy). Broad on purpose: jokes, facts, math, how-tos.
     _BREAK_STICKY = re.compile(
-        r"\b(how do i|help me|can you|show me|list|find|search|look up|calculate|"
-        r"book|schedule|remind|write|code|fix|plan my|what time|when is)\b",
+        r"\b(how do i|how to|help me|can you|show me|list|find|search|look up|"
+        r"calculate|book|schedule|remind|write|code|fix|plan my|what time|when is|"
+        r"what is|what'?s the|who is|where is|tell me (a joke|about|how)|joke|pun|"
+        r"recipe|cook|weather|define|explain|translate|convert|\d+\s*%|percent)\b",
         re.IGNORECASE,
     )
 
