@@ -202,6 +202,20 @@ class Router:
 
     def __init__(self, policy: dict[str, Any] | None = None) -> None:
         self.policy = policy or load_policy()
+        # Conversational continuity: remember the last turn's intent so an emotional
+        # conversation STAYS warm. Mid-vent follow-ups like "it's just work and
+        # family" or "I don't know how to keep up" carry no emotion KEYWORD, so the
+        # stateless classifier dropped them to the task model and she turned advice-y
+        # ("break your tasks into smaller steps") instead of staying present.
+        self._last_intent: str | None = None
+
+    # Task/question cues that should BREAK companion stickiness — if a follow-up is
+    # clearly a request to DO or LOOK UP something, it's not just venting anymore.
+    _BREAK_STICKY = re.compile(
+        r"\b(how do i|help me|can you|show me|list|find|search|look up|calculate|"
+        r"book|schedule|remind|write|code|fix|plan my|what time|when is)\b",
+        re.IGNORECASE,
+    )
 
     @property
     def allow_cloud_fallback(self) -> bool:
@@ -223,6 +237,22 @@ class Router:
     def route(self, prompt: str, *, device_state: str | None = None) -> RouteDecision:
         complexity, risk, intent, reasons = classify(prompt)
         device = device_state if device_state is not None else _device_state()
+
+        # STICKY COMPANION: if we were just being a companion and this is a short
+        # follow-up that isn't an explicit task/question, stay present. Keeps a
+        # venting session warm instead of flipping to advice mode mid-conversation.
+        if (
+            intent != "companion"
+            and self._last_intent == "companion"
+            and risk == "low"
+            and complexity != "high"
+            and len(prompt.split()) <= 14
+            and not self._BREAK_STICKY.search(prompt)
+        ):
+            intent = "companion"
+            reasons.append("staying present — previous turn was companion (sticky)")
+
+        self._last_intent = intent
 
         chosen_key = None
         fired_rule = "none"
