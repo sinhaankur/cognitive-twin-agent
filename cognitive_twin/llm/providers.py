@@ -208,10 +208,19 @@ class MultiBackend:
             )
         except Exception:  # noqa: BLE001 - a down backend just contributes nothing
             pass
+        # bare names already offered (so we don't re-list the SAME local model under
+        # an 'unhosted/' tag — the Unhosted daemon serves the very same Ollama
+        # models, and showing each twice made the picker confusing).
+        bare_seen = {m.split(SEP)[-1] for m in models}
         if self.openai_base:
             try:
+                from ..device_model import is_embedder
                 oai = OpenAIClient(host=self.openai_base, timeout=self.timeout)
                 for name in oai.available_models():
+                    # skip embedders AND anything we already show as a plain local
+                    # model — keep the picker to ONE clean entry per chat model.
+                    if is_embedder(name) or name in bare_seen:
+                        continue
                     models.append(f"{self.openai_label}{SEP}{name}")
             except Exception:  # noqa: BLE001
                 pass
