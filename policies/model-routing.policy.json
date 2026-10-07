@@ -1,32 +1,30 @@
 {
   "version": "1.0.0",
   "objective": "Route requests across local models by latency, risk, and reasoning depth.",
+  "comment_one_llm": "ONE MODEL for everything. All keys point to vera-merged — our trained, warm companion model. Rationale: Vera is a COMPANION; a single model is simpler, lighter (only one model ever resident), and PREDICTABLE — no more two models loaded at once (~13 GB), no reply that's warm one turn and generic the next, no mixed behaviour. Every turn is the same her. To change the single model, change all four names below together (or set CTWIN_MODEL to pin one).",
   "models": {
     "primary": {
       "provider": "ollama",
-      "name": "qwen2.5:3b",
+      "name": "vera-merged:latest",
       "role": "default_reasoning",
-      "comment": "Default reasoning is the LIGHT 3b (~1.9 GB), not the 7b — Vera must be a catalyst, not a tax on the device. Everyday turns pair the 3b primary with the 3b companion (vera-merged), so idle RAM stays small; two 7b-class models resident at once was eating ~13 GB. The 3b handles everyday low-risk turns well (math, summaries, quick lookups); only genuinely complex/high-risk turns escalate to the 7b deepPlanner, which Ollama loads on demand and unloads when idle. 'Powerful without being heavy by default.' Device-aware: device_model may pick smaller still on low-RAM machines.",
       "targetLatencyMs": 2500
     },
     "fastFallback": {
       "provider": "ollama",
-      "name": "qwen2.5:3b",
+      "name": "vera-merged:latest",
       "role": "low_latency_and_battery",
-      "targetLatencyMs": 1800
+      "targetLatencyMs": 2500
     },
     "deepPlanner": {
       "provider": "ollama",
-      "name": "qwen2.5:7b",
+      "name": "vera-merged:latest",
       "role": "high_complexity_planning",
-      "comment": "Deeper planning uses the 7B (the 14B was removed — it pinned ~15 GB and made the machine drag; the 7B is plenty for a local companion+agent). Everyday turns use the same 7B; genuinely complex turns still route here but without the heavy cost. Light by default, powerful enough.",
-      "targetLatencyMs": 6000
+      "targetLatencyMs": 2500
     },
     "companion": {
       "provider": "ollama",
       "name": "vera-merged:latest",
       "role": "emotional_companion",
-      "comment": "Emotional / check-in / reflective turns route to OUR OWN trained model — vera-merged: our LoRA-fine-tuned conversation weights merged with Empathia's companion doctrine + warm sampling params. This is the model that makes Vera *hers*; light (3B), on-device, warm + present, and it passes the conversation+crisis eval. Falls back to empathia-tiny-opt / qwen if it isn't installed (see device_model._VERA_MODELS and _choose_fallback). If it drifts to 'shall I list your tasks?', fix the model/persona — companionship IS the point.",
       "targetLatencyMs": 2500
     }
   },
