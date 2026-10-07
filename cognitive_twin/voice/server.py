@@ -152,13 +152,20 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, {"controls": controls.snapshot()})
         elif self.path == "/api/health":
             agent = self.server.agent  # type: ignore[attr-defined]
-            model = getattr(agent.client, "model", None) or getattr(agent, "configured_model", None)
+            # Report the CONFIGURED default (stable), not agent.client.model — with
+            # routing on, the router rewrites client.model per request, so reading it
+            # here showed whatever the last turn happened to use (misleading). When
+            # routing is active the actual model varies per turn by design; the app
+            # can read `routing` to reflect that.
+            routing = getattr(agent, "router", None) is not None
+            model = getattr(agent, "configured_model", None) or getattr(agent.client, "model", None)
             from . import piper_tts, kokoro_tts
             self._json(200, {
                 "ok": True,
                 "tts": tts.is_available(),
                 "stt_local": stt.is_available(),
                 "model": model,
+                "routing": routing,
                 # Vera's bundled neural voice (Kokoro preferred, Piper fallback) —
                 # the app uses it when present for a natural, human-sounding reply.
                 # Key kept as "piper" for app compatibility.
