@@ -111,7 +111,17 @@ class OllamaClient:
         }
         if tools:
             payload["tools"] = tools
-        data = self._post("/api/chat", payload)
+        try:
+            data = self._post("/api/chat", payload)
+        except OllamaError as e:
+            # Some models (e.g. the tiny empathia companion) don't support tools —
+            # Ollama 400s the request. That used to break every companion/feeling
+            # turn. Retry WITHOUT tools so she still answers warmly.
+            if tools and "does not support tools" in str(e).lower():
+                payload.pop("tools", None)
+                data = self._post("/api/chat", payload)
+            else:
+                raise
         msg = data.get("message", {}) or {}
         return ChatMessage(
             role=msg.get("role", "assistant"),
@@ -171,6 +181,20 @@ class OllamaClient:
                                     held, committed = [], True
                     if data.get("done"):
                         break
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = e.read().decode("utf-8", "replace")
+            except Exception:
+                pass
+            # tool-less model (empathia) → fall back to a plain, non-streamed turn
+            # WITHOUT tools so the companion still answers.
+            if tools and "does not support tools" in detail.lower():
+                reply = self.chat(messages, tools=None)
+                if on_delta and reply.content:
+                    on_delta(reply.content)
+                return reply
+            raise OllamaError(f"Ollama stream failed: {e} {detail}") from e
         except urllib.error.URLError as e:
             raise OllamaError(f"Ollama stream failed: {e}") from e
         if on_delta and not tool_calls and not committed:
@@ -191,6 +215,15 @@ class OllamaClient:
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            # include the response BODY (Ollama puts the real reason there, e.g.
+            # "does not support tools") so callers can react to it, not just a code.
+            detail = ""
+            try:
+                detail = e.read().decode("utf-8", "replace")
+            except Exception:
+                pass
+            raise OllamaError(f"Ollama request to {path} failed: {e} {detail}") from e
         except urllib.error.URLError as e:
             raise OllamaError(f"Ollama request to {path} failed: {e}") from e
         except json.JSONDecodeError as e:
