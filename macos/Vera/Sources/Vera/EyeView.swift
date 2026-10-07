@@ -49,11 +49,6 @@ struct EyeView: View {
 
     // ---- the instrument row: the readings as meters -------------------------
 
-    private static func bar(_ v: Double) -> String {
-        let n = Int((max(0, min(1, v)) * 5).rounded())
-        return String(repeating: "▮", count: n) + String(repeating: "▯", count: 5 - n)
-    }
-
     private var meters: some View {
         HStack(spacing: 0) {
             meter("smile", engine.readSmile, Color(red: 1, green: 0.85, blue: 0.45))
@@ -68,18 +63,25 @@ struct EyeView: View {
         .font(.system(size: 9, design: .monospaced))
     }
 
-    /// One labelled meter. Filled segments carry the reading's colour; empty
-    /// ones sit very dim so a resting face reads as calm, not broken/zeroed.
+    /// One labelled meter. Filled segments carry the reading's colour; empty ones
+    /// sit dim so a resting face reads as calm, not broken/zeroed. Drawn with real
+    /// SwiftUI shapes — NOT block-glyph characters, which rendered as missing-glyph
+    /// boxes (□□□□□) in the mono font and made the readout look broken.
     private func meter(_ label: String, _ v: Double, _ hot: Color) -> some View {
         let n = Int((max(0, min(1, v)) * 5).rounded())
         let active = v > 0.5
-        return HStack(spacing: 0) {
-            Text("\(label) ")
+        let fill = active ? hot : Color(red: 0.62, green: 0.68, blue: 0.82)
+        let empty = Color(red: 0.34, green: 0.38, blue: 0.48).opacity(0.7)
+        return HStack(spacing: 4) {
+            Text(label)
                 .foregroundStyle(Color(red: 0.55, green: 0.6, blue: 0.72))
-            Text(String(repeating: "▮", count: n))
-                .foregroundStyle(active ? hot : Color(red: 0.62, green: 0.68, blue: 0.82))
-            Text(String(repeating: "▯", count: 5 - n))
-                .foregroundStyle(Color(red: 0.34, green: 0.38, blue: 0.48).opacity(0.7))
+            HStack(spacing: 2) {
+                ForEach(0..<5, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 1, style: .continuous)
+                        .fill(i < n ? fill : empty)
+                        .frame(width: 5, height: 7)
+                }
+            }
         }
     }
 
