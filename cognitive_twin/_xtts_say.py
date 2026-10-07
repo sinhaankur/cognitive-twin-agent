@@ -14,6 +14,16 @@ import json
 import sys
 import warnings
 
+# This script lives inside the `cognitive_twin` package dir, which contains a
+# `calendar.py`. When run as `python .../cognitive_twin/_xtts_say.py`, Python puts
+# that dir on sys.path[0] — so stdlib imports like `import calendar` (pulled in by
+# `email`, which TTS imports) resolve to OUR calendar.py and crash with a relative-
+# import error. Drop the script's own directory from sys.path so stdlib wins. This
+# is the one bug that kept the cloned voice from ever rendering.
+import os as _os
+_self_dir = _os.path.dirname(_os.path.abspath(__file__))
+sys.path[:] = [p for p in sys.path if _os.path.abspath(p or ".") != _self_dir]
+
 warnings.filterwarnings("ignore")
 
 # Quality knobs for XTTS-v2, tuned for a short (~7s) real-person reference.
