@@ -69,7 +69,7 @@ struct ChatPanel: View {
         .padding(.horizontal, 16)
         .padding(.top, 14).padding(.bottom, 12)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
+            Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1)
         }
     }
 
@@ -240,7 +240,7 @@ struct ChatPanel: View {
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(RoundedRectangle(cornerRadius: 9).fill(.white.opacity(0.05)))
+                .background(RoundedRectangle(cornerRadius: 9).fill(Color.primary.opacity(0.06)))
                 .transition(.opacity)
             }
             inputRow
@@ -249,7 +249,7 @@ struct ChatPanel: View {
         .animation(.easeOut(duration: 0.2), value: model.voice.isListening)
         .animation(.easeOut(duration: 0.2), value: model.pendingAttachment != nil)
         .overlay(alignment: .top) {
-            Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
+            Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1)
         }
     }
 
@@ -318,7 +318,7 @@ struct ChatPanel: View {
             Capsule(style: .continuous)
                 .fill(.ultraThinMaterial)
                 .overlay(Capsule(style: .continuous).strokeBorder(
-                    focused ? Self.gold.opacity(0.35) : .white.opacity(0.1), lineWidth: 1))
+                    focused ? Self.gold.opacity(0.35) : Color.primary.opacity(0.12), lineWidth: 1))
         )
         .animation(.easeOut(duration: 0.2), value: focused)
     }
@@ -401,7 +401,10 @@ private struct TurnBubble: View {
                     .font(.system(size: 14))
                     .lineSpacing(3.5)
                     .textSelection(.enabled)
-                    .foregroundStyle(Color(red: 0.95, green: 0.93, blue: 0.89))
+                    // Adaptive: .primary reads dark on light, light on dark — so her
+                    // reply is legible in BOTH appearances (was hardcoded cream,
+                    // invisible on a light background).
+                    .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
             }

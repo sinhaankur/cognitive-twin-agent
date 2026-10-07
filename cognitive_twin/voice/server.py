@@ -47,6 +47,25 @@ WEB_DIR = Path(__file__).resolve().parent / "web"
 HOST = "127.0.0.1"
 DEFAULT_PORT = 7878
 
+
+def _llm_error_message(e: Exception) -> str:
+    """Turn a raw LLM failure into a warm, actionable line — never a cryptic
+    '(error: ...)'. Vera must never look broken: if the model is unreachable or
+    none is installed, she says so plainly and tells the user the one step to fix
+    it. The agent already auto-falls-back to any installed model (incl. the tiny
+    companion), so reaching here means Ollama is down or nothing is pulled."""
+    msg = str(e).lower()
+    if "isn't running" in msg or "unreachable" in msg or "connection" in msg or "refused" in msg:
+        return ("I can't reach the local model right now. Start Ollama (open the "
+                "Ollama app, or run `ollama serve`) and I'll be right back — "
+                "everything stays on your machine.")
+    if "isn't pulled" in msg or "not found" in msg or "no model" in msg or "install" in msg:
+        return ("I don't have a model to think with yet. Pull a small one with "
+                "`ollama pull qwen2.5:3b` (or `empathia-tiny-opt`) and I'll use it — "
+                "all on-device.")
+    # unknown hiccup — stay honest but not scary
+    return f"I hit a snag reaching the model ({e}). It's usually Ollama not running yet."
+
 # True while the opt-in "See a loved one in 3D" build (depth + Blender) runs on a
 # worker thread, so /api/portrait/status can report progress. See portrait.py.
 _portrait_building = False
@@ -466,7 +485,7 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 answer, route = _run_once_capture(agent, text, record=not internal)
             except Exception as e:  # never 500 the UI on an agent hiccup
-                self._json(200, {"answer": f"(error: {e})", "route": None})
+                self._json(200, {"answer": _llm_error_message(e), "route": None})
                 return
             self._json(200, {"answer": answer, "route": route})
         elif self.path == "/api/ask/stream":
@@ -500,7 +519,7 @@ class _Handler(BaseHTTPRequestHandler):
                 pass                        # client went away mid-stream
             except Exception as e:
                 try:
-                    _send({"done": True, "answer": f"(error: {e})", "route": None})
+                    _send({"done": True, "answer": _llm_error_message(e), "route": None})
                 except Exception:
                     pass
         elif self.path == "/api/model":

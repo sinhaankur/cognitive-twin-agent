@@ -1,5 +1,6 @@
 import Photos
 import CoreLocation
+import ObjCGuard
 
 /// Her window into your Photos — strictly behind the "Read my Photos" switch.
 /// Nothing runs until the user flips it ON (and macOS asks its own permission
@@ -29,7 +30,22 @@ enum PhotosReader {
                 completion("Photos access not allowed"); return
             }
             DispatchQueue.global(qos: .utility).async {
-                let (events, scanned) = scan()
+                // The Photos framework can throw an ObjC NSException on a fetch
+                // (a bad PHQuery predicate, an odd library state) — which Swift
+                // can't catch and which aborts the whole app (SIGABRT). Guard the
+                // query work so a failure degrades to "couldn't read Photos"
+                // instead of crashing Vera. Reading Photos is opt-in and optional;
+                // the app must never die for it.
+                var events: [[String: Any]] = []
+                var scanned = 0
+                let scanErr = VeraCatchingExceptions {
+                    let r = scan()
+                    events = r.0; scanned = r.1
+                }
+                if let scanErr {
+                    completion("Couldn't read Photos safely (\(scanErr.localizedDescription)) — skipping.")
+                    return
+                }
                 post(["events": events, "scanned": scanned])
                 // Places you've been — from photo location metadata (opt-in, on-
                 // device). Reverse-geocoding is async, so it posts separately when
@@ -56,14 +72,16 @@ enum PhotosReader {
         // gather located photos
         struct Shot { let lat: Double; let lon: Double; let date: Date }
         var shots: [Shot] = []
-        let opts = PHFetchOptions()
-        opts.predicate = NSPredicate(format: "location != nil")
-        let assets = PHAsset.fetchAssets(with: .image, options: opts)
-        assets.enumerateObjects { a, _, _ in
-            guard let loc = a.location, let d = a.creationDate else { return }
-            shots.append(Shot(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude, date: d))
+        let fetchErr = VeraCatchingExceptions {
+            let opts = PHFetchOptions()
+            opts.predicate = NSPredicate(format: "location != nil")
+            let assets = PHAsset.fetchAssets(with: .image, options: opts)
+            assets.enumerateObjects { a, _, _ in
+                guard let loc = a.location, let d = a.creationDate else { return }
+                shots.append(Shot(lat: loc.coordinate.latitude, lon: loc.coordinate.longitude, date: d))
+            }
         }
-        guard !shots.isEmpty else { completion([]); return }
+        guard fetchErr == nil, !shots.isEmpty else { completion([]); return }
 
         // cluster by a coarse grid (~0.1° ≈ 11 km) so a trip collapses to a place
         struct Cluster { var lat = 0.0; var lon = 0.0; var n = 0; var first: Date; var last: Date }
@@ -122,18 +140,20 @@ enum PhotosReader {
         let fmtDay = DateFormatter(); fmtDay.dateFormat = "yyyy-MM-dd"
         struct Shot { let date: Date; let loc: CLLocation? }
         var shots: [Shot] = []
-        let opts = PHFetchOptions()
-        opts.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
-        // last ~120 days — "life so far, lately"
-        if let since = cal.date(byAdding: .day, value: -120, to: Date()) {
-            opts.predicate = NSPredicate(format: "creationDate >= %@", since as NSDate)
+        let fetchErr = VeraCatchingExceptions {
+            let opts = PHFetchOptions()
+            opts.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
+            // last ~120 days — "life so far, lately"
+            if let since = cal.date(byAdding: .day, value: -120, to: Date()) {
+                opts.predicate = NSPredicate(format: "creationDate >= %@", since as NSDate)
+            }
+            let assets = PHAsset.fetchAssets(with: .image, options: opts)
+            assets.enumerateObjects { a, _, _ in
+                guard let d = a.creationDate else { return }
+                shots.append(Shot(date: d, loc: a.location))
+            }
         }
-        let assets = PHAsset.fetchAssets(with: .image, options: opts)
-        assets.enumerateObjects { a, _, _ in
-            guard let d = a.creationDate else { return }
-            shots.append(Shot(date: d, loc: a.location))
-        }
-        guard shots.count >= 3 else { completion([]); return }
+        guard fetchErr == nil, shots.count >= 3 else { completion([]); return }
 
         // split into moments: a new moment starts after a >3h gap
         struct Moment { var first: Date; var last: Date; var n: Int; var loc: CLLocation? }

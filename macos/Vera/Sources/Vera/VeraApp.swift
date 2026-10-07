@@ -390,8 +390,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // KeyableWindow, not NSWindow: a borderless window refuses key status
         // by default, so the keyboard could NEVER reach the chat field —
         // "typing is not supported" was this window silently declining keys
+        // A compact, iMessage-like panel — small and tidy, lightly scaled to the
+        // screen but kept deliberately small (the user asked for a small box).
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+        let cw = min(360, max(320, screen.width * 0.20))
+        let ch = min(520, max(420, screen.height * 0.52))
         let w = KeyableWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: cw, height: ch),
             styleMask: [.borderless], backing: .buffered, defer: false)
         w.isOpaque = false
         w.backgroundColor = .clear
@@ -401,8 +406,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         w.hasShadow = true
         w.contentView = NSHostingView(
             rootView: ChatPanel(model: model)
-                .frame(width: 380, height: 520)
-                .background(VisualEffectBackground())
+                .frame(width: cw, height: ch)
+                // adaptive material: light panel in Light Mode, dark in Dark Mode —
+                // so the chat never looks "off" on a light screen.
+                .background(VisualEffectBackground(material: .popover))
                 .clipShape(RoundedRectangle(cornerRadius: 22)))
         chatWindow = w
     }
@@ -485,7 +492,10 @@ final class AppModel: ObservableObject {
     // choice sticks. This is what you asked for: "text only unless I tell it to
     // be audio." Voice input still gets a spoken reply (a conversation you started
     // out loud stays out loud).
-    @Published var speakReplies = UserDefaults.standard.object(forKey: "vera.speakReplies") as? Bool ?? false {
+    // Her voice is ON by default — she's a companion with a real (cloned/neural)
+    // voice; silence by default made her seem mute ("audio not audible"). The user
+    // can turn it off in Settings; the choice persists.
+    @Published var speakReplies = UserDefaults.standard.object(forKey: "vera.speakReplies") as? Bool ?? true {
         didSet { UserDefaults.standard.set(speakReplies, forKey: "vera.speakReplies") }
     }
     @Published var turns: [ChatTurn] = []     // the chat conversation

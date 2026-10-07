@@ -31,6 +31,9 @@ final class VoiceEngine: ObservableObject {
     @Published var isListening = false
     @Published var isSpeaking = false
     @Published var authorized = false
+    // True when the speech recognizer can't run on this machine right now, so the
+    // UI can say so instead of the mic button silently toggling off.
+    @Published var micUnavailable = false
     /// Bumped to 1 on every spoken word; the orb decays it (mouth-movement feel).
     var speakPulse: CGFloat = 0
 
@@ -54,6 +57,9 @@ final class VoiceEngine: ObservableObject {
     var piperAvailable = false          // set from /api/health
     private var piperPlayer: AVAudioPlayer?
     private var piperDelegate: PiperPlayerDelegate?
+    // Consecutive recognizer failures — caps the name-watch re-arm so a persistently
+    // failing recognizer (ad-hoc TCC, missing on-device model) can't spin forever.
+    private var recognizerFailures = 0
 
     // ---- endpointing state (main actor) ----
     private var listenStart = Date.distantPast
@@ -184,10 +190,35 @@ final class VoiceEngine: ObservableObject {
         // catch below returned quietly).
         if !permissionsGranted {
             requestPermission { [weak self] ok in
-                if ok { self?.startListening(hunting: hunting, over: utterance) }
+                guard let self else { return }
+                if ok {
+                    self.startListening(hunting: hunting, over: utterance)
+                } else {
+                    // The prompt didn't yield a grant. The usual culprit is SPEECH
+                    // RECOGNITION: the user grants the Microphone but Speech is a
+                    // SEPARATE permission that an ad-hoc-signed app often can't
+                    // prompt for — so it sits at notDetermined/denied and the mic
+                    // "loops back to unclick". Open the exact Settings pane so the
+                    // user can grant it in one click, and stop (no spin).
+                    self.isListening = false
+                    let sp = SFSpeechRecognizer.authorizationStatus()
+                    if sp != .authorized { self.openPrivacySettings(speech: true) }
+                    else { self.openPrivacySettings(speech: false) }
+                }
             }
             return
         }
+        // Recognizer must actually be present + available on this machine. If it
+        // isn't (no speech model, or the system recognizer is momentarily down),
+        // DON'T start a tap that will instantly error and toggle the button back
+        // off — "it loops back to unclick". Surface a clear, one-time state instead.
+        guard let rec = recognizer, rec.isAvailable else {
+            isListening = false
+            micUnavailable = true
+            NSLog("[Vera voice] speech recognizer unavailable — not starting mic")
+            return
+        }
+        micUnavailable = false
         // never listen over our own voice; this also ends any barge hunt, so a
         // real turn can always begin
         if !hunting { stopSpeaking() }
@@ -210,11 +241,17 @@ final class VoiceEngine: ObservableObject {
             listenStart = Date()
             lastVoiceAt = Date()
             lastTranscriptLength = 0
+            recognizerFailures = 0   // a deliberate turn always gets a fresh attempt
             Chime.listen.play()
         }
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
-        req.requiresOnDeviceRecognition = true   // keep it local
+        // Prefer on-device recognition (private) — but ONLY when this machine
+        // actually SUPPORTS it. Forcing it on when the on-device model isn't
+        // available makes the recognizer silently return nothing: the mic records
+        // but never transcribes ("mic exists but is bad"). Fall back to the system
+        // recognizer so dictation always works; it's still local user audio.
+        req.requiresOnDeviceRecognition = recognizer?.supportsOnDeviceRecognition ?? false
         request = req
 
         let input = engine.inputNode
@@ -247,20 +284,37 @@ final class VoiceEngine: ObservableObject {
         task = recognizer?.recognitionTask(with: req) { [weak self] result, error in
             guard let self else { return }
             if let result {
-                Task { @MainActor in self.ingest(result) }
+                Task { @MainActor in
+                    self.recognizerFailures = 0   // a real result → healthy again
+                    self.ingest(result)
+                }
             }
             if error != nil {
                 Task { @MainActor in
                     if self.muted {
                         let names = Array(self.nameWords)
                         self.tearDownSession()
-                        // a name watch survives recognizer hiccups — re-arm
-                        if self.keepWatching && !names.isEmpty {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        // A name watch survives recognizer HICCUPS — re-arm. But if
+                        // the recognizer keeps erroring immediately (e.g. an ad-hoc
+                        // app TCC issue, or no on-device model), re-arming instantly
+                        // becomes a TIGHT ERROR LOOP that pins the CPU and the mic
+                        // never works. Cap consecutive failures and back off so it
+                        // can't loop; it recovers on the next successful result.
+                        self.recognizerFailures += 1
+                        if self.keepWatching && !names.isEmpty
+                            && self.recognizerFailures < 3 {
+                            let backoff = 0.4 * Double(self.recognizerFailures)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + backoff) {
                                 self.startNameWatch(names)
                             }
+                        } else if self.recognizerFailures >= 3 {
+                            // give up the watch quietly — don't spin. The user can
+                            // still tap the mic for a real turn, which resets this.
+                            self.keepWatching = false
+                            NSLog("[Vera voice] name-watch disabled after repeated recognizer errors")
                         }
                     } else {
+                        self.recognizerFailures += 1
                         self.stopListening()
                     }
                 }
@@ -444,6 +498,7 @@ final class VoiceEngine: ObservableObject {
             DispatchQueue.main.async {
                 do {
                     let player = try AVAudioPlayer(data: data)
+                    player.volume = 1.0          // ensure it's audible
                     let del = PiperPlayerDelegate { [weak self] in self?.speakingChanged(false) }
                     player.delegate = del
                     self.piperDelegate = del
@@ -462,6 +517,8 @@ final class VoiceEngine: ObservableObject {
     private func stopPiper() {
         piperPlayer?.stop()
         piperPlayer = nil
+        piperQueue.removeAll()
+        piperPlaying = false
     }
 
     // a barge-in (or tap-to-stop) empties the queue; any fragments still
@@ -479,9 +536,26 @@ final class VoiceEngine: ObservableObject {
         if first {
             streamCancelled = false
             if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
+            stopPiper()
         } else if streamCancelled {
             return
         }
+        // Use Vera's OWN neural voice (Kokoro) per sentence when it's on and ready —
+        // the warm synth is ~0.3s, fast enough to speak fragment-by-fragment. Only
+        // fall back to the system AVSpeech voice (which sounds robotic) when the
+        // neural voice is off or unavailable. This was the "too robotic" bug: the
+        // streaming path always used AVSpeech and never her real voice.
+        if piperEnabled && piperAvailable {
+            speakFragmentWithPiper(t, first: first)
+        } else {
+            speakFragmentWithSystem(t, first: first)
+        }
+        // opens the hunt on the first fragment; refreshes its echo words after
+        startListening(hunting: true, over: t)
+    }
+
+    /// One streamed fragment via the system AVSpeech voice (fallback path).
+    private func speakFragmentWithSystem(_ t: String, first: Bool) {
         let utter = AVSpeechUtterance(string: t)
         utter.voice = humaneVoice()
         utter.rate = 0.46
@@ -489,8 +563,70 @@ final class VoiceEngine: ObservableObject {
         utter.preUtteranceDelay = first ? 0.05 : 0
         utter.postUtteranceDelay = 0.06
         synth.speak(utter)
-        // opens the hunt on the first fragment; refreshes its echo words after
-        startListening(hunting: true, over: t)
+    }
+
+    /// One streamed fragment via Kokoro (her real voice). Fragments are queued so
+    /// they play in order; a failure on any fragment degrades THAT fragment to the
+    /// system voice rather than dropping her voice entirely.
+    private func speakFragmentWithPiper(_ t: String, first: Bool) {
+        guard let url = URL(string: "http://127.0.0.1:7878/api/voice/piper") else {
+            speakFragmentWithSystem(t, first: first); return
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["text": t, "length_scale": 1.12])
+        req.timeoutInterval = 30
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
+            guard let self else { return }
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard code == 200, let data, data.count > 44, !self.streamCancelled else {
+                DispatchQueue.main.async {
+                    if !self.streamCancelled { self.speakFragmentWithSystem(t, first: first) }
+                }
+                return
+            }
+            DispatchQueue.main.async {
+                guard !self.streamCancelled else { return }
+                self.enqueuePiper(data)
+            }
+        }.resume()
+    }
+
+    // Ordered playback queue for streamed Kokoro fragments, so sentences that
+    // finish synthesizing out of order still play in the order they were spoken.
+    private var piperQueue: [Data] = []
+    private var piperPlaying = false
+
+    private func enqueuePiper(_ data: Data) {
+        piperQueue.append(data)
+        if !piperPlaying { playNextPiper() }
+    }
+
+    private func playNextPiper() {
+        guard !piperQueue.isEmpty, !streamCancelled else {
+            piperPlaying = false
+            if !synth.isSpeaking { speakingChanged(false) }
+            return
+        }
+        piperPlaying = true
+        let data = piperQueue.removeFirst()
+        do {
+            let player = try AVAudioPlayer(data: data)
+            player.volume = 1.0            // ensure it's audible
+            let del = PiperPlayerDelegate { [weak self] in
+                DispatchQueue.main.async { self?.playNextPiper() }
+            }
+            player.delegate = del
+            piperDelegate = del
+            piperPlayer = player
+            player.prepareToPlay()
+            speakingChanged(true)
+            player.play()
+        } catch {
+            // this fragment failed to play — skip to the next rather than stall
+            playNextPiper()
+        }
     }
 
     /// Start watching for her name (opt-in wake word). Muted, fully local,

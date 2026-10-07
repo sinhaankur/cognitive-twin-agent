@@ -149,13 +149,19 @@ struct ContentView: View {
 }
 
 /// Native macOS translucent "glass" window background (the real Siri-panel feel).
+/// `material` defaults to the dark HUD look (the orb). The chat panel passes an
+/// ADAPTIVE material (.popover / .menu) so it turns light in Light Mode and dark
+/// in Dark Mode — fixing the "chat looks off on a light screen" + unreadable text.
 struct VisualEffectBackground: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .hudWindow
     func makeNSView(context: Context) -> NSVisualEffectView {
         let v = NSVisualEffectView()
-        v.material = .hudWindow
+        v.material = material
         v.blendingMode = .behindWindow
         v.state = .active
         return v
     }
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
+    }
 }
