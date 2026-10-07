@@ -704,6 +704,61 @@ final class VoiceEngine: ObservableObject {
         if muted { tearDownSession() }           // the hunt ends with the voice
     }
 
+    // ---- streamed CLONED voice (her real voice, sentence-by-sentence) ----------
+    // The cloned voice renders server-side; a whole-reply render meant ~15s of
+    // silence before she spoke. We instead feed it one sentence at a time as the
+    // reply streams, played strictly IN ORDER by a serial queue — so her real
+    // voice starts after just the first sentence (~5s), and the rest follow
+    // seamlessly. Barge-in clears the queue (see stopSpeaking / stopPiper).
+    private var clonedQueue: [String] = []
+    private var clonedSpeaking = false
+    private var clonedCancelled = false
+
+    func speakClonedFragment(_ text: String, agent: AgentClient, first: Bool) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        if first {
+            clonedCancelled = false
+            clonedQueue.removeAll()
+        }
+        if clonedCancelled { return }
+        clonedQueue.append(t)
+        externalSpeech = true           // her voice is carrying this turn
+        isSpeaking = true
+        if !clonedSpeaking { drainClonedQueue(agent: agent) }
+    }
+
+    private func drainClonedQueue(agent: AgentClient) {
+        guard !clonedCancelled, !clonedQueue.isEmpty else {
+            clonedSpeaking = false
+            if clonedQueue.isEmpty { isSpeaking = synth.isSpeaking }
+            return
+        }
+        clonedSpeaking = true
+        let sentence = clonedQueue.removeFirst()
+        Task { [weak self] in
+            // server renders + plays this ONE sentence, returns when it finishes —
+            // so the next dequeue plays right after, in order.
+            let ok = await agent.speak(sentence)
+            await MainActor.run {
+                guard let self else { return }
+                if !ok && !self.clonedCancelled {
+                    // this sentence failed to render in her voice — say it in the
+                    // system voice rather than dropping it, then continue the queue.
+                    self.speakFragmentWithSystem(sentence, first: false)
+                }
+                self.drainClonedQueue(agent: agent)
+            }
+        }
+    }
+
+    /// Clear any queued cloned sentences (barge-in / new turn).
+    private func stopClonedStream() {
+        clonedCancelled = true
+        clonedQueue.removeAll()
+        clonedSpeaking = false
+    }
+
     /// Synth started/stopped talking (per-utterance).
     private func speakingChanged(_ speaking: Bool) {
         isSpeaking = speaking || externalSpeech
@@ -729,6 +784,7 @@ final class VoiceEngine: ObservableObject {
     /// because it has already become the user's next turn.
     func stopSpeaking(keepSession: Bool = false) {
         streamCancelled = true      // late stream fragments must stay silent
+        stopClonedStream()          // clear any queued cloned sentences
         if synth.isSpeaking || synth.isPaused {
             synth.stopSpeaking(at: .immediate)
         }

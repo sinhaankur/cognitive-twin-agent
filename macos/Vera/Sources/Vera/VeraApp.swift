@@ -655,7 +655,12 @@ final class AppModel: ObservableObject {
         let first = (streamSpokenUpTo == 0)
         streamSpokenUpTo = boundary
         if first { phase = .speaking }
-        voice.speakFragment(chunk, first: first)
+        if clonedVoiceReady {
+            // her REAL voice, one sentence at a time (server renders+plays in order)
+            voice.speakClonedFragment(chunk, agent: agent, first: first)
+        } else {
+            voice.speakFragment(chunk, first: first)
+        }
     }
 
     func speakReply(_ text: String) {
@@ -1287,14 +1292,15 @@ final class AppModel: ObservableObject {
                     // (phase == .thinking) and only materialise her bubble when the
                     // first real text arrives. The dots are the feedback.
                     var turnID: UUID? = nil
-                    // speak-as-she-thinks: complete sentences peel off the
-                    // stream and start speaking at once — the wait collapses
-                    // from the whole answer to its first sentence. System
-                    // voice only: the cloned voice renders server-side on the
-                    // full text (speakReply) and keeps its own path.
+                    // speak-as-she-thinks: complete sentences peel off the stream
+                    // and start speaking at once — the wait collapses from the whole
+                    // answer to its FIRST sentence. This now covers the CLONED voice
+                    // too: her real voice used to render the entire reply before a
+                    // word came out (~15s of silence on a long answer); streaming it
+                    // sentence-by-sentence means she starts speaking in ~5s.
                     let streamSpeak = await MainActor.run { () -> Bool in
                         self.streamSpokenUpTo = 0
-                        return self.shouldSpeakReply() && !self.clonedVoiceReady
+                        return self.shouldSpeakReply()
                     }
                     let reply = try await agent.askStream(text) { partial in
                         Task { @MainActor in
