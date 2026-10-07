@@ -198,6 +198,21 @@ class _Handler(BaseHTTPRequestHandler):
                 self._json(200, {"text": builtin.greeting()})
             except Exception as e:
                 self._json(200, {"text": "", "error": str(e)})
+        elif self.path == "/api/nudge":
+            # A gentle, FACTUAL opening nudge for the greeting: one real open task,
+            # straight from the local day-shadow — never the model (which invents
+            # tasks/events that don't exist, like a 'Super Club event'). Empty when
+            # there's genuinely nothing, so the greeting stays just a warm hello.
+            try:
+                from .. import shadow
+                tasks = shadow.open_tasks()
+                if tasks:
+                    more = f" (and {len(tasks) - 1} more)" if len(tasks) > 1 else ""
+                    self._json(200, {"text": f"Still on your plate: {tasks[0].text}{more}."})
+                else:
+                    self._json(200, {"text": ""})
+            except Exception:
+                self._json(200, {"text": ""})
         elif self.path == "/api/reflections":
             # thoughts Anita had about your projects while you were away —
             # served ONCE (cleared on delivery): a thought shared twice is a

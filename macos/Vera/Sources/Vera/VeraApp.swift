@@ -935,22 +935,15 @@ final class AppModel: ObservableObject {
         // Facts first, deterministically: the clock and weather come from the
         // greeting SKILL, never the model — a model that skips the tool will
         // cheerfully invent "September 15, 2023" and a gentle breeze.
+        //
+        // The follow-up line is also FACT, not the model. We used to ask the LLM
+        // to "bring up the most current thing between us" — and it invented things
+        // that don't exist (e.g. a "Super Club event" you never had, and it left a
+        // '[current date]' placeholder unfilled). A greeting must never fabricate.
+        // So the nudge now comes straight from your real open tasks (empty = she
+        // just says hello, no invented follow-up).
         let fact = await agent.greet()
-        var line = ""
-        if let reply = try? await agent.ask(
-            "In ONE short sentence, bring up the most current thing between us "
-            + "— an open task from today or the latest topic in memory — with a "
-            + "real thought about it. Only things that actually appear in my "
-            + "memory or tasks: no scenery, no imagery, no invented details, and "
-            + "do NOT mention the date, time, or weather (already said). "
-            + "If nothing is current, reply exactly: (nothing)",
-            internal: true) {
-            let t = reply.answer.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !t.isEmpty && !t.lowercased().contains("(nothing)") && t.count < 220 {
-                line = t
-            }
-            if let m = reply.model { await MainActor.run { self.modelName = m } }
-        }
+        let line = await agent.openTaskNudge()   // "" when there's nothing real
         let text = [fact, line].filter { !$0.isEmpty }.joined(separator: " ")
         if !text.isEmpty {
             await MainActor.run {

@@ -406,6 +406,19 @@ final class AgentClient {
         } catch { return "" }
     }
 
+    /// GET /api/nudge — a FACTUAL opening nudge (one real open task), or "" when
+    /// there's nothing. Deterministic, never the model — so the greeting can't
+    /// invent events/tasks that don't exist.
+    func openTaskNudge() async -> String {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/nudge"))
+        req.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (obj["text"] as? String) ?? ""
+        } catch { return "" }
+    }
+
     /// GET /api/reflections — thoughts Anita had about your projects while away.
     func reflections() async -> [String] {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/reflections"))
