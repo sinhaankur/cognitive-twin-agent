@@ -9,4 +9,4 @@ The legacy subsystems under ../src (oauth, ipc, menubar, multimodal) are earlier
 scaffolding kept as future layers — this package is the part that actually runs.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.3.1"

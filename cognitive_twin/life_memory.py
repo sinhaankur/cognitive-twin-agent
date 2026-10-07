@@ -82,8 +82,28 @@ def build_index() -> dict[str, Any]:
             "mode": "semantic+keyword" if vectors else "keyword-only"}
 
 
+# Cache the decrypted index keyed on the file's (size, mtime). The index is a
+# sealed blob that can grow to several MB; decrypting + JSON-parsing it on EVERY
+# reply cost seconds. build_index() rewrites the file (changing its signature), so
+# the cache self-invalidates the moment the index actually changes — no staleness.
+_index_cache: dict[str, Any] | None = None
+_index_sig: tuple[int, float] | None = None
+
+
 def _load() -> dict[str, Any] | None:
-    return security.read_state(security.path(_INDEX), default=None)
+    global _index_cache, _index_sig
+    p = security.path(_INDEX)
+    try:
+        st = p.stat()
+        sig = (st.st_size, st.st_mtime)
+    except OSError:
+        _index_cache, _index_sig = None, None
+        return None
+    if _index_cache is not None and _index_sig == sig:
+        return _index_cache
+    _index_cache = security.read_state(p, default=None)
+    _index_sig = sig
+    return _index_cache
 
 
 def available() -> bool:

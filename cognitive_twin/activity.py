@@ -150,16 +150,54 @@ def _append(entry: dict[str, Any]) -> None:
 
 
 # --- patterns (how you work) --------------------------------------------------
-def _entries() -> list[dict[str, Any]]:
+# The 'how you work' summary only needs RECENT habits, not the entire history —
+# and the log can reach tens of thousands of sealed lines (decrypting all of them
+# cost ~6s on every reply). Read only the recent tail: plenty for a representative
+# summary, bounded cost forever, and more relevant (recent patterns, not months-old
+# ones). Pass limit=None for the full history where a caller truly needs it.
+_SUMMARY_TAIL = 4000
+
+
+def _entries(limit: int | None = _SUMMARY_TAIL) -> list[dict[str, Any]]:
     from . import security
 
-    return [e for e in security.read_lines(_dir() / LOG) if isinstance(e, dict)]
+    return [e for e in security.read_lines(_dir() / LOG, limit=limit)
+            if isinstance(e, dict)]
+
+
+# Cache the computed patterns so we don't decrypt + scan the whole (potentially
+# multi-MB) sealed activity log on EVERY reply. The log only grows every ~90s, so
+# the summary is stable for minutes; recompute only when the file changes or the
+# TTL lapses. This was a real hot path — a 5-6 MB log cost ~6s per chat turn.
+_PATTERNS_TTL = 180.0  # seconds
+_patterns_cache: dict[str, Any] | None = None
+_patterns_cached_at: float = 0.0
+_patterns_sig: tuple[int, float] | None = None  # (size, mtime) of the log when cached
 
 
 def patterns() -> dict[str, Any]:
+    global _patterns_cache, _patterns_cached_at, _patterns_sig
+    import time as _time
+    logp = _dir() / LOG
+    try:
+        st = logp.stat()
+        sig = (st.st_size, st.st_mtime)
+    except OSError:
+        sig = (0, 0.0)
+    fresh = (
+        _patterns_cache is not None
+        and _patterns_sig == sig
+        and (_time.monotonic() - _patterns_cached_at) < _PATTERNS_TTL
+    )
+    if fresh:
+        return _patterns_cache  # type: ignore[return-value]
+
     es = _entries()
     if not es:
-        return {"samples": 0, "top_apps": [], "by_part_of_day": {}}
+        _patterns_cache = {"samples": 0, "top_apps": [], "by_part_of_day": {}}
+        _patterns_cached_at = _time.monotonic()
+        _patterns_sig = sig
+        return _patterns_cache
     apps: Counter[str] = Counter()
     by_part: dict[str, Counter] = {}
     for e in es:
@@ -172,11 +210,14 @@ def patterns() -> dict[str, Any]:
             continue
         part = ("morning" if h < 12 else "afternoon" if h < 18 else "evening")
         by_part.setdefault(part, Counter())[app] += 1
-    return {
+    _patterns_cache = {
         "samples": len(es),
         "top_apps": [a for a, _ in apps.most_common(6)],
         "by_part_of_day": {k: [a for a, _ in v.most_common(3)] for k, v in by_part.items()},
     }
+    _patterns_cached_at = _time.monotonic()
+    _patterns_sig = sig
+    return _patterns_cache
 
 
 def summary_for_prompt() -> str:

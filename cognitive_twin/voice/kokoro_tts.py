@@ -97,6 +97,48 @@ def set_voice(voice_id: str) -> bool:
 _proc: subprocess.Popen | None = None
 _lock = threading.Lock()
 
+# How long we'll ever wait on the worker before giving up and falling back to the
+# system voice. A stalled worker must NEVER wedge Vera's chat — synthesis is a
+# nicety, answering is not. Model load is slower than a synth, so it gets longer.
+_READY_TIMEOUT = 30.0   # cold model load
+_SYNTH_TIMEOUT = 20.0   # one line of speech
+
+
+def _readline_timeout(proc: subprocess.Popen, timeout: float) -> str | None:
+    """Read one line from ``proc.stdout``, but never block longer than ``timeout``.
+
+    The blocking ``readline`` runs on a throwaway daemon thread; if it doesn't
+    finish in time the worker is presumed wedged — we return ``None`` and the
+    caller kills + resets it. This is the guard that makes a stuck Kokoro worker
+    unable to hang the server (the old code blocked here forever)."""
+    if not proc.stdout:
+        return None
+    box: list[str] = []
+
+    def _read() -> None:
+        try:
+            box.append(proc.stdout.readline())  # type: ignore[union-attr]
+        except (OSError, ValueError):
+            pass
+
+    t = threading.Thread(target=_read, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        return None            # timed out — worker is stuck
+    return (box[0] if box else "").strip()
+
+
+def _reset_worker() -> None:
+    """Kill the worker so the next call starts a fresh one. Safe to call anytime."""
+    global _proc
+    try:
+        if _proc:
+            _proc.kill()
+    except OSError:
+        pass
+    _proc = None
+
 
 def _ensure_worker() -> subprocess.Popen | None:
     """Start (once) the long-lived Kokoro worker so the model stays warm. Returns
@@ -113,11 +155,18 @@ def _ensure_worker() -> subprocess.Popen | None:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             cwd=str(_vera_home()), text=True, bufsize=1,
         )
-        # wait for READY (model load can take a few seconds the first time)
-        line = _proc.stdout.readline().strip() if _proc.stdout else ""
+        # wait for READY (model load can take a few seconds the first time) — but
+        # never forever: a worker that never says READY must not hang us.
+        line = _readline_timeout(_proc, _READY_TIMEOUT)
+        if line is None:
+            _reset_worker()
+            return None
         if line != "READY":
             # give it one more line in case of a stray warning
-            line = _proc.stdout.readline().strip() if _proc.stdout else ""
+            line = _readline_timeout(_proc, _READY_TIMEOUT)
+            if line is None:
+                _reset_worker()
+                return None
         return _proc
     except (OSError, ValueError):
         _proc = None
@@ -140,7 +189,11 @@ def synth_wav(text: str, *, speed: float = 0.92) -> bytes | None:
                               "speed": max(0.5, min(1.5, speed))})
             proc.stdin.write(req + "\n")
             proc.stdin.flush()
-            resp = proc.stdout.readline().strip()
+            # bounded read: a worker that stalls mid-synth must not hang the chat.
+            resp = _readline_timeout(proc, _SYNTH_TIMEOUT)
+            if resp is None:
+                _reset_worker()   # presumed wedged → kill, next call restarts fresh
+                return None
             data = json.loads(resp)
             wav_path = data.get("wav")
             if not wav_path or not Path(wav_path).is_file():
@@ -153,11 +206,5 @@ def synth_wav(text: str, *, speed: float = 0.92) -> bytes | None:
             return blob if blob[:4] == b"RIFF" else None
         except (OSError, ValueError, json.JSONDecodeError):
             # worker died or returned junk — reset so the next call restarts it
-            global _proc
-            try:
-                if _proc:
-                    _proc.kill()
-            except OSError:
-                pass
-            _proc = None
+            _reset_worker()
             return None

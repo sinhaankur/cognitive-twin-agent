@@ -171,14 +171,30 @@ def append_line(p: Path | str, obj: Any) -> None:
         _chmod_owner(p)
 
 
-def read_lines(p: Path | str) -> list[Any]:
+def read_lines(p: Path | str, limit: int | None = None) -> list[Any]:
     """Read a sealed (or legacy plaintext) JSONL log into a list of objects.
-    Skips any single corrupt/foreign line rather than failing the whole read."""
+    Skips any single corrupt/foreign line rather than failing the whole read.
+
+    ``limit`` reads only the LAST ``limit`` records — and, crucially, decrypts only
+    those. Per-line sealing (each line is independently decryptable) makes this safe
+    and fast: a multi-MB log that would cost seconds to fully decrypt on every read
+    becomes near-instant when a caller only needs recent history (e.g. the activity
+    'how you work' summary). Returned oldest→newest, same as a full read."""
     p = Path(p)
     if not p.is_file():
         return []
+    raw_lines = p.read_text(encoding="utf-8").splitlines()
+    if limit is not None and limit >= 0:
+        # keep only the last `limit` NON-EMPTY lines, so we decrypt just the tail
+        kept: list[str] = []
+        for raw in reversed(raw_lines):
+            if raw.strip():
+                kept.append(raw)
+                if len(kept) >= limit:
+                    break
+        raw_lines = list(reversed(kept))
     out: list[Any] = []
-    for raw in p.read_text(encoding="utf-8").splitlines():
+    for raw in raw_lines:
         raw = raw.strip()
         if not raw:
             continue

@@ -96,6 +96,17 @@ def _hippocampus(text: str) -> str | None:
             # universe-engine / veradocs / veraskills / ue-docs (235+ chunks), and
             # only searching "default" (1 chunk) is why RAG kept missing. Pool the
             # hits across indexes and keep the best by score.
+            #
+            # Embed the query ONCE and reuse it across every index. Each embed is an
+            # Ollama round-trip that contends with the loaded chat model; doing it
+            # per-index (several indexes → several embeds) added real latency to
+            # EVERY turn. One embed, reused, keeps recall light.
+            query_vec = None
+            try:
+                if rag.embeddings_available():
+                    query_vec = rag.embed_one(text)
+            except Exception:
+                query_vec = None
             pooled: list = []
             for name in indexes:
                 try:
@@ -106,7 +117,7 @@ def _hippocampus(text: str) -> str | None:
                     # Plain retrieve is near-instant and already scores well; we pool
                     # by score across indexes and keep the top few. (Vera must be a
                     # catalyst, not a tax.)
-                    for h in rag.retrieve(text, name=name, k=4):
+                    for h in rag.retrieve(text, name=name, k=4, query_vec=query_vec):
                         if getattr(h, "text", "").strip():
                             # tag which index it came from for the citation
                             setattr(h, "_index", name)

@@ -3,6 +3,31 @@
 All notable changes to Vera. Format loosely follows [Keep a Changelog](https://keepachangelog.com);
 versions are the app's `CFBundleShortVersionString`.
 
+## [0.3.1] — 2026-10-07
+
+A stability release: chat was hanging and, once unstuck, every reply took 55-70s.
+Both are fixed — replies now land in ~6s (the real cost of the local model), and
+the app can no longer be frozen by a stalled voice worker.
+
+### Fixed
+- **Chat no longer hangs.** The neural-voice (Kokoro) worker was read with a
+  blocking call that had no timeout, so a stalled worker wedged the server forever —
+  and because it held a lock, every later message hung too. Reads are now bounded;
+  a stuck worker is killed and restarted, and Vera falls back to the system voice
+  instead of freezing. Speech is a nicety; answering is not.
+- **Replies are ~10× faster.** Every turn was decrypting the *entire* device-activity
+  log (tens of thousands of sealed lines, ~6s) and re-reading the sealed life-memory
+  index (~3.5s) just to build the prompt. Now: the activity summary reads only the
+  recent tail and is cached by file signature; the life-memory index is cached the
+  same way; the RAG query is embedded once and reused across all indexes; and the
+  life-memory re-index runs in the background instead of blocking the reply. These
+  caches are warmed at startup so even the first reply is fast.
+- **Sharable twins export again.** `export_twin` crashed on a `UnicodeDecodeError`
+  once personas were sealed at rest (it read the encrypted file as text). It now
+  decrypts through the security kernel, writes a *portable* plaintext persona into
+  the package, and re-seals it on import — so a shared twin is sealed on the
+  receiving machine too, never left as plaintext.
+
 ## [0.3.0] — 2026-10-06
 
 A big release: a real human voice, a resilient architecture, and a companion that

@@ -287,7 +287,8 @@ class Hit:
 
 
 def retrieve(query: str, name: str = "default", k: int = 4, alpha: float | None = None,
-             min_score: float = 0.5, per_source: int = 2) -> list[Hit]:
+             min_score: float = 0.5, per_source: int = 2,
+             query_vec: list[float] | None = None) -> list[Hit]:
     """Hybrid retrieval, quality-tuned (no LLM, so it stays fast + on-device):
       - ADAPTIVE blend: lean on semantics for natural-language questions, on
         keywords for short/terse ones (a 2-word query is usually a keyword hunt).
@@ -295,6 +296,12 @@ def retrieve(query: str, name: str = "default", k: int = 4, alpha: float | None 
         never pollute the context — a top reason answers felt off.
       - SOURCE DIVERSITY: cap how many chunks come from any ONE document, so the k
         slots aren't all the same file and the model sees a fuller picture.
+
+    ``query_vec`` lets the caller supply a PRE-COMPUTED query embedding so several
+    indexes can be searched without re-embedding the same query each time (the
+    embed is a network round-trip that contends with the loaded chat model — doing
+    it once per turn instead of once per index is the difference between a snappy
+    reply and a ~10s stall when many indexes exist).
     """
     idx = _load_index(name)
     if not idx or not idx.get("chunks"):
@@ -306,9 +313,9 @@ def retrieve(query: str, name: str = "default", k: int = 4, alpha: float | None 
         # adaptive: short query → keyword-weighted; longer prose → semantic-weighted
         qn = len(_tokens(query))
         alpha = 0.45 if qn <= 2 else (0.6 if qn <= 6 else 0.72)
-    if vecs and embeddings_available():
+    if vecs and (query_vec or embeddings_available()):
         try:
-            qv = embed_one(query)
+            qv = query_vec if query_vec else embed_one(query)
             final = [alpha * _cosine(qv, vecs[i]) + (1 - alpha) * kw[i] for i in range(len(chunks))]
         except Exception:
             final = kw

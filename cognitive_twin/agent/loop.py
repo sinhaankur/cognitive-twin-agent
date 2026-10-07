@@ -404,7 +404,12 @@ class Agent:
                     try:
                         from .. import life_memory as _lm
                         if _mm.load().get("turns", 0) % 5 == 0:
-                            _lm.build_index()
+                            # Re-embedding the whole log takes several seconds — far
+                            # too slow for the reply path. Rebuild in the background so
+                            # the answer returns now; the index is eventually-consistent,
+                            # so a one-turn lag is harmless.
+                            import threading as _thr
+                            _thr.Thread(target=_lm.build_index, daemon=True).start()
                     except Exception:
                         pass
                 return AgentResult(

@@ -765,8 +765,29 @@ def make_server(port: int = DEFAULT_PORT, model: str | None = None) -> Threading
     control.set_confirm(_voice_confirm)  # ensure our confirm wins after build
     _warm_voice_clone()  # preload engine detection + the XTTS model in the background
     _warm_kokoro()       # preload the neural voice so the FIRST reply isn't a 15s wait
+    _warm_recall()       # preload activity/life-memory caches so the FIRST reply is fast
     _start_activity_sampler()  # observe device activity (only when enabled + not private)
     return httpd
+
+
+def _warm_recall() -> None:
+    """Warm the recall caches off the main thread. The activity summary decrypts a
+    multi-MB sealed log and life-memory loads a sealed index — each ~several seconds
+    the first time. Doing it at startup (not on the first user turn) means the very
+    first reply is as snappy as the rest. Both are cached by file signature, so this
+    is a one-time cost that every later turn reuses. Fail-soft."""
+    def warm() -> None:
+        try:
+            from .. import activity
+            activity.summary_for_prompt()  # builds the patterns cache
+        except Exception:
+            pass
+        try:
+            from .. import life_memory
+            life_memory.context_for_prompt("hello")  # builds the index cache
+        except Exception:
+            pass
+    threading.Thread(target=warm, daemon=True).start()
 
 
 def _warm_kokoro() -> None:

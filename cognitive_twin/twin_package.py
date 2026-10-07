@@ -71,17 +71,27 @@ def export_twin(name: str, out_path: str) -> dict:
     if out.suffix != ".twin":
         out = out.with_suffix(".twin")
 
-    # read the persona to record a friendly display name in the manifest
-    try:
-        persona_data = json.loads(persona_file.read_text(encoding="utf-8"))
-        display = persona_data.get("name") or twins.slug(name)
-    except (OSError, json.JSONDecodeError):
-        display = twins.slug(name)
+    # Read the persona through the security kernel. On disk persona.json is SEALED
+    # (encrypted at rest with a machine-local key), so we must decrypt it here —
+    # both to record a friendly display name and to write a PORTABLE plaintext
+    # persona into the package. (Shipping the sealed blob would be unreadable on
+    # another machine, whose key differs.) read_state() also still accepts a legacy
+    # plaintext persona transparently.
+    from . import security
+    persona_data = security.read_state(persona_file, default=None)
+    if not isinstance(persona_data, dict):
+        return {"ok": False, "error": f"twin '{name}' has no readable persona to share"}
+    display = persona_data.get("name") or twins.slug(name)
 
     included: list[str] = []
     try:
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
             for rel in SHAREABLE:
+                if rel == "persona.json":
+                    # write the decrypted, portable persona — never the sealed blob
+                    z.writestr(rel, json.dumps(persona_data, ensure_ascii=False, indent=2))
+                    included.append(rel)
+                    continue
                 p = src / rel
                 if p.is_file():
                     z.write(p, rel)
@@ -157,6 +167,19 @@ def import_twin(pkg_path: str, *, name: str | None = None,
                     extracted.append(rel)
     except (OSError, zipfile.BadZipFile) as e:
         return {"ok": False, "error": str(e)}
+
+    # The package carries persona.json as portable PLAINTEXT. Re-seal it at rest
+    # with THIS device's key so the imported twin is sealed just like a native one
+    # — the privacy guarantee must hold on the receiving machine too, not only the
+    # sender's. (Other shareable files — the voice reference — are not sealed.)
+    if "persona.json" in extracted:
+        try:
+            from . import security
+            persona_path = dest / "persona.json"
+            data = json.loads(persona_path.read_text(encoding="utf-8"))
+            security.write_state(persona_path, data)
+        except Exception:  # noqa: BLE001 — never let re-seal failure lose the import
+            pass
 
     return {"ok": True, "twin": twin_slug, "active": make_active,
             "imported": extracted, "has_voice": "voice/reference.wav" in extracted}
