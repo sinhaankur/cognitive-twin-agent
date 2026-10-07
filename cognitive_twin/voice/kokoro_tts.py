@@ -56,14 +56,28 @@ VOICES: dict[str, str] = {
     "bf_lily":    "Lily — light British female",
 }
 
+# ── Vera's VOICE + QUALITY, locked into the build ──────────────────────────────
 # af_heart — warm, natural, clear: the best American-English voice for Vera's
-# primary narration / replies. The user's chosen default ("that has to be the one").
+# replies. The user's chosen default ("that has to be the one"). These parameters
+# define how she SOUNDS; they're in one place so the build always ships this exact
+# voice + quality, and an env var can tune without a code change.
 _DEFAULT_VOICE = "af_heart"
+# speed < 1 = slower, warmer, more present (companion tone, not a rushed readout).
+# 0.92 reads calm + natural for af_heart. Tunable via CTWIN_KOKORO_SPEED.
+DEFAULT_SPEED = 0.92
 
 
 def _voice() -> str:
     v = os.environ.get("CTWIN_KOKORO_VOICE", _DEFAULT_VOICE).strip()
     return v if v in VOICES else _DEFAULT_VOICE
+
+
+def _default_speed() -> float:
+    """Her default speaking speed (quality parameter), env-tunable."""
+    try:
+        return max(0.5, min(1.5, float(os.environ.get("CTWIN_KOKORO_SPEED", DEFAULT_SPEED))))
+    except (TypeError, ValueError):
+        return DEFAULT_SPEED
 
 
 def is_available() -> bool:
@@ -175,10 +189,13 @@ def _ensure_worker() -> subprocess.Popen | None:
         return None
 
 
-def synth_wav(text: str, *, speed: float = 0.92) -> bytes | None:
-    """Synthesize `text` to WAV bytes with Kokoro. speed < 1 = slower/warmer
-    (0.92 reads calm + present, the companion tone). None on any failure, so the
-    caller falls back to the system voice."""
+def synth_wav(text: str, *, speed: float | None = None) -> bytes | None:
+    """Synthesize `text` to WAV bytes with Kokoro in Vera's voice (af_heart by
+    default). ``speed`` defaults to DEFAULT_SPEED (0.92 — calm, present, warm; the
+    companion tone, not a rushed readout). None on any failure, so the caller falls
+    back to the system voice."""
+    if speed is None:
+        speed = _default_speed()
     text = " ".join((text or "").split())
     if not text:
         return None
