@@ -49,18 +49,23 @@ struct ChatPanel: View {
                     if model.clonedVoiceReady {
                         Image(systemName: "heart.fill")
                             .font(.system(size: 9)).foregroundStyle(.pink)
-                            .help("Speaking in her voice")
+                            .help("Speaking in \(model.assistantName)'s own cloned voice")
                     }
                 }
                 HStack(spacing: 5) {
                     Circle()
                         .fill(model.serverUp ? Color.green.opacity(0.9) : Color.orange.opacity(0.9))
                         .frame(width: 5, height: 5)
+                    // Always show WHICH voice is active — her own cloned voice (named),
+                    // or the chosen neural voice. You should never wonder whose voice
+                    // you're hearing.
                     Text(model.serverUp
-                         ? (model.clonedVoiceReady ? "her voice" : SettingsView.displayName(model.modelName))
+                         ? (model.clonedVoiceReady
+                            ? "in \(model.assistantName)'s voice"
+                            : "voice: \(model.activeVoiceLabel)")
                          : "waking…")
                         .font(.system(size: 10.5, design: .default))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(model.clonedVoiceReady ? .pink.opacity(0.9) : .secondary)
                 }
             }
             Spacer()

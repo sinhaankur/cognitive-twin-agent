@@ -708,6 +708,19 @@ final class AppModel: ObservableObject {
         let label: String
     }
 
+    /// A short, friendly name for the currently-active neural voice (e.g. "Heart"),
+    /// for the header's "voice: …" line. Falls back to the raw id.
+    var activeVoiceLabel: String {
+        if let v = neuralVoices.first(where: { $0.id == neuralVoiceID }) {
+            // labels look like "Heart — warm, natural…"; show just the first word.
+            return v.label.components(separatedBy: " — ").first ?? v.label
+        }
+        // strip the af_/bf_ prefix and capitalize (e.g. af_heart → Heart)
+        let bare = neuralVoiceID.replacingOccurrences(of: "af_", with: "")
+            .replacingOccurrences(of: "bf_", with: "")
+        return bare.isEmpty ? "neural" : bare.prefix(1).uppercased() + bare.dropFirst()
+    }
+
     /// Load her neural voices from the server and reflect the current selection.
     func refreshNeuralVoices() {
         Task {
