@@ -848,8 +848,46 @@ def make_server(port: int = DEFAULT_PORT, model: str | None = None) -> Threading
     _warm_voice_clone()  # preload engine detection + the XTTS model in the background
     _warm_kokoro()       # preload the neural voice so the FIRST reply isn't a 15s wait
     _warm_recall()       # preload activity/life-memory caches so the FIRST reply is fast
+    _warm_model(httpd.agent)  # load the chat model(s) so the FIRST message isn't empty/slow
     _start_activity_sampler()  # observe device activity (only when enabled + not private)
     return httpd
+
+
+def _warm_model(agent) -> None:
+    """Preload the chat model(s) into Ollama at startup so the user's FIRST message
+    isn't met with a cold load (which came back empty / took ~30s the first time).
+    Warms the configured companion model AND the routed fast-path model, since a
+    real conversation uses both. Tiny prompts, discarded; fully background + fail-soft."""
+    def warm() -> None:
+        import time
+        # which models a conversation will actually hit: the configured default
+        # (companion, e.g. vera-merged) + the policy's everyday fast-path model.
+        models: list[str] = []
+        cfg = getattr(agent, "configured_model", None)
+        if cfg:
+            models.append(cfg)
+        try:
+            from ..agent.router import Router
+            r = getattr(agent, "router", None) or Router()
+            for probe in ("hi", "what's 2+2"):           # a companion + a fast turn
+                m = r.route(probe).model
+                if m and m not in models:
+                    models.append(m)
+        except Exception:
+            pass
+        client = getattr(agent, "client", None)
+        for m in models:
+            try:
+                if client is not None and hasattr(client, "model"):
+                    saved = client.model
+                    client.model = m
+                    from ..llm.ollama_client import ChatMessage
+                    client.chat([ChatMessage(role="user", content="hi")])  # loads it
+                    client.model = saved
+            except Exception:
+                pass
+            time.sleep(0.2)
+    threading.Thread(target=warm, daemon=True).start()
 
 
 def _warm_recall() -> None:
