@@ -33,6 +33,13 @@ KEEP_ALIVE: str = os.environ.get("CTWIN_KEEP_ALIVE", "5m").strip() or "5m"
 # offered as, or auto-selected as, the chat model (picking one makes Vera error).
 _EMBED_HINTS = ("embed", "embedding", "nomic-embed", "bge-", "mxbai-embed", "snowflake-arctic-embed")
 
+# Vera's OWN trained models, best first. If one of these is installed we prefer it
+# over a generic base — it's her: warm, in-character, and LIGHT (3B), so it runs
+# well on EVERY device, not just roomy ones. This is what makes the app feel like
+# Vera out of the box instead of a generic assistant. Falls through to the RAM
+# tiers below only when none of these are pulled.
+_VERA_MODELS: tuple[str, ...] = ("vera-merged", "vera-tuned", "empathia")
+
 # Preferred LOCAL chat models, smallest-capable first within each tier. We pick the
 # largest one that fits the machine's RAM AND is installed. Tool-calling capable
 # families only (so the agent's tools keep working).
@@ -116,6 +123,16 @@ def pick_default(installed: list[str] | None = None, ram_gb: float | None = None
     if installed is None:
         installed = _installed_chat_models()
     inst = set(installed)
+    # Prefer Vera's OWN trained model when it's installed — it's her, and it's
+    # light (3B) so it suits every device. Only once we know what's installed
+    # (this branch) so we never pick a model that isn't pulled.
+    for vm in _VERA_MODELS:
+        if vm in inst:
+            return vm
+        base = vm.split(":")[0]
+        for i in installed:
+            if i.split(":")[0] == base:
+                return i
     for floor, candidates in _TIERS:
         if ram_gb >= floor:
             for m in candidates:

@@ -54,10 +54,14 @@ def _load_config() -> dict:
 
 def _device_default_model() -> str:
     """The right-sized local model for this machine (see device_model.pick_default).
-    Fail-soft: if anything goes wrong, a safe small default keeps Vera running."""
+    Queries Ollama so it can PREFER Vera's own trained model (vera-merged) when it's
+    installed — that's what makes the app feel like Vera, and it's light (3B) so it
+    suits every device. The query is a short, bounded /api/tags call (the startup
+    hang was fixed separately); fail-soft to a safe small default if anything goes
+    wrong, so Vera always starts."""
     try:
         from . import device_model
-        return device_model.pick_default()
+        return device_model.pick_default(query_ollama=True)
     except Exception:
         return "qwen2.5:7b"
 
