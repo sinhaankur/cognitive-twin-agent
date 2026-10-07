@@ -21,3 +21,8 @@ ios/Anita.xcodeproj/
 ios/DerivedData/
 *.xcuserstate
 .venv/
+
+# LoRA fine-tune artifacts (large; regenerable)
+training/adapters/
+training/vera-tuned/
+training/data/
