@@ -34,6 +34,10 @@ final class VoiceEngine: ObservableObject {
     // True when the speech recognizer can't run on this machine right now, so the
     // UI can say so instead of the mic button silently toggling off.
     @Published var micUnavailable = false
+    // True when a permission is needed and the macOS prompt didn't grant it. The
+    // UI shows a calm, optional "Open Settings" button — we NEVER auto-jump to
+    // Settings (that app↔Settings bounce is what froze things).
+    @Published var permissionNeeded = false
     /// Bumped to 1 on every spoken word; the orb decays it (mouth-movement feel).
     var speakPulse: CGFloat = 0
 
@@ -166,11 +170,13 @@ final class VoiceEngine: ObservableObject {
     /// refreshPermissionState() re-reading the live status.
     var permissionDenied: Bool { (micDenied == true) || (speechDenied == true) }
 
-    /// Open the exact System Settings pane to grant the mic (or speech) so the
-    /// user can fix a denied permission in one click.
+    /// Open the exact System Settings pane to grant the mic (or speech). Called
+    /// ONLY when the user taps the optional "Open Settings" button — never
+    /// automatically. Opened async so it can never block the app's UI.
     func openPrivacySettings(speech: Bool = false) {
         let key = speech ? "Privacy_SpeechRecognition" : "Privacy_Microphone"
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(key)") {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(key)") else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
             NSWorkspace.shared.open(url)
         }
     }
@@ -188,22 +194,22 @@ final class VoiceEngine: ObservableObject {
         // button WORK on first tap instead of silently failing (the old code
         // never requested mic access, so AVAudioEngine.start() threw and the
         // catch below returned quietly).
+        // Simple: ONE user action grants it. Tapping the mic asks macOS for
+        // permission; the user allows; we listen. We do NOT auto-open System
+        // Settings here — that jump is what froze the app. If it's still not
+        // granted, we just publish a gentle flag the UI can show with a plain
+        // "Open Settings" button the USER can choose to tap. No forced jumps,
+        // no spinning, no hang.
         if !permissionsGranted {
             requestPermission { [weak self] ok in
                 guard let self else { return }
+                self.isListening = false
                 if ok {
                     self.startListening(hunting: hunting, over: utterance)
                 } else {
-                    // The prompt didn't yield a grant. The usual culprit is SPEECH
-                    // RECOGNITION: the user grants the Microphone but Speech is a
-                    // SEPARATE permission that an ad-hoc-signed app often can't
-                    // prompt for — so it sits at notDetermined/denied and the mic
-                    // "loops back to unclick". Open the exact Settings pane so the
-                    // user can grant it in one click, and stop (no spin).
-                    self.isListening = false
-                    let sp = SFSpeechRecognizer.authorizationStatus()
-                    if sp != .authorized { self.openPrivacySettings(speech: true) }
-                    else { self.openPrivacySettings(speech: false) }
+                    // couldn't get the grant from the prompt — surface it calmly;
+                    // the UI offers a button, the user decides.
+                    self.permissionNeeded = true
                 }
             }
             return
