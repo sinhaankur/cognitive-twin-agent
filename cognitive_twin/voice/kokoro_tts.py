@@ -19,8 +19,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import threading
+import unicodedata
 from pathlib import Path
 
 
@@ -189,6 +191,34 @@ def _ensure_worker() -> subprocess.Popen | None:
         return None
 
 
+# Emoji + pictographic symbol ranges. The TTS otherwise reads an emoji by its
+# Unicode NAME — "😊" becomes the spoken words "smiling face with smiling eyes",
+# which sounds broken. We strip these (and other symbol/pictograph codepoints)
+# before speaking so she says only the words, warmly.
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"   # symbols & pictographs, emoji, supplemental
+    "\U00002600-\U000027BF"   # misc symbols + dingbats
+    "\U0001F1E6-\U0001F1FF"   # regional indicators (flags)
+    "\U00002190-\U000021FF"   # arrows
+    "\U00002B00-\U00002BFF"   # misc symbols & arrows
+    "\U0000FE00-\U0000FE0F"   # variation selectors
+    "\U0000200D"              # zero-width joiner
+    "]+",
+    flags=re.UNICODE,
+)
+
+
+def _speakable(text: str) -> str:
+    """What she should actually SAY: the words, without emoji/pictographs that the
+    engine would otherwise read aloud by their Unicode name. Also drops any leftover
+    symbol-category codepoints, then tidies whitespace."""
+    text = _EMOJI_RE.sub("", text or "")
+    # belt-and-braces: remove any remaining 'So' (Symbol, other) codepoints
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "So")
+    return " ".join(text.split())
+
+
 def synth_wav(text: str, *, speed: float | None = None) -> bytes | None:
     """Synthesize `text` to WAV bytes with Kokoro in Vera's voice (af_heart by
     default). ``speed`` defaults to DEFAULT_SPEED (0.92 — calm, present, warm; the
@@ -196,7 +226,8 @@ def synth_wav(text: str, *, speed: float | None = None) -> bytes | None:
     back to the system voice."""
     if speed is None:
         speed = _default_speed()
-    text = " ".join((text or "").split())
+    # speak only the words — never read an emoji's name aloud ("smiling face…").
+    text = _speakable(text)
     if not text:
         return None
     with _lock:

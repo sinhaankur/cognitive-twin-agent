@@ -114,7 +114,13 @@ def synth_wav(text: str, *, length_scale: float = 1.0) -> bytes | None:
 
     A touch slower than default reads as calmer and more human — fitting for Vera.
     """
-    text = (text or "").strip()
+    # speak only the words — never read an emoji's Unicode name aloud ("smiling
+    # face with smiling eyes"). Shares the kokoro cleaner so both engines agree.
+    try:
+        from .kokoro_tts import _speakable
+        text = _speakable(text)
+    except Exception:
+        text = (text or "").strip()
     if not text:
         return None
     binp = _piper_bin()

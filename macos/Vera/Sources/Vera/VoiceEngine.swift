@@ -475,19 +475,42 @@ final class VoiceEngine: ObservableObject {
         // runs async; the system fallback fires immediately if Piper can't.
         if piperEnabled && piperAvailable {
             speakWithPiper(text) { [weak self] ok in
-                if !ok { self?.speakWithSystem(text) }
+                guard let self else { return }
+                if !ok {
+                    // neural failed → system voice; barge-in mic is safe there
+                    self.speakWithSystem(text)
+                    self.startListening(hunting: true, over: text)
+                }
+                // on success: do NOT open the mic — Kokoro plays through the
+                // speakers and an open mic would hear her and loop ("talks to
+                // herself"). Tap the mic to start a real turn.
             }
         } else {
             speakWithSystem(text)
+            // the mic opens muted underneath her voice, hunting for interruption
+            startListening(hunting: true, over: text)
         }
-        // the mic opens muted underneath her voice, hunting for interruption
-        startListening(hunting: true, over: text)
     }
 
     /// The system AVSpeechSynthesis path (fallback / when Piper is off).
+    /// What she should SAY: strip emoji / pictographs so the system voice never
+    /// reads an emoji by its name aloud ("smiling face with smiling eyes"). The
+    /// server's Kokoro/Piper paths do the same — this covers the AVSpeech fallback.
+    private func speakable(_ text: String) -> String {
+        let cleaned = text.unicodeScalars.filter { s in
+            !(s.properties.isEmoji && s.properties.isEmojiPresentation)
+              && !s.properties.isEmojiModifier
+              && !s.properties.isEmojiModifierBase
+              && s != "\u{200D}" && s != "\u{FE0F}"
+              && s.properties.generalCategory != .otherSymbol
+        }
+        return String(String.UnicodeScalarView(cleaned))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func speakWithSystem(_ text: String) {
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
-        let utter = AVSpeechUtterance(string: text)
+        let utter = AVSpeechUtterance(string: speakable(text))
         utter.voice = humaneVoice()
         utter.rate = 0.46
         utter.pitchMultiplier = 1.02
@@ -561,16 +584,23 @@ final class VoiceEngine: ObservableObject {
         // streaming path always used AVSpeech and never her real voice.
         if piperEnabled && piperAvailable {
             speakFragmentWithPiper(t, first: first)
+            // NOTE: with the neural voice we do NOT open the barge-in mic. Kokoro
+            // plays through the SPEAKERS, so an open mic hears her own voice and
+            // she ends up "talking to herself" (the echo filter keys on text, not
+            // acoustics, so it can't reliably tell her audio from yours). Barge-in
+            // is a nice-to-have; not looping on herself is essential. The user can
+            // always tap the mic to start a real turn, which stops her first.
         } else {
             speakFragmentWithSystem(t, first: first)
+            // AVSpeech routes differently + the echo filter was tuned for it, so
+            // the barge-in hunt is safe here.
+            startListening(hunting: true, over: t)
         }
-        // opens the hunt on the first fragment; refreshes its echo words after
-        startListening(hunting: true, over: t)
     }
 
     /// One streamed fragment via the system AVSpeech voice (fallback path).
     private func speakFragmentWithSystem(_ t: String, first: Bool) {
-        let utter = AVSpeechUtterance(string: t)
+        let utter = AVSpeechUtterance(string: speakable(t))
         utter.voice = humaneVoice()
         utter.rate = 0.46
         utter.pitchMultiplier = 1.02
