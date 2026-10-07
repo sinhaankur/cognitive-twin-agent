@@ -27,13 +27,21 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from brain import Signal, Situation
-from brain.regions import EmotionEngine, PerspectiveEngine
-
-# The two brain regions that produce the felt state + stance. Instantiated once;
-# they are pure, stateless logic (no model, no I/O).
-_LIMBIC = EmotionEngine()
-_FRONTAL = PerspectiveEngine()
+# The felt state comes from the Human Brain Engine (a separate `brain` package)
+# when it's available. But Vera must ALWAYS be able to feel — even where that
+# engine isn't installed (e.g. the background service, which can't reach
+# ~/Documents). So the import is graceful: if `brain` is missing, a small built-in
+# limbic/frontal takes over. Her feeling is never dependent on an external package
+# (and never on an LLM).
+try:
+    from brain import Signal, Situation
+    from brain.regions import EmotionEngine, PerspectiveEngine
+    _LIMBIC = EmotionEngine()
+    _FRONTAL = PerspectiveEngine()
+    _HAVE_ENGINE = True
+except Exception:  # noqa: BLE001 — engine absent → use the built-in fallback
+    _HAVE_ENGINE = False
+    _LIMBIC = _FRONTAL = None  # type: ignore[assignment]
 
 # coarse topic cues, so the stance can lead (plan) vs. hold space (feelings). These
 # translate Vera's text into the parietal `topic` the frontal lobe reads, so the
@@ -92,6 +100,44 @@ def _mirror_lean():
         return None
 
 
+# lightweight affect lexicon for the built-in fallback (valence, arousal cues)
+_NEG = {"sad": -0.6, "lonely": -0.6, "miss": -0.5, "tired": -0.3, "worried": -0.5,
+        "anxious": -0.6, "overwhelmed": -0.6, "scared": -0.6, "angry": -0.5,
+        "hurt": -0.6, "grief": -0.7, "stressed": -0.5, "exhausted": -0.4,
+        "afraid": -0.6, "hopeless": -0.8, "cry": -0.6, "alone": -0.5}
+_POS = {"happy": 0.6, "glad": 0.5, "proud": 0.6, "excited": 0.7, "love": 0.6,
+        "grateful": 0.6, "joy": 0.7, "great": 0.4, "wonderful": 0.6, "amazing": 0.6,
+        "finally": 0.4, "shipped": 0.5, "won": 0.5, "better": 0.3}
+_HIGH_AROUSAL = {"excited", "anxious", "overwhelmed", "scared", "angry", "afraid",
+                 "amazing", "panic", "thrilled", "furious", "terrified"}
+
+
+def _builtin_feel(text: str) -> tuple[float, float, str]:
+    """A small, honest felt read when the external brain engine isn't present.
+    Returns (valence -1..1, arousal 0..1, label)."""
+    words = set(re.findall(r"[a-z']+", text.lower()))
+    val = 0.0
+    for w in words:
+        for k, v in _NEG.items():
+            if w.startswith(k):
+                val += v
+        for k, v in _POS.items():
+            if w.startswith(k):
+                val += v
+    val = max(-1.0, min(1.0, val))
+    aro = 0.15 + (0.55 if words & _HIGH_AROUSAL else 0.0) + min(0.3, abs(val) * 0.3)
+    aro = max(0.0, min(1.0, aro))
+    if val <= -0.5:
+        label = "tender" if aro < 0.6 else "heavy"
+    elif val <= -0.2:
+        label = "low"
+    elif val >= 0.4:
+        label = "bright" if aro >= 0.5 else "glad"
+    else:
+        label = "steady"
+    return round(val, 3), round(aro, 3), label
+
+
 def read(text: str, *, apply_tone: bool = True) -> Felt:
     """Read the felt state + choose a stance from what the user said. Pure logic,
     computed by the Human Brain Engine's limbic + frontal regions.
@@ -99,17 +145,31 @@ def read(text: str, *, apply_tone: bool = True) -> Felt:
     If you've set a tone dial (tone.py), it nudges the stance here — YOUR explicit
     control over how blunt/gentle she is, layered on top of her own read. Pass
     ``apply_tone=False`` to see her unbiased read (the UI uses this for 'her own')."""
-    # Run the moment through the brain: parietal `topic` (from Vera's word cues)
-    # → limbic (felt state) → frontal (stance). One shared ruleset, no copy here.
-    sig = Signal(text=text, situation=Situation(topic=_topic_for(text)))
-    _LIMBIC.process(sig)
-    _FRONTAL.process(sig)
+    if _HAVE_ENGINE:
+        # Run the moment through the brain: parietal `topic` (from Vera's word cues)
+        # → limbic (felt state) → frontal (stance). One shared ruleset, no copy.
+        sig = Signal(text=text, situation=Situation(topic=_topic_for(text)))
+        _LIMBIC.process(sig)
+        _FRONTAL.process(sig)
+        f = sig.feeling
+        posture, _, rest = sig.stance.partition("/")
+        lead = rest.split("/")[0] if rest else "engage"
+    else:
+        # Built-in fallback: a small, honest limbic read so she still FEELS when the
+        # external engine isn't present. Keyword valence/arousal → stance.
+        val, aro, label = _builtin_feel(text)
+        topic = _topic_for(text)
+        if topic == "feeling" or val <= -0.2:
+            posture, lead = "gentle", "hold-space"
+        elif topic == "planning":
+            posture, lead = "direct", "recommend"
+        else:
+            posture, lead = "warm", "engage"
 
-    f = sig.feeling
-    # the engine's frontal appends "/grounded" when memories are present; Vera
-    # calls feel with no memory context, so stance is just "posture/lead" here.
-    posture, _, rest = sig.stance.partition("/")
-    lead = rest.split("/")[0] if rest else "engage"
+        class _F:  # tiny carrier matching sig.feeling's shape
+            pass
+        f = _F()
+        f.valence, f.arousal, f.label = val, aro, label
 
     # YOUR dial overrides the posture: strong bluntness sharpens to 'direct'
     # (or 'blunt' at the extreme); strong gentleness softens to 'gentle'. Only
