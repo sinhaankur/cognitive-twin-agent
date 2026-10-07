@@ -21,7 +21,36 @@ Every step is fail-soft — a missing organ degrades the flow, never crashes it.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
+
+# A turn "wants facts" when it asks ABOUT something knowable — a question, or a
+# request to recall/explain/find. Emotional or casual turns ('I feel lonely',
+# 'good morning') do NOT, so we don't pollute them with reference documents. This
+# is the gate that keeps RAG CLEAN: relevant context when it helps, silence when
+# it doesn't. Keyword-light + a '?' check — transparent, no model call.
+_FACTUAL_CUE = re.compile(
+    r"\b(what|which|who|where|when|how|why|explain|tell me about|do you know|"
+    r"what'?s|how many|how much|list|show|find|look up|search|define|"
+    r"project|projects|built|building|work on|stack|tool|doc|document|"
+    r"paper|research|code|repo|feature|the math|how does)\b",
+    re.IGNORECASE,
+)
+# Emotional cues that should NEVER trigger a doc lookup even if a stray cue matches.
+_EMOTIONAL_SKIP = re.compile(
+    r"\b(i feel|feeling|lonely|sad|tired|overwhelmed|anxious|scared|miss (you|her|him)|"
+    r"i'?m (so |really )?(down|low|lost|hurt|struggling)|hold me|just talk|i love)\b",
+    re.IGNORECASE,
+)
+
+
+def _wants_facts(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _EMOTIONAL_SKIP.search(t):
+        return False
+    return ("?" in t) or bool(_FACTUAL_CUE.search(t))
 
 
 @dataclass
@@ -86,11 +115,16 @@ def _hippocampus(text: str) -> str | None:
         pass
 
     # grounded documents: the manual RAG docs index (rag: index <folder>). Distinct
-    # from life-memory — this is reference material, not shared history. Gated —
-    # no index → nothing, so this is a no-op when the person hasn't indexed docs.
+    # from life-memory — this is reference material, not shared history.
+    #
+    # ONLY when the turn actually WANTS facts. Injecting reference docs into every
+    # turn is why RAG felt bad: 'I feel lonely' pulled a 'scene.tsx refactor plan'
+    # (semantic scores compress into a narrow band, so even off-topic chunks score
+    # ~0.78). A companion turn needs presence, not documents. We gate on a factual
+    # cue + a RELEVANCE FLOOR below, so context is clean and relevant or absent.
     try:
         from . import rag
-        indexes = rag.list_indexes()
+        indexes = rag.list_indexes() if _wants_facts(text) else []
         if indexes:
             # Search EVERY index, not just "default" — the real knowledge lives in
             # universe-engine / veradocs / veraskills / ue-docs (235+ chunks), and
@@ -125,7 +159,16 @@ def _hippocampus(text: str) -> str | None:
                 except Exception:
                     continue
             pooled.sort(key=lambda h: getattr(h, "score", 0.0), reverse=True)
-            top = pooled[:5]
+            # RELEVANCE FLOOR: semantic scores compress into a narrow band, so keep
+            # only hits that are BOTH strong in absolute terms AND close to the best
+            # hit. An off-topic query — where even the top hit is weak — then yields
+            # nothing rather than noise. This is what makes the context clean.
+            if pooled:
+                best = getattr(pooled[0], "score", 0.0)
+                floor = max(0.82, best * 0.97)
+                top = [h for h in pooled if getattr(h, "score", 0.0) >= floor][:3]
+            else:
+                top = []
             snippets = "\n".join(
                 f"- [{getattr(h, '_index', 'doc')}] {h.text.strip()[:500]}" for h in top)
             if snippets:
