@@ -652,15 +652,15 @@ final class AppModel: ObservableObject {
         let chunk = String(chars[streamSpokenUpTo..<boundary])
         // too tiny to speak alone mid-stream ("Ok.") — wait for more words
         if !final && chunk.trimmingCharacters(in: .whitespacesAndNewlines).count < 10 { return }
+        // CLONED voice is spoken as ONE whole reply (see speakReply), never streamed
+        // per-sentence — streaming it caused the jarring MIX: a sentence that failed
+        // to clone fell back to the robotic voice mid-reply. Only the reliable
+        // neural/system voice streams here. Her real voice stays ONE consistent voice.
+        if clonedVoiceReady { return }
         let first = (streamSpokenUpTo == 0)
         streamSpokenUpTo = boundary
         if first { phase = .speaking }
-        if clonedVoiceReady {
-            // her REAL voice, one sentence at a time (server renders+plays in order)
-            voice.speakClonedFragment(chunk, agent: agent, first: first)
-        } else {
-            voice.speakFragment(chunk, first: first)
-        }
+        voice.speakFragment(chunk, first: first)
     }
 
     func speakReply(_ text: String) {
@@ -1343,12 +1343,17 @@ final class AppModel: ObservableObject {
                             self.turns.append(ChatTurn(text: answerText, isUser: false))
                         }
                         self.answer = answerText
-                        if streamSpeak && !answerText.isEmpty {
+                        if self.shouldSpeakReply() && !answerText.isEmpty {
                             self.phase = .speaking
-                            self.speakStreamSentences(answerText, final: true)
-                        }
-                        else if self.shouldSpeakReply() && !answerText.isEmpty { self.speakReply(answerText) }
-                        else { self.phase = .idle }
+                            if self.clonedVoiceReady {
+                                // her REAL voice: speak the WHOLE reply once, one
+                                // consistent voice (no per-sentence mixing).
+                                self.speakReply(answerText)
+                            } else {
+                                // neural/system voice: flush the last streamed sentence.
+                                self.speakStreamSentences(answerText, final: true)
+                            }
+                        } else { self.phase = .idle }
                     }
                     return
                 }
