@@ -152,7 +152,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                              action: #selector(menuEar), keyEquivalent: "")
         earItem?.image = symbol("ear")
         earItem?.target = self; menu.addItem(earItem!)
-        wakeItem = NSMenuItem(title: "Wake on her name (on/off)",
+        let wakeName = model.assistantName.components(separatedBy: " ").first ?? model.assistantName
+        wakeItem = NSMenuItem(title: "Listen when I say “\(wakeName)”",
                               action: #selector(menuWake), keyEquivalent: "")
         wakeItem?.image = symbol("person.wave.2")
         wakeItem?.target = self; menu.addItem(wakeItem!)

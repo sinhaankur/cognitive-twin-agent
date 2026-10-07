@@ -120,6 +120,14 @@ struct SettingsView: View {
                     Text("Off = text-first. When off, she still speaks back if you talk to her by voice.")
                         .font(.caption).foregroundStyle(.secondary)
 
+                    // Wake word — discoverable here (not buried in the menu), named
+                    // with HER current name so it's obvious how to call her.
+                    Toggle("Listen when I say “\(model.assistantName.components(separatedBy: " ").first ?? model.assistantName)”",
+                           isOn: $model.wakeOn)
+                    Text("When on, just say her name out loud and she starts listening — hands-free. Fully on-device; needs Microphone + Speech Recognition access.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
+
                     // HER real (neural, Kokoro) voice — the warm human one. This is
                     // the picker the user wants ("we had the voice options"). Shown
                     // when the neural voices have loaded from the server.
