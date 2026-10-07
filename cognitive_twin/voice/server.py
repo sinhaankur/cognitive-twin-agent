@@ -215,6 +215,14 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, {"enabled": _health.is_enabled(),
                              "summary": _health.load(),
                              "status": _health.status()})
+        elif self.path == "/api/persona":
+            # WHO she is right now — the editable persona name + a short bio. The
+            # app's Settings reads this so the user can switch/rename her (Anita →
+            # Emma, or anything). The name flows into the system prompt, so changing
+            # it actually changes who the LLM speaks as.
+            from .. import persona as _persona
+            p = _persona.load()
+            self._json(200, {"name": p.name, "about": p.about, "traits": p.traits})
         elif self.path == "/api/personality":
             # The current personality dials (warmth / humor / playfulness).
             from .. import personality
@@ -329,6 +337,21 @@ class _Handler(BaseHTTPRequestHandler):
             data = self._read_json()
             _health.enable(bool((data or {}).get("on", True)))
             self._json(200, {"enabled": _health.is_enabled()})
+            return
+        if self.path == "/api/persona":
+            # Rename / switch who she is. Body: {"name": "Emma", "about": "..."}.
+            # Changing the name changes who the LLM speaks as (it's folded into the
+            # system prompt). Preserves other persona fields the user set.
+            from .. import persona as _persona
+            data = self._read_json() or {}
+            p = _persona.load()
+            new_name = (data.get("name") or "").strip()
+            if new_name:
+                p.name = new_name
+            if isinstance(data.get("about"), str):
+                p.about = data["about"].strip()
+            _persona.save(p)
+            self._json(200, {"ok": True, "name": p.name, "about": p.about})
             return
         if self.path == "/api/personality":
             # Set personality dials. Body: {"warmth":0.7,"humor":0.4,...}.
