@@ -129,7 +129,8 @@ struct ChatPanel: View {
                                 .id(turn.id)
                         }
                         if model.phase == .thinking {
-                            ThinkingRow(phase: phase)
+                            ThinkingRow(phase: phase,
+                                        elapsed: Date().timeIntervalSince(model.thinkingSince))
                                 .id("thinking")
                                 .transition(.opacity)
                         }
@@ -334,26 +335,49 @@ struct ChatPanel: View {
     }
 }
 
-/// A single typing indicator that matches the identity — a small orb-gold pill
-/// with three breathing dots, aligned like one of her replies.
+/// Her processing indicator — a Claude-CLI-style status: a shimmering word
+/// ("Thinking…") beside three breathing dots, aligned like one of her replies
+/// (same thin gold accent bar). Clear feedback that she heard you and is working,
+/// so the chat never feels dead while she composes a reply.
 private struct ThinkingRow: View {
     let phase: CGFloat
+    var elapsed: TimeInterval = 0
     private var gold: Color { Color(red: 0.86, green: 0.68, blue: 0.38) }
+    // a gentle rotation of words so it feels alive, not stuck on one label — and
+    // on a long wait it REASSURES (warming up / almost there) so the user always
+    // knows it's working, never stuck. Micro-detail, but it's the whole feeling.
+    private let words = ["Thinking", "Thinking", "Reflecting", "Thinking", "Composing"]
+    private var word: String {
+        if elapsed > 22 { return "Almost there" }
+        if elapsed > 10 { return "Still thinking" }
+        if elapsed > 4  { return "Warming up" }
+        return words[Int(phase / 18) % words.count]
+    }
+
     var body: some View {
-        HStack(spacing: 5) {
-            ForEach(0..<3, id: \.self) { i in
-                Circle()
-                    .fill(gold)
-                    .frame(width: 5.5, height: 5.5)
-                    .opacity(0.3 + 0.55 * (0.5 + 0.5 * sin(Double(phase) * 0.9 - Double(i) * 0.9)))
+        HStack(alignment: .top, spacing: 11) {
+            // the same thin gold accent bar her replies use, so this reads as "her"
+            RoundedRectangle(cornerRadius: 2)
+                .fill(gold.opacity(0.55))
+                .frame(width: 2.5, height: 16)
+                .padding(.top, 1)
+            HStack(spacing: 7) {
+                Text(word)
+                    .font(.system(size: 13, weight: .medium))
+                    // a soft shimmer sweeping the word (like a 'processing' glow)
+                    .foregroundStyle(gold.opacity(0.55 + 0.35 * (0.5 + 0.5 * sin(Double(phase) * 0.12))))
+                HStack(spacing: 4) {
+                    ForEach(0..<3, id: \.self) { i in
+                        Circle()
+                            .fill(gold)
+                            .frame(width: 4.5, height: 4.5)
+                            .opacity(0.25 + 0.6 * (0.5 + 0.5 * sin(Double(phase) * 0.9 - Double(i) * 0.9)))
+                    }
+                }
             }
         }
-        .padding(.horizontal, 13).padding(.vertical, 10)
-        .background(
-            Capsule().fill(gold.opacity(0.08))
-                .overlay(Capsule().strokeBorder(gold.opacity(0.14), lineWidth: 1))
-        )
         .frame(maxWidth: .infinity, alignment: .leading)
+        .transition(.opacity)
     }
 }
 

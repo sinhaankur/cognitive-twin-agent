@@ -450,7 +450,13 @@ struct ChatTurn: Identifiable {
 final class AppModel: ObservableObject {
     enum Phase: String { case idle, listening, thinking, speaking }
 
-    @Published var phase: Phase = .idle
+    @Published var phase: Phase = .idle {
+        didSet { if phase == .thinking && oldValue != .thinking { thinkingSince = Date() } }
+    }
+    /// When the current "thinking" turn began — lets the indicator reassure the
+    /// user on a long wait ("still thinking… warming up") instead of silence. A
+    /// micro-detail, but it's the difference between "working" and "is it stuck?".
+    @Published var thinkingSince: Date = .distantPast
     @Published var transcript = ""
     @Published var answer = ""
     @Published var modelName = "…"
@@ -1268,11 +1274,13 @@ final class AppModel: ObservableObject {
                 } else {
                     // streamed: her bubble appears with the first words and
                     // grows as she thinks — no more staring at "thinking…"
-                    let turnID = await MainActor.run { () -> UUID in
-                        let turn = ChatTurn(text: "", isUser: false)
-                        self.turns.append(turn)
-                        return turn.id
-                    }
+                    // DON'T create an empty bubble yet. If we add a blank reply
+                    // bubble now, the user stares at nothing for the few seconds
+                    // before the first token — which reads as "no feedback / is it
+                    // even working?". Instead we keep the THINKING dots on screen
+                    // (phase == .thinking) and only materialise her bubble when the
+                    // first real text arrives. The dots are the feedback.
+                    var turnID: UUID? = nil
                     // speak-as-she-thinks: complete sentences peel off the
                     // stream and start speaking at once — the wait collapses
                     // from the whole answer to its first sentence. System
@@ -1284,7 +1292,16 @@ final class AppModel: ObservableObject {
                     }
                     let reply = try await agent.askStream(text) { partial in
                         Task { @MainActor in
-                            if let i = self.turns.firstIndex(where: { $0.id == turnID }) {
+                            let trimmed = partial.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if turnID == nil {
+                                guard !trimmed.isEmpty else { return }  // wait for real text
+                                // first token → her bubble appears, dots give way
+                                let turn = ChatTurn(text: partial, isUser: false)
+                                self.turns.append(turn)
+                                turnID = turn.id
+                                self.phase = .idle   // dots off; her words are here now
+                            } else if let id = turnID,
+                                      let i = self.turns.firstIndex(where: { $0.id == id }) {
                                 self.turns[i].text = partial
                             }
                             if streamSpeak { self.speakStreamSentences(partial, final: false) }
@@ -1293,19 +1310,19 @@ final class AppModel: ObservableObject {
                     if let m = reply.model { await MainActor.run { self.modelName = m } }
                     answerText = reply.answer
                     await MainActor.run {
-                        if let i = self.turns.firstIndex(where: { $0.id == turnID }) {
-                            if answerText.isEmpty {
-                                self.turns.remove(at: i)
-                            } else {
-                                self.turns[i].text = answerText
-                            }
+                        if let id = turnID, let i = self.turns.firstIndex(where: { $0.id == id }) {
+                            if answerText.isEmpty { self.turns.remove(at: i) }
+                            else { self.turns[i].text = answerText }
+                        } else if !answerText.isEmpty {
+                            // no streamed tokens arrived (non-streaming reply) — show it now
+                            self.turns.append(ChatTurn(text: answerText, isUser: false))
                         }
                         self.answer = answerText
                         if streamSpeak && !answerText.isEmpty {
                             self.phase = .speaking
                             self.speakStreamSentences(answerText, final: true)
                         }
-                        else if self.shouldSpeakReply() { self.speakReply(answerText) }
+                        else if self.shouldSpeakReply() && !answerText.isEmpty { self.speakReply(answerText) }
                         else { self.phase = .idle }
                     }
                     return
