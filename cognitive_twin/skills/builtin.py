@@ -495,6 +495,18 @@ def web_search(query: str) -> str:
     q = (query or "").strip()
     if not q:
         return "[refused] empty query."
+    # PRIVACY GUARD: the model composes the query, so scrub obvious private
+    # identifiers before anything leaves the device — emails, phone numbers, and
+    # long digit runs (cards/accounts/IDs). A web search is the one place local
+    # data could leak into a request; this keeps outbound queries clean. (Weather
+    # only sends coarse IP-geolocation, never personal data.)
+    _before = q
+    q = _re.sub(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b", "", q)                 # emails
+    q = _re.sub(r"\b(?:\+?\d[\s().-]?){7,}\b", "", q)                    # phone-like
+    q = _re.sub(r"\b\d{6,}\b", "", q)                                    # long digit runs
+    q = _re.sub(r"\s+", " ", q).strip()
+    if not q:
+        return "[refused] query looked like private data (email/number) — not sent."
     # DuckDuckGo Lite — stable markup, expects a POST. No API key.
     data = _parse.urlencode({"q": q}).encode()
     ua = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
