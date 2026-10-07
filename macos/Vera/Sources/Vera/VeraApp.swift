@@ -482,7 +482,13 @@ final class AppModel: ObservableObject {
     func renamed() {
         let name = assistantName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
-        Task { await agent.remember("Your name is \(name).") }
+        Task {
+            // Switch WHO she is — update the server persona so the LLM speaks as
+            // the new name (folded into its system prompt), not just the UI label.
+            await agent.setPersonaName(name)
+            // ...and leave a memory note so she also refers to herself by it.
+            await agent.remember("Your name is \(name).")
+        }
     }
 
     /// Set a recording as the cloned voice (from a file the user picks). Returns

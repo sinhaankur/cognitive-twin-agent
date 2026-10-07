@@ -146,6 +146,22 @@ final class AgentClient {
         } catch { return false }
     }
 
+    /// POST /api/persona — switch WHO she is. Setting the name changes who the LLM
+    /// speaks as (it's folded into the system prompt), not just the UI label.
+    @discardableResult
+    func setPersonaName(_ name: String) async -> Bool {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/persona"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["name": name])
+        req.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (obj["ok"] as? Bool) ?? false
+        } catch { return false }
+    }
+
     /// POST /api/speak — speak text aloud server-side, in the cloned voice if set
     /// up (falls back to the built-in voice). Returns true if it spoke as cloned.
     @discardableResult
