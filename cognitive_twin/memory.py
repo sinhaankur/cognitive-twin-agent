@@ -233,19 +233,31 @@ def patterns() -> dict[str, Any]:
     }
 
 
+# Generic words that aren't real "interests" — they slip into the topic tally and
+# make the context read like noise ("recurring interests: moment, life, …").
+_TOPIC_NOISE = {
+    "moment", "life", "thing", "things", "today", "day", "time", "stuff",
+    "really", "feel", "feeling", "want", "need", "know", "think", "going",
+}
+
+
 def summary_for_prompt() -> str:
     """A short, human line the agent can fold into its system prompt so it reasons
-    with awareness of your habits — local only, never sent off device."""
+    with awareness of your habits — local only, never sent off device.
+
+    Deliberately does NOT dump your recent raw messages back into every prompt:
+    the live conversation already carries recent context, and echoing verbatim
+    lines (especially tender ones like 'I feel really lonely') read as cold and
+    made her occasionally reference them awkwardly. We surface durable INTERESTS
+    only — the steady signal — and let the conversation itself carry the moment."""
     p = patterns()
     if not p["count"]:
         return ""
-    bits = []
-    if p["topics"]:
-        bits.append("recurring interests: " + ", ".join(p["topics"]))
-    recent = recent_prompts(3)
-    if recent:
-        bits.append("recently asked: " + " / ".join(recent))
-    return "Context about this user (from local history, private): " + "; ".join(bits) + "."
+    topics = [t for t in (p.get("topics") or []) if t.lower() not in _TOPIC_NOISE][:5]
+    if not topics:
+        return ""
+    return ("Context about this user (from local history, private): "
+            "recurring interests — " + ", ".join(topics) + ".")
 
 
 # ---- episodic date recall ("what happened on July 1?") ------------------------
