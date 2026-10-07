@@ -161,9 +161,16 @@ def detect_engine(refresh: bool = False) -> str | None:
     py = _engine_python()
     result: str | None = None
     if py is not None:
+        import tempfile
+        # Probe from a NEUTRAL cwd (not the package dir). Our package has a
+        # calendar.py; if the probe runs with the package dir as cwd, `import TTS`
+        # pulls in stdlib `email`→`calendar` and grabs OUR calendar.py, so the
+        # import FAILS and detection wrongly fell through to f5 (which has no warm
+        # worker → every spoken reply timed out). A clean cwd lets xtts win.
         for mod, name in (("TTS", "xtts"), ("f5_tts", "f5")):
             try:
-                r = subprocess.run([py, "-c", f"import {mod}"], capture_output=True, timeout=20)
+                r = subprocess.run([py, "-c", f"import {mod}"], capture_output=True,
+                                   timeout=30, cwd=tempfile.gettempdir())
                 if r.returncode == 0:
                     result = name
                     break
