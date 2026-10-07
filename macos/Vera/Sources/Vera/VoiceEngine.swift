@@ -153,8 +153,12 @@ final class VoiceEngine: ObservableObject {
     @Published var micDenied: Bool? = nil
     @Published var speechDenied: Bool? = nil
 
-    /// Re-read the live TCC status and publish it. Call when the window appears or
-    /// the app becomes active (e.g. after the user flips the toggle in Settings).
+    /// Re-read the live TCC status. Called when the window appears / the app
+    /// becomes active (e.g. returning from Settings). IMPORTANT: when the user has
+    /// just granted access, the cached status can still read stale — so we only
+    /// ever CLEAR the hint here (authorized → no banner), never RAISE it. The hint
+    /// is raised solely by a real failed mic tap (permissionNeeded), so it can't
+    /// show "off" while the switch is on.
     func refreshPermissionState() {
         let mic = AVCaptureDevice.authorizationStatus(for: .audio)
         let sp = SFSpeechRecognizer.authorizationStatus()
@@ -162,6 +166,8 @@ final class VoiceEngine: ObservableObject {
             self.micDenied = (mic == .denied || mic == .restricted)
             self.speechDenied = (sp == .denied || sp == .restricted)
             self.authorized = (mic == .authorized && sp == .authorized)
+            // becoming active after granting in Settings → drop the stale hint.
+            if self.authorized { self.permissionNeeded = false }
         }
     }
 
@@ -286,6 +292,8 @@ final class VoiceEngine: ObservableObject {
             return
         }
         if !hunting { isListening = true }
+        permissionNeeded = false   // the mic is working now — clear any stale hint
+        micUnavailable = false
 
         task = recognizer?.recognitionTask(with: req) { [weak self] result, error in
             guard let self else { return }
@@ -586,15 +594,13 @@ final class VoiceEngine: ObservableObject {
         URLSession.shared.dataTask(with: req) { [weak self] data, resp, _ in
             guard let self else { return }
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            guard code == 200, let data, data.count > 44, !self.streamCancelled else {
-                DispatchQueue.main.async {
-                    if !self.streamCancelled { self.speakFragmentWithSystem(t, first: first) }
-                }
-                return
-            }
+            let ok = (code == 200 && data != nil && (data?.count ?? 0) > 44)
+            // Decide on the main actor (streamCancelled is main-actor state); never
+            // read it from this background closure.
             DispatchQueue.main.async {
                 guard !self.streamCancelled else { return }
-                self.enqueuePiper(data)
+                if ok, let data { self.enqueuePiper(data) }
+                else { self.speakFragmentWithSystem(t, first: first) }
             }
         }.resume()
     }

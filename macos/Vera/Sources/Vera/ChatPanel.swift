@@ -194,8 +194,8 @@ struct ChatPanel: View {
         HStack(spacing: 9) {
             Image(systemName: "mic.slash.fill").foregroundStyle(.orange)
             VStack(alignment: .leading, spacing: 1) {
-                Text("\(deniedWhat) access is off").font(.system(size: 12, weight: .semibold))
-                Text("She can't hear you until you allow it in System Settings → Privacy. (Typing works.)")
+                Text("Allow \(deniedWhat) to talk").font(.system(size: 12, weight: .semibold))
+                Text("Typing works meanwhile. If you just turned it on, tap the mic again.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
@@ -213,7 +213,10 @@ struct ChatPanel: View {
 
     private var inputBar: some View {
         VStack(spacing: 7) {
-            if model.voice.permissionDenied { micPermissionBanner }
+            // Show the hint ONLY after a real failed mic tap (permissionNeeded) —
+            // never from stale cached TCC status, which read "off" even right after
+            // the user flipped the switch ON. It clears the instant the mic works.
+            if model.voice.permissionNeeded { micPermissionBanner }
             if model.voice.isListening {
                 HStack(spacing: 7) {
                     Image(systemName: "waveform")

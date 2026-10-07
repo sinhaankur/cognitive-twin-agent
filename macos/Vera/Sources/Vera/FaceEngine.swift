@@ -1,4 +1,5 @@
 import AVFoundation
+import AppKit
 import SwiftUI
 import Vision
 
@@ -75,15 +76,34 @@ final class FaceEngine: NSObject, ObservableObject {
     // ---- lifecycle (main thread) --------------------------------------------
 
     func start() {
-        AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
-            guard let self else { return }
-            guard granted else { self.publish(status: "camera not allowed"); return }
+        let status = AVCaptureDevice.authorizationStatus(for: .video)
+        switch status {
+        case .authorized:
             self.queue.async { self.configure() }
+        case .notDetermined:
+            // first time — ask once. One user action (Allow) turns it on.
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                guard let self else { return }
+                if granted { self.queue.async { self.configure() } }
+                else { self.publish(status: "Tap to allow the camera") }
+            }
+        case .denied, .restricted:
+            // already denied — don't silently fail; tell the user how to turn it on.
+            self.publish(status: "Camera is off — allow it in System Settings ▸ Privacy ▸ Camera")
+        @unknown default:
+            self.publish(status: "camera unavailable")
         }
         postTimer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.queue.async { self.postSignals() }
         }
+    }
+
+    /// Open the Camera privacy pane (async, so it never blocks the UI). The view
+    /// can call this from an "Open Settings" button when the camera is denied.
+    func openCameraSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") else { return }
+        DispatchQueue.global(qos: .userInitiated).async { NSWorkspace.shared.open(url) }
     }
 
     func stop() {

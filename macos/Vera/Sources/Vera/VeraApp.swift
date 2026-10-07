@@ -763,9 +763,8 @@ final class AppModel: ObservableObject {
     /// Open macOS's spoken-content voice download so the user can install the
     /// high-quality (Premium/Enhanced) voices that don't ship by default.
     func openVoiceDownloads() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.universalaccess?SpeakableItems") {
-            NSWorkspace.shared.open(url)
-        }
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.universalaccess?SpeakableItems") else { return }
+        DispatchQueue.global(qos: .userInitiated).async { NSWorkspace.shared.open(url) }
     }
 
     // --- Personality dials (tone, not identity) ------------------------------
@@ -1164,13 +1163,14 @@ final class AppModel: ObservableObject {
                 text = s
             }
             let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            await MainActor.run {
+            await MainActor.run { [weak self] in
+                guard let self else { return }
                 if clean.isEmpty {
-                    self?.turns.append(ChatTurn(
+                    self.turns.append(ChatTurn(
                         text: "I couldn't read any text from \(name). If it's an image or scanned PDF, I can't see inside it yet.",
                         isUser: false))
                 } else {
-                    self?.pendingAttachment = Attachment(name: name, text: clean)
+                    self.pendingAttachment = Attachment(name: name, text: clean)
                 }
             }
         }
