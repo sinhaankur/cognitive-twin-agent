@@ -952,11 +952,79 @@ final class AppModel: ObservableObject {
         // false-trigger barge-in and cut her off mid-sentence.
         ear.onMedia = { [weak self] media in self?.voice.mediaNoisy = media }
         enableLaunchAtLogin()      // so Anita is always there after a reboot
+        // PURE DOUBLE-CLICK: if her brain isn't set up yet (first launch on a
+        // fresh Mac), run the one-command installer FOR the user — no Terminal
+        // step they have to find. Everything else below waits for it via the
+        // health poll. If the brain's already there, this is a no-op.
+        if bootstrapBrainIfMissing() { return }
         autoUpdate()               // she keeps herself current — nothing to download
         installBrainServiceIfNeeded()  // run the brain as a launchd service (non-TCC)
         ensureServer()
         launchVizServer()          // the Mind (Brain view + browser) on :7879
         startWatchdog()            // keep her alive if the brain ever stops
+    }
+
+    /// First-launch self-setup — the heart of "pure double-click". If her brain
+    /// repo isn't on disk yet, this runs the one-line installer in a visible
+    /// Terminal window (so Homebrew can ask for a password and the user watches
+    /// progress), then starts a poll that brings her online the moment setup
+    /// finishes — no second launch needed. Returns true when it KICKED OFF setup
+    /// (so the caller skips the normal brain-start path this launch).
+    private func bootstrapBrainIfMissing() -> Bool {
+        let env = ProcessInfo.processInfo.environment
+        guard env["CTWIN_NO_BOOTSTRAP"] == nil else { return false }
+        let repo = env["CTWIN_REPO"]
+            ?? (NSHomeDirectory() + "/Documents/cognitive-twin-agent")
+        // already set up? nothing to do — normal launch.
+        if FileManager.default.fileExists(atPath: repo + "/scripts/install-vera.sh") {
+            return false
+        }
+        // tell the user what's happening (one friendly alert), then run setup.
+        let alert = NSAlert()
+        alert.messageText = "Setting up \(assistantName) — one time"
+        alert.informativeText = "She needs to set up her brain on this Mac (a few minutes, "
+            + "all on your machine). A Terminal window will show the progress — you can "
+            + "watch, then come back here. She'll come alive on her own when it's done."
+        alert.addButton(withTitle: "Set her up")
+        alert.addButton(withTitle: "Not now")
+        if alert.runModal() != .alertFirstButtonReturn { return true }
+        // Run the installer in Terminal.app via a tiny helper .command (so it's a
+        // real, visible terminal that can prompt for a password). We write the
+        // one-liner to a temp .command and `open` it with Terminal.
+        let tmp = NSTemporaryDirectory() + "setup-vera.command"
+        let line = "#!/bin/bash\ncurl -fsSL "
+            + "https://raw.githubusercontent.com/sinhaankur/cognitive-twin-agent/main/scripts/install-vera.sh"
+            + " | bash\necho\necho 'Setup finished — you can close this window and return to Vera.'\n"
+        try? line.write(toFile: tmp, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmp)
+        let open = Process()
+        open.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        open.arguments = ["-a", "Terminal", tmp]
+        try? open.run()
+        // poll: the moment her brain service answers, bring the UI online.
+        waitForBrainThenStart(repo: repo)
+        return true
+    }
+
+    /// After bootstrap, watch for the brain to come up, then start the normal
+    /// services — so she comes alive on her own without a relaunch.
+    private func waitForBrainThenStart(repo: String) {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            // wait up to ~20 min for a first-time setup (model download is the long pole)
+            for _ in 0..<240 {
+                Thread.sleep(forTimeInterval: 5)
+                if FileManager.default.fileExists(atPath: repo + "/scripts/install-vera.sh") {
+                    DispatchQueue.main.async {
+                        guard let self = self else { return }
+                        self.installBrainServiceIfNeeded()
+                        self.ensureServer()
+                        self.launchVizServer()
+                        self.startWatchdog()
+                    }
+                    return
+                }
+            }
+        }
     }
 
     /// Start the Visualize Engine so the Brain window (and the browser) can

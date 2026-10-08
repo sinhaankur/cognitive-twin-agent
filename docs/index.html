@@ -115,8 +115,9 @@
       <span class="badge">AGPL-3.0</span>
     </div>
     <div class="cta">
-      <a class="btn primary" href="https://github.com/sinhaankur/cognitive-twin-agent">View on GitHub →</a>
+      <a class="btn primary" href="https://github.com/sinhaankur/cognitive-twin-agent/releases/latest">Download for macOS →</a>
       <a class="btn" href="#quickstart">Quick start</a>
+      <a class="btn" href="https://github.com/sinhaankur/cognitive-twin-agent">View on GitHub</a>
     </div>
   </div>
 </header>
@@ -249,21 +250,30 @@ council › "should I take the job offer?"
 
 <section id="quickstart">
   <div class="wrap">
-    <h2>Quick start</h2>
-    <p class="sub">A local model and a couple of commands. No account, no keys.</p>
-<pre><span class="c"># 1. install Ollama (https://ollama.com) and pull a tool-capable model</span>
-<span class="p">$</span> ollama pull qwen2.5:7b        <span class="c"># or llama3.2, etc.</span>
-
-<span class="c"># 2. make it yours — guided first-run setup (name, persona, voice)</span>
-<span class="p">$</span> python -m cognitive_twin setup
-
-<span class="c"># 3. talk to it</span>
-<span class="p">$</span> python -m cognitive_twin <span class="g">"good morning"</span>
-<span class="p">$</span> python -m cognitive_twin council <span class="g">"what should I do this weekend?"</span>
-<span class="p">$</span> python -m cognitive_twin voice --web    <span class="c"># 🎙 Siri-style voice UI</span></pre>
+    <h2>Install</h2>
+    <p class="sub">Two ways, each free. Everything runs on your Mac — no account, no keys, nothing uploaded. Apple Silicon.</p>
+    <div class="grid" style="margin-top:20px">
+      <div class="card">
+        <h3>Easiest · for anyone</h3>
+        <p style="margin-bottom:10px">
+          <b>1.</b> <a href="https://github.com/sinhaankur/cognitive-twin-agent/releases/latest">Download Vera</a>, unzip it, and drag <b>Vera</b> into <b>Applications</b>.<br><br>
+          <b>2.</b> The first time, <b>right-click Vera → Open</b> (then Open). A normal double-click won't work the <i>first</i> time — macOS asks once because Vera is free &amp; open-source, not App&nbsp;Store–signed. Nothing is hidden; after that, double-click works.<br><br>
+          <b>3.</b> She sets up her own brain on first launch (a few minutes, on your Mac). Then click the orb to talk — no Terminal, ever.
+        </p>
+      </div>
+      <div class="card">
+        <h3>For developers · one command</h3>
+        <p style="margin-bottom:10px">Homebrew installs it with <b>no Gatekeeper prompt at all</b> — fully free, no Apple certificate:</p>
+<pre style="margin:0 0 12px"><span class="p">$</span> brew tap sinhaankur/vera https://github.com/sinhaankur/cognitive-twin-agent
+<span class="p">$</span> brew install --cask vera</pre>
+        <p style="margin-bottom:10px">Or the one-line setup script (installs everything + the right-sized model for your Mac, then grab the app):</p>
+<pre style="margin:0"><span class="p">$</span> curl -fsSL https://raw.githubusercontent.com/sinhaankur/cognitive-twin-agent/main/scripts/install-vera.sh | bash</pre>
+      </div>
+    </div>
     <p class="note" style="margin-top:18px">
-      Want the native Mac app? <code class="inline">cd macos/Vera &amp;&amp; ./build-app.sh &amp;&amp; open "Vera.app"</code>.
-      Full docs, architecture, and the honest "what works today" table live in the
+      Prefer pure terminal? After setup you can talk to her directly:
+      <code class="inline">python -m cognitive_twin "good morning"</code>. Full docs,
+      architecture, and the honest "what works today" table live in the
       <a href="https://github.com/sinhaankur/cognitive-twin-agent#readme">README</a>.
     </p>
   </div>

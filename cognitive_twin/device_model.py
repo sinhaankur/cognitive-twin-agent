@@ -147,3 +147,24 @@ def pick_default(installed: list[str] | None = None, ram_gb: float | None = None
             # tier matched RAM but none installed — keep scanning smaller tiers
     # nothing from the tiers is installed: use any installed chat model, else safe
     return installed[0] if installed else _SAFE_DEFAULT
+
+
+def recommend_pull(ram_gb: float | None = None) -> str:
+    """The ONE model the installer should pull for THIS machine on first run —
+    the smallest model that's genuinely capable for the RAM it has, so the
+    download stays as light as the hardware allows while still working well.
+
+    This is what makes "install it easily + don't take much space" true: an 8 GB
+    Mac pulls a ~1 GB 3B, not a 4.7 GB 7B it can't comfortably run. Her own
+    trained `vera-tuned` (a light 3B, ~1.9 GB) is preferred on any machine with
+    room for it, because it's genuinely *her* and still small.
+    """
+    if ram_gb is None:
+        ram_gb = total_ram_gb()
+    # Her trained model is a 3B — great on 12 GB+; on a tight machine fall to the
+    # smallest capable base so the first-run download is as small as possible.
+    if ram_gb >= 12:
+        return "vera-tuned"          # ~1.9 GB, her voice, runs well on 16 GB+
+    if ram_gb >= 8:
+        return "qwen2.5:3b"          # ~1.9 GB base; tight but workable on 8 GB
+    return "qwen2.5:1.5b"            # smallest capable fallback (~1 GB)
