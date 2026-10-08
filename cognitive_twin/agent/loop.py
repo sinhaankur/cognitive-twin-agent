@@ -193,6 +193,16 @@ class Agent:
             who = _persona.to_prompt()
             if who:
                 parts.append(who)
+            # her LIVED PAST — the people, places, sayings and memories that make
+            # her *her*, not a warm assistant. Built gently via `ctwin remember`,
+            # sealed on-device. She speaks FROM this life, never inventing beyond it.
+            try:
+                from .. import life_story as _life
+                lived = _life.to_prompt()
+                if lived:
+                    parts.append(lived)
+            except Exception:
+                pass
             # personality dials — user-tunable TONE (warmth / humor / playfulness),
             # modulating how she expresses herself without changing who she is.
             try:

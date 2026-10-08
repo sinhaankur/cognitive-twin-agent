@@ -539,14 +539,36 @@ def _rhythms_command(rest: list[str]) -> int:
 
 
 def _remember_command(rest: list[str]) -> int:
-    """`ctwin remember "fact"` — teach Anita something to keep."""
+    """`ctwin remember` — two ways to remember them:
+
+      ctwin remember               → the guided life-story interview (the
+                                      bond-building ritual: who they loved,
+                                      the places, the sayings, the memories).
+      ctwin remember "a fact"      → quickly teach one thing to keep.
+      ctwin remember list          → show the quick facts remembered so far.
+      ctwin remember story         → the life story recorded so far.
+    """
     from . import voice_profile as vp
-    if rest:
-        n = vp.remember(" ".join(rest))
-        print(f"Got it. ({n} things remembered)")
-    else:
+    sub = rest[0].lower() if rest else ""
+    # Bare invocation → the warm, paced interview that builds her life story.
+    if not rest:
+        from . import remember as _interview
+        _interview.run()
+        return 0
+    if sub == "list":
         facts = vp.custom_facts()
         print("\n".join(f"- {f}" for f in facts) if facts else "nothing remembered yet.")
+        return 0
+    if sub == "story":
+        from . import life_story
+        print(life_story.status())
+        block = life_story.to_prompt()
+        if block:
+            print("\n" + block)
+        return 0
+    # Anything else is a free-text fact to keep (back-compat).
+    n = vp.remember(" ".join(rest))
+    print(f"Got it. ({n} things remembered)")
     return 0
 
 

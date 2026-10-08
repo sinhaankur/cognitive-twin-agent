@@ -31,6 +31,7 @@ from typing import Any
 _FACULTIES = [
     ("memory", "Memory", "Recalls your recurring interests + recent asks (local log)."),
     ("persona", "Persona", "Who the twin is — the character you shaped."),
+    ("life", "Life story", "The real past she carries — the people, places and sayings that make her *her* (sealed, on-device)."),
     ("soul", "Soul", "An evolving personality + reflections it has while you're away."),
     ("mood", "Mood", "Colors tone and how warm/measured the answer feels."),
     ("feel", "Feeling", "Reads the emotion of what you said + takes a stance — her own mind, no model (limbic + frontal)."),
@@ -46,6 +47,7 @@ _FACULTIES = [
 # stance (→ router), and shapes the voice's delivery (→ voice).
 _WIRING = [
     ("memory", "router"), ("persona", "router"), ("soul", "router"),
+    ("life", "persona"), ("life", "router"),
     ("mood", "router"), ("rhythms", "router"), ("activity", "memory"),
     ("memory", "shadow"), ("shadow", "router"),
     ("feel", "router"), ("feel", "voice"), ("memory", "feel"),
@@ -114,6 +116,11 @@ def snapshot() -> dict[str, Any]:
     try:
         from . import persona
         state["persona"] = _safe(persona.status, "")
+    except Exception:
+        pass
+    try:
+        from . import life_story
+        state["life"] = _safe(life_story.status, "")
     except Exception:
         pass
     try:
