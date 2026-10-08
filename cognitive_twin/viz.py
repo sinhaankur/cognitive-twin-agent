@@ -208,6 +208,141 @@ def _engineflow(q: str) -> dict[str, Any]:
         return {"error": str(e)}
 
 
+def _mindgraph(q: str) -> dict[str, Any]:
+    """The live node structure — faculties as nodes, real wiring as edges, each
+    node marked whether it FIRES this turn with a true one-line note (see
+    brain.mind_graph). Local only, read-only; empty q → the resting graph."""
+    try:
+        from . import brain
+        return brain.mind_graph(q)
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _graph_page() -> bytes:
+    """The live node-structure page — a clean, dependency-free SVG graph of her
+    faculties that lights up the real path as a thought moves through her. Polls
+    /api/mindgraph; 127.0.0.1 only; works offline."""
+    return _GRAPH_PAGE.encode("utf-8")
+
+
+# A self-contained node graph (no build step, no libraries). Faculties sit on a
+# gentle arc; edges are her real wiring; when you ask something, the nodes on the
+# true path light in sequence and the edges between them pulse — you watch her think.
+_GRAPH_PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Her mind — the node structure</title>
+<style>
+  :root{--bg:#07080c;--ink:#e8ecf6;--faint:#8b93a7;--line:#222838;--live:#6ea0ff;--warm:#f3c969}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+  header{padding:18px 22px 8px}
+  h1{font-size:15px;font-weight:600;margin:0;letter-spacing:.02em}
+  .sub{color:var(--faint);font-size:11px;margin-top:3px}
+  #wrap{position:relative;width:100%;height:calc(100% - 150px)}
+  svg{width:100%;height:100%;display:block}
+  .edge{stroke:var(--line);stroke-width:1.2;fill:none;transition:stroke .3s,stroke-width .3s,opacity .3s;opacity:.55}
+  .edge.flow{stroke:var(--live);stroke-width:2.2;opacity:1}
+  .node circle{fill:#11141d;stroke:var(--line);stroke-width:1.5;transition:all .35s}
+  .node.fires circle{fill:rgba(110,160,255,.14);stroke:var(--live);stroke-width:2.4}
+  .node text.lbl{fill:var(--ink);font-size:11px;font-weight:600;text-anchor:middle}
+  .node text.note{fill:var(--faint);font-size:9.5px;text-anchor:middle}
+  .node.fires text.note{fill:var(--live)}
+  .ord{fill:var(--warm);font-size:9px;font-weight:700;text-anchor:middle}
+  .pulse{fill:var(--live)}
+  #askbar{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);
+    display:flex;gap:8px;align-items:center;background:#0c0f17;border:1px solid var(--line);
+    border-radius:999px;padding:7px 8px 7px 16px}
+  #q{width:min(60vw,440px);background:transparent;border:0;color:var(--ink);font-size:14px;outline:none}
+  #q::placeholder{color:var(--faint);font-style:italic}
+  #go{background:rgba(110,160,255,.18);border:0;border-radius:999px;color:var(--ink);
+    width:32px;height:32px;cursor:pointer;font-size:15px}
+  #go:hover{background:rgba(110,160,255,.34)}
+  .foot{padding:8px 22px;color:var(--faint);font-size:10.5px}
+  a{color:var(--live);text-decoration:none}
+</style></head><body>
+<header>
+  <h1>Her mind — the node structure</h1>
+  <div class="sub">Every node is a faculty; every line is her real wiring. Ask her something and watch the thought move through — <span style="color:var(--live)">lit nodes</span> fired this turn, in order. Everything here is real, local, read-only.</div>
+</header>
+<div id="wrap"><svg id="svg" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid meet"></svg>
+  <div id="askbar"><input id="q" placeholder="say something — e.g. “I feel lost lately”" autofocus>
+    <button id="go" title="think">✦</button></div>
+</div>
+<div class="foot"><a href="/">← the galaxy view</a> · <a href="/about">how it works</a></div>
+<script>
+const SVG="http://www.w3.org/2000/svg";
+const svg=document.getElementById("svg");
+let GRAPH=null;
+
+async function j(u){const r=await fetch(u);return r.json();}
+
+// fixed, readable layout: faculties on a flowing left→right spine with the
+// "always-on" identity faculties above and the delivery ones to the right.
+const POS={
+  memory:[120,170], feel:[270,250], persona:[270,110],
+  life:[430,110], wisdom:[430,250], mood:[590,250],
+  rhythms:[590,110], activity:[120,320], shadow:[270,390],
+  router:[760,200], voice:[900,200],
+};
+
+function layout(nodes){
+  // any node without a fixed spot gets tucked along the bottom
+  let bx=120; for(const n of nodes){ if(!POS[n.id]){ POS[n.id]=[bx,470]; bx+=150; } }
+}
+
+function render(g){
+  svg.innerHTML=""; layout(g.nodes);
+  const byId={}; g.nodes.forEach(n=>byId[n.id]=n);
+  // edges first (under the nodes)
+  for(const e of g.edges){
+    const a=POS[e.source], b=POS[e.target]; if(!a||!b) continue;
+    const mx=(a[0]+b[0])/2;
+    const p=document.createElementNS(SVG,"path");
+    p.setAttribute("d",`M${a[0]},${a[1]} C${mx},${a[1]} ${mx},${b[1]} ${b[0]},${b[1]}`);
+    p.setAttribute("class","edge"+(e.flowing?" flow":""));
+    svg.appendChild(p);
+    if(e.flowing){ // a travelling pulse along the flowing edge
+      const dot=document.createElementNS(SVG,"circle");
+      dot.setAttribute("r","3.2"); dot.setAttribute("class","pulse");
+      const anim=document.createElementNS(SVG,"animateMotion");
+      anim.setAttribute("dur","1.1s"); anim.setAttribute("repeatCount","indefinite");
+      anim.setAttribute("path",`M${a[0]},${a[1]} C${mx},${a[1]} ${mx},${b[1]} ${b[0]},${b[1]}`);
+      dot.appendChild(anim); svg.appendChild(dot);
+    }
+  }
+  // nodes
+  for(const n of g.nodes){
+    const [x,y]=POS[n.id];
+    const grp=document.createElementNS(SVG,"g");
+    grp.setAttribute("class","node"+(n.fires?" fires":""));
+    grp.setAttribute("transform",`translate(${x},${y})`);
+    const c=document.createElementNS(SVG,"circle"); c.setAttribute("r","26"); grp.appendChild(c);
+    const lbl=document.createElementNS(SVG,"text"); lbl.setAttribute("class","lbl");
+    lbl.setAttribute("y","3"); lbl.textContent=n.label; grp.appendChild(lbl);
+    if(n.fires&&n.note){
+      const nt=document.createElementNS(SVG,"text"); nt.setAttribute("class","note");
+      nt.setAttribute("y","42"); nt.textContent=n.note.length>34?n.note.slice(0,33)+"…":n.note;
+      grp.appendChild(nt);
+    }
+    if(n.order!=null){
+      const o=document.createElementNS(SVG,"text"); o.setAttribute("class","ord");
+      o.setAttribute("y","-32"); o.textContent=(n.order+1); grp.appendChild(o);
+    }
+    svg.appendChild(grp);
+  }
+}
+
+async function ask(q){ try{ GRAPH=await j("/api/mindgraph?q="+encodeURIComponent(q)); render(GRAPH);}catch(_){ } }
+document.getElementById("go").onclick=()=>ask(document.getElementById("q").value);
+document.getElementById("q").addEventListener("keydown",e=>{ if(e.key==="Enter") ask(e.target.value); });
+// start at rest, then a gentle example so it's never blank
+ask("");
+setTimeout(()=>{ if(!document.getElementById("q").value) ask("I feel a little lost lately"); }, 900);
+</script></body></html>"""
+
+
 def _tone_get() -> dict[str, Any]:
     """Your current tone dial (tone.py) — the human's control over her delivery."""
     try:
@@ -289,6 +424,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, _page(), "text/html; charset=utf-8")
         elif self.path.split("?")[0] == "/about":
             self._send(200, _about_page(), "text/html; charset=utf-8")
+        elif self.path.split("?")[0] in ("/graph", "/mind-graph"):
+            # the live NODE STRUCTURE — watch a thought move through her faculties
+            self._send(200, _graph_page(), "text/html; charset=utf-8")
         elif self.path == "/api/state":
             self._json(200, _state())
         elif self.path.startswith("/api/route"):
@@ -303,6 +441,12 @@ class _Handler(BaseHTTPRequestHandler):
             from urllib.parse import urlparse, parse_qs
             q = parse_qs(urlparse(self.path).query).get("q", [""])[0]
             self._json(200, _engineflow(q))
+        elif self.path.startswith("/api/mindgraph"):
+            # the live NODE STRUCTURE — faculties as nodes, real wiring as edges,
+            # lit up for this prompt so you can watch a thought move through her.
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query).get("q", [""])[0]
+            self._json(200, _mindgraph(q))
         elif self.path.startswith("/api/thought"):
             from urllib.parse import urlparse, parse_qs
             q = parse_qs(urlparse(self.path).query).get("q", [""])[0]

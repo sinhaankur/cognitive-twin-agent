@@ -85,22 +85,39 @@ def test_dedupes_and_survives_reload():
     print("✓ dedupes repeats and survives a reload")
 
 
-def test_moment_hint_only_with_sayings_and_never_invents():
+def test_moment_hint_gated_to_emotional_moments_and_never_invents():
     ls, _ = _fresh()
     # No sayings yet → no hint (never fabricates her voice)
     assert ls.moment_hint("heavy") == ""
-    assert ls.moment_hint("bright") == ""
     ls.add_saying("Beta, have you eaten?")
+    # fires only on an emotional moment
     heavy = ls.moment_hint("heavy")
     bright = ls.moment_hint("bright")
     assert "Beta, have you eaten?" in heavy
-    assert "tender moment" in heavy          # moment-aware nudge
+    assert "tender moment" in heavy
     assert "warm moment" in bright
-    # the guard rails are always present
+    # SILENT on a neutral/factual turn (no label, or an unknown one) — no padding
+    assert ls.moment_hint("") == ""
+    assert ls.moment_hint("neutral") == ""
+    assert ls.hint_fires("heavy") is True
+    assert ls.hint_fires("") is False
+    # guard rails present
     for h in (heavy, bright):
         assert "at most one" in h
         assert "never force" in h.lower() or "never invent" in h.lower()
-    print("✓ moment hint: only with real sayings, moment-aware, never invents")
+    print("✓ moment hint: gated to emotional moments, silent on neutral, never invents")
+
+
+def test_sayings_appear_exactly_once():
+    ls, _ = _fresh()
+    ls.add_saying("Beta, have you eaten?")
+    # neutral turn → sayings live in the life block, hint is silent
+    assert ls.moment_hint("") == ""
+    assert "Beta, have you eaten?" in ls.to_prompt(include_sayings=True)
+    # emotional turn → life block omits sayings, hint carries them (no double)
+    assert "Beta, have you eaten?" not in ls.to_prompt(include_sayings=False)
+    assert "Beta, have you eaten?" in ls.moment_hint("tender")
+    print("✓ her sayings appear exactly once — never listed twice in one prompt")
 
 
 if __name__ == "__main__":
@@ -108,5 +125,6 @@ if __name__ == "__main__":
     test_builds_and_compiles_into_prompt()
     test_sealed_at_rest()
     test_dedupes_and_survives_reload()
-    test_moment_hint_only_with_sayings_and_never_invents()
+    test_moment_hint_gated_to_emotional_moments_and_never_invents()
+    test_sayings_appear_exactly_once()
     print("\nall life-story tests passed")

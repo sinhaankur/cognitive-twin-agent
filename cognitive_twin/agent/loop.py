@@ -193,12 +193,23 @@ class Agent:
             who = _persona.to_prompt()
             if who:
                 parts.append(who)
+            # read the felt state ONCE up front — it gates both the sayings-hint
+            # and the life block's de-dup (so her phrases appear exactly once:
+            # in the hint on an emotional turn, in the life block otherwise).
+            _felt_label = ""
+            try:
+                from .. import feel as _feel
+                _felt_label = _feel.read(user_input).label
+            except Exception:
+                pass
             # her LIVED PAST — the people, places, sayings and memories that make
             # her *her*, not a warm assistant. Built gently via `ctwin remember`,
             # sealed on-device. She speaks FROM this life, never inventing beyond it.
             try:
                 from .. import life_story as _life
-                lived = _life.to_prompt()
+                # if the sayings-hint will fire this turn (emotional moment), omit
+                # sayings here so a tiny model never sees her phrases listed twice.
+                lived = _life.to_prompt(include_sayings=not _life.hint_fires(_felt_label))
                 if lived:
                     parts.append(lived)
             except Exception:
@@ -234,19 +245,13 @@ class Agent:
                     parts.append(cm)
             except Exception:
                 pass
-            # HER REAL SAYINGS, at the right moment — read the felt state of this
-            # turn and, when it fits, gently nudge her to lean on ONE of her actual
-            # phrases (from the life story). This is the "that's exactly how she'd
-            # say it" cue. Never forced, at most one, never invents a new saying.
+            # HER REAL SAYINGS, at the right moment — using the felt label read
+            # once above, nudge her to lean on ONE of her actual phrases when the
+            # moment is emotional. The "that's exactly how she'd say it" cue.
+            # Never forced, at most one, never invents; silent on neutral turns.
             try:
                 from .. import life_story as _life
-                label = ""
-                try:
-                    from .. import feel as _feel
-                    label = _feel.read(user_input).label
-                except Exception:
-                    pass
-                hint = _life.moment_hint(label)
+                hint = _life.moment_hint(_felt_label)
                 if hint:
                     parts.append(hint)
             except Exception:

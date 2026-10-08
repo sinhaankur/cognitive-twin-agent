@@ -80,18 +80,20 @@ class LifeStory:
         return not any([self.people, self.places, self.sayings,
                         self.stories, self.loves, self.dates])
 
-    def to_prompt(self) -> str:
+    def to_prompt(self, include_sayings: bool = True) -> str:
         """Compile the lived past into a system-prompt block, written so the model
-        speaks FROM this life without inventing beyond it."""
+        speaks FROM this life without inventing beyond it.
+
+        include_sayings=False omits the phrases list — used when the moment's
+        sayings-hint will carry them, so a tiny model never sees them twice."""
         if self.is_empty():
             return ""
         lines: list[str] = [
             "# YOUR LIFE (the real past you carry)",
-            "This is your actual life — speak from it naturally, the way anyone "
-            "remembers their own. Reference these people, places and memories when "
-            "they fit, in your own words. Do NOT invent memories, names, or events "
-            "beyond what's written here; if you're asked about something not here, "
-            "say gently that you don't quite remember rather than making it up.",
+            "Your actual life — speak from it naturally. Reference these people, "
+            "places and memories when they fit, in your own words. Never invent "
+            "beyond what's here; if asked about something not here, gently say you "
+            "don't quite remember.",
         ]
         if self.people:
             who = "; ".join(
@@ -107,8 +109,9 @@ class LifeStory:
             lines.append("Life anchors: " + "; ".join(self.dates) + ".")
         if self.loves:
             lines.append("Small joys that are specifically yours: " + "; ".join(self.loves) + ".")
-        if self.sayings:
-            # The strongest "it's really them" cue — surfaced explicitly.
+        if self.sayings and include_sayings:
+            # The strongest "it's really them" cue — surfaced explicitly. Omitted
+            # when the moment's sayings-hint will carry these instead (no double).
             quoted = "; ".join(f"“{s}”" for s in self.sayings)
             lines.append(
                 "Things you actually say — your own turns of phrase, use them "
@@ -129,29 +132,37 @@ class LifeStory:
         return list(self.sayings)
 
 
+# The moments where leaning on a real phrase actually lands. On a neutral,
+# factual turn ("what's 2+2") a saying would feel forced, so the hint stays
+# silent and her phrases live in the life block instead (no duplication).
+_HINT_MOMENTS = {"heavy", "tender", "bright", "glad"}
+
+
+def hint_fires(label: str) -> bool:
+    """True when the sayings-hint should fire this turn — only on a real
+    emotional moment, and only if she has sayings. Used by the loop to decide
+    whether to omit sayings from the life block (so they're never listed twice)."""
+    return label in _HINT_MOMENTS and bool(load().sayings)
+
+
 def moment_hint(label: str = "") -> str:
     """A tiny, moment-aware nudge to lean on ONE of her real sayings when it
     genuinely fits the emotion — the thing that makes a reply land as 'that's
-    exactly how she'd say it.' Never forces a phrase; the model may use none.
+    exactly how she'd say it.' Fires ONLY on an emotional moment (so it never
+    pads a neutral turn); returns "" otherwise. Never forces a phrase.
 
     `label` is the live felt read (feel.Felt.label): heavy/tender/bright/glad.
-    Returns "" when there are no sayings (so nothing is invented).
     """
     ls = load()
-    if not ls.sayings:
+    if not ls.sayings or label not in _HINT_MOMENTS:
         return ""
     quoted = "; ".join(f"“{s}”" for s in ls.sayings[:8])
-    mood = ""
-    if label in ("heavy", "tender"):
-        mood = " This is a tender moment — if one of her gentler phrases fits, let it come through."
-    elif label in ("bright", "glad"):
-        mood = " This is a warm moment — a familiar, glad phrase of hers may fit here."
+    mood = (" A tender moment — if one of her gentler phrases fits, let it come through."
+            if label in ("heavy", "tender")
+            else " A warm moment — a familiar, glad phrase of hers may fit.")
     return (
-        "A soft reminder of HER real voice — these are phrases she actually used: "
-        + quoted + "."
-        + mood
-        + " Use at most one, only if it lands naturally; never force it, and never "
-        "invent a new 'saying.' If none fits, just speak warmly as yourself."
+        "HER real phrases (use at most one, only if it lands — never force it, "
+        "never invent one): " + quoted + "." + mood
     )
 
 
@@ -186,9 +197,10 @@ def save(ls: LifeStory) -> None:
         pass
 
 
-def to_prompt() -> str:
-    """Convenience: the current life story compiled for the system prompt."""
-    return load().to_prompt()
+def to_prompt(include_sayings: bool = True) -> str:
+    """Convenience: the current life story compiled for the system prompt.
+    include_sayings=False omits her phrases (the moment's hint carries them)."""
+    return load().to_prompt(include_sayings=include_sayings)
 
 
 def status() -> str:

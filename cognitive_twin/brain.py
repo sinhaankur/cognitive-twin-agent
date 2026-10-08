@@ -241,6 +241,81 @@ def thought_path(prompt: str) -> dict[str, Any]:
     return {"prompt": prompt, "path": ordered}
 
 
+def mind_graph(prompt: str = "") -> dict[str, Any]:
+    """A live NODE STRUCTURE of her mind — purpose-built for the Mind view.
+
+    Every faculty is a node; the real wiring is the edges. For a given prompt it
+    marks which nodes FIRE this turn (from the honest thought_path) and gives each
+    firing node a one-line, true note of what it did — so you can WATCH a thought
+    move through her: memory → feel → wisdom → life → router → voice, the RAG
+    faculties pulsing when they actually retrieve. Everything is real, local,
+    read-only; empty prompt → the resting graph (nothing lit).
+    """
+    facs = {fid for fid, _, _ in _FACULTIES}
+    path = thought_path(prompt).get("path", []) if prompt.strip() else []
+    fired = [n for n in path if n in facs]
+    firing = set(fired)
+
+    # a true, one-line note per firing faculty for THIS prompt (no invention).
+    notes: dict[str, str] = {}
+    if prompt.strip():
+        try:
+            f = feel_read(prompt)
+            if "feel" in firing and f:
+                lab = f.get("label") or f.get("feeling") or ""
+                st = f.get("stance") or ""
+                notes["feel"] = f"feels it: {lab}{(' · ' + st) if st else ''}".strip(": ")
+        except Exception:
+            pass
+        try:
+            from . import memory
+            hits = _safe(lambda: memory.recall(prompt, k=2), []) or []
+            if "memory" in firing:
+                notes["memory"] = (f"recalls {len(hits)} related moment"
+                                   f"{'' if len(hits) == 1 else 's'}") if hits else "nothing recalled yet"
+        except Exception:
+            pass
+        try:
+            from . import wisdom
+            w = _safe(lambda: wisdom.retrieve(prompt, k=2), []) or []
+            if "wisdom" in firing:
+                notes["wisdom"] = (f"retrieves {len(w)} conviction"
+                                   f"{'' if len(w) == 1 else 's'} that fit") if w else "no belief fits"
+        except Exception:
+            pass
+        try:
+            from . import life_story
+            if "life" in firing and not life_story.load().is_empty():
+                notes["life"] = "draws on her real past"
+        except Exception:
+            pass
+        notes.setdefault("persona", "who she is, always on")
+        if "router" in firing:
+            notes["router"] = "picks the local model that writes the reply"
+        if "voice" in firing:
+            notes["voice"] = "paces + warms the spoken reply"
+
+    nodes = []
+    for fid, label, role in _FACULTIES:
+        nodes.append({
+            "id": fid, "label": label, "role": role,
+            "fires": fid in firing,
+            "order": fired.index(fid) if fid in firing else None,
+            "note": notes.get(fid, ""),
+        })
+
+    # edges = the real wiring; an edge is "flowing" when BOTH ends fire this turn
+    # and they're adjacent in the fired order (so the animation follows the path).
+    order_idx = {n: i for i, n in enumerate(fired)}
+    edges = []
+    for a, b in _WIRING:
+        flowing = (a in firing and b in firing
+                   and order_idx.get(b, -99) - order_idx.get(a, 99) == 1)
+        edges.append({"source": a, "target": b, "flowing": flowing})
+
+    return {"prompt": prompt, "nodes": nodes, "edges": edges, "path": fired}
+
+
 # The real anatomical regions, in the order a thought flows through the brain.
 # Kept here (not invented in JS) so the Mind view can draw the TRUE architecture:
 # occipital → parietal → (accommodation) → limbic → hippocampus → frontal →
