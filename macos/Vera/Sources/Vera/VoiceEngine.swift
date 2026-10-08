@@ -159,15 +159,26 @@ final class VoiceEngine: ObservableObject {
     /// when speech + mic are both granted. Optional completion fires on the main
     /// actor so a caller can start listening the moment access lands.
     func requestPermission(_ completion: (@MainActor (Bool) -> Void)? = nil) {
+        // LOCAL WHISPER: we need ONLY the microphone. Do NOT touch
+        // SFSpeechRecognizer — on free-team / side-loaded builds, calling its
+        // authorization API can abort the app under TCC ("crashed … without a
+        // usage description"), which caused a crash-relaunch LOOP. Mic only.
+        if useLocalWhisper {
+            AVCaptureDevice.requestAccess(for: .audio) { micOK in
+                Task { @MainActor in
+                    self.authorized = micOK
+                    self.micDenied = !micOK
+                    self.speechDenied = false
+                    completion?(micOK)
+                }
+            }
+            return
+        }
         SFSpeechRecognizer.requestAuthorization { speechStatus in
             let speechOK = (speechStatus == .authorized)
-            // AVAudioApplication is the modern mic-permission API (macOS 14+);
-            // it falls through to the system prompt on first use.
             AVCaptureDevice.requestAccess(for: .audio) { micOK in
                 Task { @MainActor in
                     self.authorized = speechOK && micOK
-                    // publish exact state so the banner reflects reality (and
-                    // clears the moment both are granted)
                     self.micDenied = (AVCaptureDevice.authorizationStatus(for: .audio) == .denied
                                       || AVCaptureDevice.authorizationStatus(for: .audio) == .restricted)
                     self.speechDenied = (SFSpeechRecognizer.authorizationStatus() == .denied
@@ -240,11 +251,15 @@ final class VoiceEngine: ObservableObject {
     /// show "off" while the switch is on.
     func refreshPermissionState() {
         let mic = AVCaptureDevice.authorizationStatus(for: .audio)
-        let sp = SFSpeechRecognizer.authorizationStatus()
+        // LOCAL WHISPER: listening needs ONLY the mic — never read SFSpeech state
+        // (and never require it), so the banner can't demand a Speech grant we no
+        // longer use. Apple-Speech state is only consulted on the legacy path.
+        let sp: SFSpeechRecognizerAuthorizationStatus = useLocalWhisper
+            ? .authorized : SFSpeechRecognizer.authorizationStatus()
         DispatchQueue.main.async {
             self.micDenied = (mic == .denied || mic == .restricted)
             self.speechDenied = (sp == .denied || sp == .restricted)
-            self.authorized = (mic == .authorized && sp == .authorized)
+            self.authorized = (mic == .authorized) && (self.useLocalWhisper || sp == .authorized)
             // becoming active after granting in Settings → drop the stale hint.
             if self.authorized { self.permissionNeeded = false }
         }
@@ -274,9 +289,14 @@ final class VoiceEngine: ObservableObject {
     /// for the user to speak over her (no UI state, no delivery) — the barge-in
     /// hunt that `speak`/`beginExternalSpeech` start.
     func startListening(hunting: Bool = false, over utterance: String = "") {
-        // LOCAL WHISPER PATH (bypass Apple Speech). Only for a REAL listening turn;
-        // the muted barge-in "hunt" still rides the old path (it keys on Apple's
-        // partials to detect you talking over her, and clears itself with her voice).
+        // LOCAL WHISPER: the barge-in HUNT opened an SFSpeechRecognizer session
+        // UNDER her voice — and merely touching Apple Speech on a free-team build
+        // ABORTS the app under TCC ("crashed … without a usage description"), which
+        // the always-on relaunch turned into a crash LOOP. With Whisper we simply
+        // DON'T hunt: the always-on loop re-opens the mic after she finishes. So a
+        // hunting request is a safe no-op here. (No Apple Speech is ever touched.)
+        if useLocalWhisper && hunting { return }
+        // LOCAL WHISPER PATH — a REAL listening turn, captured + transcribed locally.
         if useLocalWhisper && !hunting {
             // need the mic; if it's not granted, ask once (mic only — no speech).
             guard micGranted else {
