@@ -129,6 +129,32 @@ class LifeStory:
         return list(self.sayings)
 
 
+def moment_hint(label: str = "") -> str:
+    """A tiny, moment-aware nudge to lean on ONE of her real sayings when it
+    genuinely fits the emotion — the thing that makes a reply land as 'that's
+    exactly how she'd say it.' Never forces a phrase; the model may use none.
+
+    `label` is the live felt read (feel.Felt.label): heavy/tender/bright/glad.
+    Returns "" when there are no sayings (so nothing is invented).
+    """
+    ls = load()
+    if not ls.sayings:
+        return ""
+    quoted = "; ".join(f"“{s}”" for s in ls.sayings[:8])
+    mood = ""
+    if label in ("heavy", "tender"):
+        mood = " This is a tender moment — if one of her gentler phrases fits, let it come through."
+    elif label in ("bright", "glad"):
+        mood = " This is a warm moment — a familiar, glad phrase of hers may fit here."
+    return (
+        "A soft reminder of HER real voice — these are phrases she actually used: "
+        + quoted + "."
+        + mood
+        + " Use at most one, only if it lands naturally; never force it, and never "
+        "invent a new 'saying.' If none fits, just speak warmly as yourself."
+    )
+
+
 # ---- load / save (local, owner-only, SEALED) ---------------------------------
 def load() -> LifeStory:
     from . import security

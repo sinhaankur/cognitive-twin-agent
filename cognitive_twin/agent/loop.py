@@ -223,6 +223,23 @@ class Agent:
                     parts.append(cm)
             except Exception:
                 pass
+            # HER REAL SAYINGS, at the right moment — read the felt state of this
+            # turn and, when it fits, gently nudge her to lean on ONE of her actual
+            # phrases (from the life story). This is the "that's exactly how she'd
+            # say it" cue. Never forced, at most one, never invents a new saying.
+            try:
+                from .. import life_story as _life
+                label = ""
+                try:
+                    from .. import feel as _feel
+                    label = _feel.read(user_input).label
+                except Exception:
+                    pass
+                hint = _life.moment_hint(label)
+                if hint:
+                    parts.append(hint)
+            except Exception:
+                pass
             # her evolving self — who she's become through your conversations
             try:
                 from .. import soul as _soul

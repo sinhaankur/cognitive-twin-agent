@@ -85,9 +85,28 @@ def test_dedupes_and_survives_reload():
     print("✓ dedupes repeats and survives a reload")
 
 
+def test_moment_hint_only_with_sayings_and_never_invents():
+    ls, _ = _fresh()
+    # No sayings yet → no hint (never fabricates her voice)
+    assert ls.moment_hint("heavy") == ""
+    assert ls.moment_hint("bright") == ""
+    ls.add_saying("Beta, have you eaten?")
+    heavy = ls.moment_hint("heavy")
+    bright = ls.moment_hint("bright")
+    assert "Beta, have you eaten?" in heavy
+    assert "tender moment" in heavy          # moment-aware nudge
+    assert "warm moment" in bright
+    # the guard rails are always present
+    for h in (heavy, bright):
+        assert "at most one" in h
+        assert "never force" in h.lower() or "never invent" in h.lower()
+    print("✓ moment hint: only with real sayings, moment-aware, never invents")
+
+
 if __name__ == "__main__":
     test_empty_is_silent_and_honest()
     test_builds_and_compiles_into_prompt()
     test_sealed_at_rest()
     test_dedupes_and_survives_reload()
+    test_moment_hint_only_with_sayings_and_never_invents()
     print("\nall life-story tests passed")
