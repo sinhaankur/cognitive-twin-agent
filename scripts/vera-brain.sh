@@ -29,6 +29,9 @@ cd "$VERA_HOME" || exit 1
 
 export CTWIN_WEB="${CTWIN_WEB:-1}"
 export COQUI_TOS_AGREED="${COQUI_TOS_AGREED:-1}"
+# ONE consistent, fast voice: Kokoro (af_heart). Disables the slow/switching
+# XTTS clone in /api/speak. Override with CTWIN_VOICE_KOKORO_ONLY=0 to re-enable.
+export CTWIN_VOICE_KOKORO_ONLY="${CTWIN_VOICE_KOKORO_ONLY:-1}"
 export PYTHONUNBUFFERED=1
 # the package + policies live right here in VERA_HOME
 export PYTHONPATH="$VERA_HOME:${PYTHONPATH:-}"

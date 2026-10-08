@@ -511,6 +511,40 @@ final class AppModel: ObservableObject {
     @Published var speakReplies = UserDefaults.standard.object(forKey: "vera.speakReplies") as? Bool ?? true {
         didSet { UserDefaults.standard.set(speakReplies, forKey: "vera.speakReplies") }
     }
+    // VOICE-FIRST, HANDS-FREE: she speaks replies out loud and, after a spoken turn,
+    // re-opens the mic so you keep talking without tapping. On by default (the
+    // companion feel the user asked for — "make it voice mode, text at times"). You
+    // can still type anytime; turning her speaker off (speakReplies) quiets her.
+    @Published var voiceMode = UserDefaults.standard.object(forKey: "vera.voiceMode") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(voiceMode, forKey: "vera.voiceMode")
+            if voiceMode {
+                armVoiceLoop()                 // turn on → start listening now (no tap)
+            } else if voice.isListening {
+                voice.stopListening(submit: false)   // turn off → mic closes, stays closed
+            }
+        }
+    }
+
+    /// ALWAYS-ON listening: while voice-mode is on, keep the mic armed whenever she
+    /// isn't already listening or speaking — so she hears you the moment you talk,
+    /// with no tap, and keeps listening until YOU turn voice-mode off. Safe to call
+    /// anytime; it no-ops if she's mid-turn.
+    func armVoiceLoop() {
+        guard voiceMode else { return }
+        guard !voice.isListening, !voice.isSpeaking, phase != .thinking else { return }
+        // Don't HAMMER a permission wall: if mic/speech aren't granted (or the
+        // recognizer is down), re-opening on every empty-end/speech-end turns into
+        // a tight failing loop. Only arm when we can actually listen; otherwise the
+        // banner tells the user to grant access and we wait for them. With local
+        // Whisper, listening needs only the MICROPHONE (recognizerAvailable returns
+        // micGranted) — NOT Apple Speech Recognition, which is the broken grant.
+        guard voice.recognizerAvailable else {
+            voice.permissionNeeded = true
+            return
+        }
+        voice.startListening()
+    }
     @Published var turns: [ChatTurn] = []     // the chat conversation
     // A file you've attached to send with your next message (name + extracted
     // text). On-device: the text is read locally and included as context; nothing
@@ -641,18 +675,29 @@ final class AppModel: ObservableObject {
         guard streamSpokenUpTo < chars.count else { return }
         var boundary = final ? chars.count : -1
         if !final {
+            // The FIRST chunk starts her talking ASAP — break on a clause (comma /
+            // semicolon / colon / dash) too, not just a sentence end, so the "delay
+            // in voice after text" shrinks: she begins the moment the first phrase
+            // forms instead of waiting for a full sentence to render.
+            let firstChunk = (streamSpokenUpTo == 0)
+            let enders: Set<Character> = firstChunk
+                ? [".", "!", "?", "…", ",", ";", ":", "—"]
+                : [".", "!", "?", "…"]
             var i = chars.count - 2
             while i > streamSpokenUpTo {
                 let c = chars[i]
-                if (c == "." || c == "!" || c == "?" || c == "…"),
-                   chars[i + 1] == " " || chars[i + 1] == "\n" { boundary = i + 1; break }
+                if enders.contains(c), chars[i + 1] == " " || chars[i + 1] == "\n" {
+                    boundary = i + 1; break
+                }
                 i -= 1
             }
         }
         guard boundary > streamSpokenUpTo else { return }
         let chunk = String(chars[streamSpokenUpTo..<boundary])
-        // too tiny to speak alone mid-stream ("Ok.") — wait for more words
-        if !final && chunk.trimmingCharacters(in: .whitespacesAndNewlines).count < 10 { return }
+        // too tiny to speak alone mid-stream — wait for more words. Lower bar for the
+        // first chunk so she starts sooner (6 chars ≈ "Hi there,").
+        let minLen = streamSpokenUpTo == 0 ? 6 : 10
+        if !final && chunk.trimmingCharacters(in: .whitespacesAndNewlines).count < minLen { return }
         // CLONED voice is spoken as ONE whole reply (see speakReply), never streamed
         // per-sentence — streaming it caused the jarring MIX: a sentence that failed
         // to clone fell back to the robotic voice mid-reply. Only the reliable
@@ -882,6 +927,25 @@ final class AppModel: ObservableObject {
         // voice input → speak the reply back (you spoke to her, she speaks to you),
         // even when the chat is text-first.
         voice.onFinal = { [weak self] text in self?.handle(text, spoken: true) }
+        // HANDS-FREE: after she finishes speaking a reply to a SPOKEN turn, open the
+        // mic again so you can just keep talking — a real voice conversation, no tap
+        // between turns. Only when voice-mode is on AND this turn came in by voice
+        // (so a typed turn she happens to read aloud doesn't start listening at you).
+        voice.onSpeechEnded = { [weak self] in
+            guard let self else { return }
+            guard self.voiceMode else { return }
+            // small beat so the speaker fully releases before the mic opens (no echo)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                self?.armVoiceLoop()
+            }
+        }
+        // Always-on: a listen turn that ended with no words → re-open the mic after
+        // a short beat, so she keeps listening until voice-mode is turned off.
+        voice.onListenEndedEmpty = { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                self?.armVoiceLoop()
+            }
+        }
         // the ear tells the voice when the room needs isolation ("if needed")
         ear.onNoise = { [weak self] noisy in self?.voice.isolateVoice = noisy }
         // …and when a TV / music bed is playing, so a video narrator can't
@@ -986,9 +1050,17 @@ final class AppModel: ObservableObject {
                 if self.speakReplies { self.speakReply(text) }
             }
         }
-        // Is her actual (cloned) voice ready? If so, she speaks in it from now on.
-        let ready = await agent.cloneReady()
-        await MainActor.run { self.clonedVoiceReady = ready }
+        // KOKORO-ONLY: she speaks in Kokoro (af_heart) everywhere — ONE fast,
+        // consistent voice. The XTTS clone is slow (6–15s, cold-probe hangs) and
+        // switches timbre mid-conversation ("voice sucks / two voices"), so we keep
+        // clonedVoiceReady false and route every reply through the Kokoro path
+        // (/api/voice/piper). The clone sample stays on disk, just unused.
+        await MainActor.run { self.clonedVoiceReady = false }
+        // Always-on voice: once she's up (and done greeting), open the mic so she's
+        // listening from the start — no first tap. No-ops while she's still speaking
+        // the greeting; her onSpeechEnded re-arms it right after. Needs mic + speech
+        // permission granted; if not, it surfaces permissionNeeded for the UI.
+        await MainActor.run { self.armVoiceLoop() }
         await shareReflections()
         startReflecting()
     }
@@ -1150,6 +1222,18 @@ final class AppModel: ObservableObject {
         var childEnv = env
         childEnv["CTWIN_WEB"] = "1"
         childEnv["COQUI_TOS_AGREED"] = "1"   // XTTS license: agreed (so her voice works headless)
+        // VERA_HOME MUST be the real install dir. A value inherited from the
+        // launching shell can be TRUNCATED at the space in "Application Support"
+        // (an unquoted export upstream), which makes the server look for the
+        // Kokoro venv/worker at a path that doesn't exist — /api/speak then hangs
+        // and "she doesn't speak". Set it explicitly from the unescaped home dir
+        // so a broken inherited value can never win.
+        let veraHome = NSHomeDirectory() + "/Library/Application Support/Vera"
+        childEnv["VERA_HOME"] = veraHome
+        childEnv["PYTHONPATH"] = veraHome
+        // ONE consistent, fast voice: Kokoro (af_heart) everywhere. Disables the
+        // slow/switching XTTS clone server-side too (see /api/speak).
+        childEnv["CTWIN_VOICE_KOKORO_ONLY"] = "1"
         p.environment = childEnv
         do { try p.run(); serverProcess = p } catch { /* surfaced via serverUp staying false */ }
     }
@@ -1207,7 +1291,11 @@ final class AppModel: ObservableObject {
     /// speaker is on, OR this turn came in by voice (a conversation you started
     /// out loud stays out loud). Text-first otherwise.
     private var speakThisTurn = false
-    func shouldSpeakReply() -> Bool { speakReplies || speakThisTurn }
+    // Speak the reply when: the speaker is on, OR this turn came in by voice, OR
+    // voice-mode is on (voice-first — she speaks every reply, typed or spoken, so
+    // it isn't "only the greeting speaks, the rest is text"). Mute by turning the
+    // speaker (speakReplies) off or leaving voice-mode.
+    func shouldSpeakReply() -> Bool { speakReplies || speakThisTurn || voiceMode }
 
     /// Load installed models (for the settings picker). Apple Intelligence is
     /// offered first when it's available on this Mac (most private option).
@@ -1315,9 +1403,15 @@ final class AppModel: ObservableObject {
                     // too: her real voice used to render the entire reply before a
                     // word came out (~15s of silence on a long answer); streaming it
                     // sentence-by-sentence means she starts speaking in ~5s.
-                    let streamSpeak = await MainActor.run { () -> Bool in
+                    // Decide the voice path ONCE for this whole turn. If we read
+                    // clonedVoiceReady separately in the stream and again at the end,
+                    // a state flip mid-reply makes the stream speak in the SYSTEM voice
+                    // and the final block ALSO speak the whole thing in the CLONED
+                    // voice — you hear TWO voices at once. Snapshot it here so exactly
+                    // one path speaks this reply.
+                    let (streamSpeak, useCloned) = await MainActor.run { () -> (Bool, Bool) in
                         self.streamSpokenUpTo = 0
-                        return self.shouldSpeakReply()
+                        return (self.shouldSpeakReply(), self.clonedVoiceReady)
                     }
                     let reply = try await agent.askStream(text) { partial in
                         Task { @MainActor in
@@ -1333,7 +1427,12 @@ final class AppModel: ObservableObject {
                                       let i = self.turns.firstIndex(where: { $0.id == id }) {
                                 self.turns[i].text = partial
                             }
-                            if streamSpeak { self.speakStreamSentences(partial, final: false) }
+                            // Only the NEURAL/SYSTEM voice streams per-sentence. The
+                            // cloned voice speaks the whole reply once at the end (below)
+                            // — streaming it too would double her up.
+                            if streamSpeak && !useCloned {
+                                self.speakStreamSentences(partial, final: false)
+                            }
                         }
                     }
                     if let m = reply.model { await MainActor.run { self.modelName = m } }
@@ -1349,9 +1448,10 @@ final class AppModel: ObservableObject {
                         self.answer = answerText
                         if self.shouldSpeakReply() && !answerText.isEmpty {
                             self.phase = .speaking
-                            if self.clonedVoiceReady {
+                            if useCloned {
                                 // her REAL voice: speak the WHOLE reply once, one
-                                // consistent voice (no per-sentence mixing).
+                                // consistent voice (no per-sentence mixing). The stream
+                                // above deliberately stayed silent for this path.
                                 self.speakReply(answerText)
                             } else {
                                 // neural/system voice: flush the last streamed sentence.

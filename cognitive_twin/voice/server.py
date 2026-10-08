@@ -43,6 +43,53 @@ def _voice_confirm(action: str) -> bool:
 control.set_confirm(_voice_confirm)
 
 
+# Track the current server-side playback so a barge-in / stop can silence it.
+_playback_lock = threading.Lock()
+_playback_proc: Any = None
+
+
+def _play_wav_bytes(wav: bytes) -> None:
+    """Play WAV bytes on this machine via macOS `afplay`, fire-and-forget so the
+    HTTP handler returns immediately. Any prior playback is stopped first so she
+    never doubles up. On-device, no network."""
+    import os as _os
+    import subprocess as _sp
+    import tempfile as _tf
+    global _playback_proc
+    f = _tf.NamedTemporaryFile(suffix=".wav", delete=False, dir="/tmp")
+    try:
+        f.write(wav)
+        f.flush()
+        f.close()
+        with _playback_lock:
+            if _playback_proc and _playback_proc.poll() is None:
+                try:
+                    _playback_proc.kill()
+                except OSError:
+                    pass
+            _playback_proc = _sp.Popen(
+                ["/usr/bin/afplay", f.name],
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+            )
+        proc = _playback_proc
+
+        def _cleanup(p, path):
+            try:
+                p.wait()
+            except Exception:
+                pass
+            try:
+                _os.unlink(path)
+            except OSError:
+                pass
+        threading.Thread(target=_cleanup, args=(proc, f.name), daemon=True).start()
+    except Exception:
+        try:
+            _os.unlink(f.name)
+        except OSError:
+            pass
+
+
 WEB_DIR = Path(__file__).resolve().parent / "web"
 HOST = "127.0.0.1"
 DEFAULT_PORT = 7878
@@ -346,6 +393,35 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
 
     def do_POST(self) -> None:
+        if self.path == "/api/transcribe":
+            # LOCAL speech-to-text (bypasses Apple's SFSpeechRecognizer, which is
+            # flaky on free-team / side-loaded builds). The app captures mic audio
+            # itself (AVAudioEngine — the mic grant works) and POSTs a WAV here; we
+            # transcribe it with the on-device Whisper (faster-whisper) and return
+            # the text. Fully on-device, nothing leaves the machine.
+            import tempfile as _tf, os as _os
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(length) if length > 0 else b""
+            text = ""
+            if raw[:4] == b"RIFF" and stt.is_available():
+                f = _tf.NamedTemporaryFile(suffix=".wav", delete=False, dir="/tmp")
+                try:
+                    f.write(raw)
+                    f.flush()
+                    f.close()
+                    try:
+                        text = stt.transcribe(f.name) or ""
+                    except Exception as e:  # never 500 the mic — return empty
+                        import sys as _sys
+                        print(f"[transcribe] {e}", file=_sys.stderr)
+                        text = ""
+                finally:
+                    try:
+                        _os.unlink(f.name)
+                    except OSError:
+                        pass
+            self._json(200, {"text": text.strip()})
+            return
         if self.path == "/api/health/import":
             # Import an Apple Health export (parsed locally). Body: {"path": "..."}.
             from .. import health as _health
@@ -608,18 +684,42 @@ class _Handler(BaseHTTPRequestHandler):
             data = self._read_json()
             text = (data.get("text") or "").strip()
             ok = False
+            cloned = False
             if text:
-                # Prefer the loved one's cloned voice if it's set up; otherwise
-                # fall back to the warm built-in voice so speech always works.
-                try:
-                    from .. import voice_clone
-                    if voice_clone.is_ready():
-                        ok = voice_clone.speak(text)
-                except Exception:
-                    ok = False
+                import os as _os
+                kokoro_only = _os.environ.get("CTWIN_VOICE_KOKORO_ONLY", "").strip() \
+                    in {"1", "true", "yes", "on"}
+                # 1) A loved one's CLONED voice (XTTS), ONLY if genuinely set up AND
+                #    not disabled. The XTTS clone is slow (6–15s renders, cold-probe
+                #    hangs) and switches timbre against Kokoro — the "voice sucks /
+                #    two voices" report. KOKORO_ONLY skips it entirely for ONE fast,
+                #    consistent voice everywhere.
+                if not kokoro_only:
+                    try:
+                        from .. import voice_clone
+                        if voice_clone.is_ready():
+                            ok = voice_clone.speak(text)
+                            cloned = ok
+                    except Exception:
+                        ok = False
+                # 2) No clone → speak in her ONE consistent built-in voice: KOKORO
+                #    (the same neural voice the app plays via /api/voice/piper), never
+                #    macOS `say`. Synthesize + play the WAV server-side. This keeps a
+                #    single voice everywhere and can't hang on a missing clone.
+                if not ok:
+                    try:
+                        from . import kokoro_tts
+                        if kokoro_tts.is_available():
+                            wav = kokoro_tts.synth_wav(text)
+                            if wav:
+                                _play_wav_bytes(wav)
+                                ok = True
+                    except Exception:
+                        ok = False
+                # 3) Last resort only if Kokoro itself is unavailable.
                 if not ok:
                     ok = tts.speak(text, blocking=False)
-            self._json(200, {"ok": ok, "cloned": ok and self._cloned_ready()})
+            self._json(200, {"ok": ok, "cloned": cloned})
         elif self.path == "/api/speak/stop":
             # barge-in: the user spoke over her — silence playback mid-word
             stopped = False
@@ -847,6 +947,7 @@ def make_server(port: int = DEFAULT_PORT, model: str | None = None) -> Threading
     control.set_confirm(_voice_confirm)  # ensure our confirm wins after build
     _warm_voice_clone()  # preload engine detection + the XTTS model in the background
     _warm_kokoro()       # preload the neural voice so the FIRST reply isn't a 15s wait
+    _warm_stt()          # preload Whisper so the FIRST spoken turn isn't a 20–30s load
     _warm_recall()       # preload activity/life-memory caches so the FIRST reply is fast
     _warm_model(httpd.agent)  # load the chat model(s) so the FIRST message isn't empty/slow
     _start_activity_sampler()  # observe device activity (only when enabled + not private)
@@ -905,6 +1006,18 @@ def _warm_recall() -> None:
         try:
             from .. import life_memory
             life_memory.context_for_prompt("hello")  # builds the index cache
+        except Exception:
+            pass
+    threading.Thread(target=warm, daemon=True).start()
+
+
+def _warm_stt() -> None:
+    """Preload Whisper in the background so the FIRST spoken turn transcribes in
+    ~1s instead of a 20–30s cold model load. Fail-soft; purely background."""
+    def warm() -> None:
+        try:
+            if stt.is_available():
+                stt.warm()
         except Exception:
             pass
     threading.Thread(target=warm, daemon=True).start()

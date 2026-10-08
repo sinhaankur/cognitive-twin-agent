@@ -187,6 +187,44 @@ final class VoiceEngine: ObservableObject {
             && AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
     }
 
+    /// When we bypass Apple Speech (local Whisper STT), listening only needs the
+    /// MICROPHONE — not Speech Recognition. The always-on loop checks this.
+    var micGranted: Bool {
+        AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    }
+
+    /// Whether we can actually run a listening turn right now. With local Whisper
+    /// we need the mic + a reachable brain; with Apple we need the recognizer up.
+    var recognizerAvailable: Bool {
+        if useLocalWhisper { return micGranted }
+        return (recognizer?.isAvailable ?? false)
+    }
+
+    /// BYPASS Apple's SFSpeechRecognizer (flaky on free-team / side-loaded builds:
+    /// mic grants but recognition silently returns nothing). Instead capture mic
+    /// audio ourselves and transcribe with the on-device Whisper in the brain
+    /// (POST /api/transcribe). On by default — it's the path that actually works.
+    var useLocalWhisper = true
+    private lazy var whisper: WhisperListener = {
+        let w = WhisperListener()
+        w.onLevel = { [weak self] lvl, bright in
+            self?.level = lvl; self?.brightness = bright
+        }
+        w.onPartial = { [weak self] text in self?.transcript = text }
+        w.onFinal = { [weak self] text in self?.whisperFinal(text) }
+        return w
+    }()
+
+    /// A completed utterance from the local-Whisper path.
+    private func whisperFinal(_ text: String) {
+        isListening = false
+        level = 0; brightness = 0
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        didDeliverFinal = false
+        if clean.isEmpty { onListenEndedEmpty?() }
+        else { didDeliverFinal = true; Chime.done.play(); onFinal?(clean) }
+    }
+
     /// A published mirror of the permission state so SwiftUI re-renders the banner
     /// the moment access changes (TCC status itself isn't observable). Refreshed on
     /// launch, when the app becomes active, and after a permission request. Starts
@@ -236,6 +274,31 @@ final class VoiceEngine: ObservableObject {
     /// for the user to speak over her (no UI state, no delivery) — the barge-in
     /// hunt that `speak`/`beginExternalSpeech` start.
     func startListening(hunting: Bool = false, over utterance: String = "") {
+        // LOCAL WHISPER PATH (bypass Apple Speech). Only for a REAL listening turn;
+        // the muted barge-in "hunt" still rides the old path (it keys on Apple's
+        // partials to detect you talking over her, and clears itself with her voice).
+        if useLocalWhisper && !hunting {
+            // need the mic; if it's not granted, ask once (mic only — no speech).
+            guard micGranted else {
+                AVCaptureDevice.requestAccess(for: .audio) { [weak self] ok in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        if ok { self.startListening() }
+                        else { self.permissionNeeded = true; self.isListening = false }
+                    }
+                }
+                return
+            }
+            stopSpeaking()            // never listen over her own voice
+            transcript = ""
+            didDeliverFinal = false
+            isListening = true
+            permissionNeeded = false
+            micUnavailable = false
+            Chime.listen.play()
+            whisper.start()
+            return
+        }
         // Permission gate: if speech + mic aren't both granted yet, request them
         // and — once granted — retry this exact call. This is what makes the mic
         // button WORK on first tap instead of silently failing (the old code
@@ -331,10 +394,22 @@ final class VoiceEngine: ObservableObject {
             try? input.setVoiceProcessingEnabled(isolateVoice)
             isolationApplied = isolateVoice
         }
-        // inputFormat is the live device format (outputFormat can report a stale
-        // cached value right after a reset); 0-channel means no input is actually
-        // available yet (device still settling) — bail cleanly, the next tap retries.
-        let format = input.inputFormat(forBus: 0)
+        // Read the live device format. Right after stop()+reset() the input node
+        // often hasn't re-settled on the HAL yet, so inputFormat can momentarily
+        // report 0 channels / 0 Hz — which previously made us bail and the mic
+        // NEVER opened ("listen does nothing"). Prefer inputFormat, fall back to
+        // outputFormat, and only give up if BOTH are unusable. Nudge the engine to
+        // re-settle with prepare() and retry the read before bailing.
+        func liveFormat() -> AVAudioFormat {
+            let f = input.inputFormat(forBus: 0)
+            if f.channelCount > 0 && f.sampleRate > 0 { return f }
+            return input.outputFormat(forBus: 0)
+        }
+        var format = liveFormat()
+        if format.channelCount == 0 || format.sampleRate == 0 {
+            engine.prepare()                 // let the input node re-attach to the device
+            format = liveFormat()
+        }
         guard format.channelCount > 0, format.sampleRate > 0 else {
             NSLog("[Vera voice] no live input format yet — not starting mic")
             request = nil
@@ -357,7 +432,8 @@ final class VoiceEngine: ObservableObject {
             NSLog("[Vera voice] AVAudioEngine.start() failed: \(error.localizedDescription) — retrying once")
             input.removeTap(onBus: 0)
             engine.reset()
-            let retryFormat = input.inputFormat(forBus: 0)
+            engine.prepare()
+            let retryFormat = liveFormat()
             if retryFormat.channelCount > 0 {
                 input.installTap(onBus: 0, bufferSize: 1024, format: retryFormat) { [weak self] buffer, _ in
                     req.append(buffer)
@@ -486,6 +562,14 @@ final class VoiceEngine: ObservableObject {
     }
 
     func stopListening(submit: Bool = true) {
+        // local-Whisper turn: stop capture; submit flushes the buffered audio now.
+        if useLocalWhisper && whisper.isCapturing {
+            isListening = false
+            level = 0; brightness = 0
+            if submit { whisper.stopAndFlush() }   // transcribe what we have → onFinal
+            else { whisper.cancel() }
+            return
+        }
         guard isListening || muted else { return }
         let wasListening = isListening
         tearDownSession()
@@ -510,6 +594,11 @@ final class VoiceEngine: ObservableObject {
     }
 
     /// Deliver the final transcript to the app exactly once per listening turn.
+    /// Fired when a REAL listening turn ends with no words (you stopped without
+    /// saying anything). Always-on voice-mode uses this to re-open the mic instead
+    /// of going dead — so she keeps listening until you turn voice-mode off.
+    var onListenEndedEmpty: (() -> Void)?
+
     private func deliverFinal(_ text: String) {
         guard !didDeliverFinal else { return }
         didDeliverFinal = true
@@ -517,6 +606,8 @@ final class VoiceEngine: ObservableObject {
         if !clean.isEmpty {
             Chime.done.play()
             onFinal?(clean)
+        } else {
+            onListenEndedEmpty?()   // nothing said → let the app re-arm (always-on)
         }
     }
 
@@ -793,8 +884,10 @@ final class VoiceEngine: ObservableObject {
     func endExternalSpeech() {
         guard externalSpeech else { return }
         externalSpeech = false
+        let was = isSpeaking
         isSpeaking = false
         if muted { tearDownSession() }           // the hunt ends with the voice
+        if was { onSpeechEnded?() }              // hands-free: she's done → app may re-listen
     }
 
     // ---- streamed CLONED voice (her real voice, sentence-by-sentence) ----------
@@ -853,9 +946,18 @@ final class VoiceEngine: ObservableObject {
     }
 
     /// Synth started/stopped talking (per-utterance).
+    /// Fired exactly once each time she FINISHES speaking (any voice path). The app
+    /// uses this for hands-free mode: after she answers a spoken turn out loud, open
+    /// the mic again so you can just keep talking — no tapping between turns.
+    var onSpeechEnded: (() -> Void)?
+
     private func speakingChanged(_ speaking: Bool) {
+        let was = isSpeaking
         isSpeaking = speaking || externalSpeech
         if !speaking && muted { tearDownSession() }   // she finished; hunt over
+        // true speaking → not-speaking edge (and not just a barge mid-hunt): she's
+        // done talking. Let the app decide whether to re-arm the mic (hands-free).
+        if was && !isSpeaking { onSpeechEnded?() }
     }
 
     /// List installed English voices (for a settings picker), warmest first.

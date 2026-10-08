@@ -99,6 +99,13 @@ struct ChatPanel: View {
                         : "Let her hear the room (opt-in): sound types only, never recorded.") {
                 model.ear.toggle()
             }
+            iconButton(model.voiceMode ? "waveform.circle.fill" : "waveform.circle",
+                       on: model.voiceMode,
+                       help: model.voiceMode
+                        ? "Hands-free voice: she listens again after each reply. Click for tap-to-talk."
+                        : "Tap-to-talk. Click for hands-free voice (she keeps listening between turns).") {
+                model.voiceMode.toggle()
+            }
             iconButton("gearshape", on: false, help: "Settings") {
                 model.openSettings?()
             }

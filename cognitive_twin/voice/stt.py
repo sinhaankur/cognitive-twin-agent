@@ -50,12 +50,32 @@ def _load(model_size: str) -> tuple[str, Any]:
     )
 
 
-def transcribe(audio_path: str, *, model_size: str = "base") -> str:
+def _default_model() -> str:
+    """Model size for live dictation. `tiny.en` is ~3x faster than `base` on CPU
+    and plenty accurate for conversational turns — the right trade for an always-on
+    mic where latency is felt. Override with CTWIN_STT_MODEL (e.g. base, small.en)."""
+    import os
+    return (os.environ.get("CTWIN_STT_MODEL") or "tiny.en").strip()
+
+
+def warm(model_size: str | None = None) -> None:
+    """Preload the model so the first real utterance isn't a 20–30s cold load."""
+    try:
+        _load(model_size or _default_model())
+    except Exception:
+        pass
+
+
+def transcribe(audio_path: str, *, model_size: str | None = None) -> str:
     """Transcribe an audio file to text using local Whisper. Raises if no
     backend is installed (callers should check is_available() first or catch)."""
-    backend, model = _load(model_size)
+    backend, model = _load(model_size or _default_model())
     if backend == "faster_whisper":
-        segments, _info = model.transcribe(audio_path, beam_size=1)
+        # beam_size=1 + a tight VAD filter = fast, and it ignores non-speech noise
+        # so a silent/clipped chunk returns "" instead of hallucinated words.
+        segments, _info = model.transcribe(
+            audio_path, beam_size=1, vad_filter=True, language="en",
+        )
         return " ".join(seg.text for seg in segments).strip()
     # openai-whisper
     result = model.transcribe(audio_path)
