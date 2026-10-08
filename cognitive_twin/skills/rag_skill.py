@@ -39,11 +39,16 @@ def rag_index(folder: str, name: str = "default") -> str:
 @R.add(
     "rag_recall",
     "Answer a question grounded in your indexed documents, with sources. Use this "
-    "when the user asks about their own notes/files/projects. Optionally target a "
-    "specific index by name. Read-only, on-device.",
+    "when the user asks about their own notes/files/projects, OR about SCRIPTURE — "
+    "the Bhagavad Gita (Arnold) and the Rig Veda (Griffith) are indexed under the "
+    "name 'scriptures'; pass name='scriptures' to quote/cite real verses instead of "
+    "paraphrasing from memory. Optionally target a specific index by name. "
+    "Read-only, on-device. Call rag_list if unsure which indexes exist.",
     {"type": "object", "properties": {
         "query": {"type": "string", "description": "the question to answer from the documents"},
-        "name": {"type": "string", "description": "optional index name (default 'default')"},
+        "name": {"type": "string", "description":
+                 "optional index name. 'scriptures' = Bhagavad Gita + Rig Veda; "
+                 "default 'default'."},
     }, "required": ["query"]},
 )
 def rag_recall(query: str, name: str = "default") -> str:
