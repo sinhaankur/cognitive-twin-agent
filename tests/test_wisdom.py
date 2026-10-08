@@ -80,9 +80,60 @@ def test_own_beliefs_add_and_dedupe_and_seal():
     print("✓ her own convictions add, dedupe, seal at rest, and retrieve")
 
 
+def _fresh_with_memory():
+    """Fresh dirs + a memory log carrying a couple of belief statements."""
+    w, d = _fresh()
+    import cognitive_twin.memory as memory
+    importlib.reload(memory)
+    memory.record("I truly believe family comes before everything else", "noted")
+    memory.record("what matters most to me is being honest even when it costs", "noted")
+    memory.record("what's the weather like", "it's clear")   # NOT a conviction
+    return w, memory, d
+
+
+def test_learns_proposals_but_never_auto_adds():
+    w, _, _ = _fresh_with_memory()
+    n = w.scan_for_convictions()
+    assert n >= 2, "should propose the two belief statements"
+    # crucially: proposing does NOT change her actual convictions
+    assert w.load().is_empty() is True
+    props = w.proposals()
+    texts = " ".join(p["text"].lower() for p in props)
+    assert "family" in texts
+    assert "honest" in texts
+    assert "weather" not in texts            # a plain question is not a conviction
+    print("✓ learns proposals from real talk, never auto-adds (human-in-the-loop)")
+
+
+def test_approve_promotes_one_proposal():
+    w, _, _ = _fresh_with_memory()
+    w.scan_for_convictions()
+    before = len(w.load().beliefs)
+    kept = w.approve_proposal(0, about="family values")
+    assert kept
+    assert len(w.load().beliefs) == before + 1
+    # approved one leaves the queue
+    assert all(p["text"] != kept for p in w.proposals())
+    # and it's now retrievable like any conviction
+    assert w.retrieve(kept, k=1)
+    print("✓ approving a proposal promotes it into her real, retrievable convictions")
+
+
+def test_scan_is_idempotent():
+    w, _, _ = _fresh_with_memory()
+    first = w.scan_for_convictions()
+    again = w.scan_for_convictions()
+    assert again == 0, "re-scanning the same memory shouldn't duplicate proposals"
+    assert len(w.proposals()) == first
+    print("✓ re-scanning doesn't duplicate proposals")
+
+
 if __name__ == "__main__":
     test_empty_is_silent()
     test_seed_then_retrieve_relevant()
     test_context_block_has_guardrails()
     test_own_beliefs_add_and_dedupe_and_seal()
+    test_learns_proposals_but_never_auto_adds()
+    test_approve_promotes_one_proposal()
+    test_scan_is_idempotent()
     print("\nall wisdom tests passed")

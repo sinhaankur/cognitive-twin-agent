@@ -196,6 +196,123 @@ def context_for_prompt(query: str, k: int = 2) -> str:
     return "\n".join(lines)
 
 
+# ---- growing her mind from real life (PROPOSE, never auto-add) ---------------
+# A twin deepens when it notices what the person actually believes and ASKS to
+# keep it — it never silently rewrites her mind. These are proposals; the user
+# approves each one (ctwin wisdom review). Honest + in their control.
+import re as _re
+
+# Phrasings that signal a genuine conviction/value — not a passing remark.
+_BELIEF_CUES = [
+    _re.compile(r"\bi (?:truly |really |firmly )?believe(?: that)?\b(.+)", _re.I),
+    _re.compile(r"\bwhat (?:really )?matters(?: most)?(?: to me)?(?: is| is that)?\b(.+)", _re.I),
+    _re.compile(r"\b(?:i've |i have )?(?:always|come to) (?:believed|felt|known)(?: that)?\b(.+)", _re.I),
+    _re.compile(r"\bthe (?:important|only) thing(?: is| is that)?\b(.+)", _re.I),
+    _re.compile(r"\bi (?:live|try to live) by\b(.+)", _re.I),
+    _re.compile(r"\byou (?:should|have to|need to) (?:always|never)\b(.+)", _re.I),
+    _re.compile(r"\bnever (?:forget|give up on|settle for|take for granted)\b(.+)", _re.I),
+    _re.compile(r"\b(?:family|honesty|kindness|hard work|love|health|time) (?:is|comes) (?:everything|first|before)\b(.+)", _re.I),
+]
+
+
+def _proposals_file() -> Path:
+    return _dir() / "wisdom_proposals.json"
+
+
+def _clean_candidate(text: str) -> str:
+    t = text.strip(" ,.;:—-—").strip()
+    # keep it to the sentence; trim trailing filler
+    t = _re.split(r"[.!?]", t)[0].strip()
+    return t
+
+
+def scan_for_convictions(limit: int = 200) -> int:
+    """Read recent turns, find belief/value statements the person actually made,
+    and queue them as PROPOSALS (deduped against existing beliefs + prior
+    proposals). Returns how many new proposals were added. Never adds to her
+    actual convictions — that needs explicit approval."""
+    try:
+        from . import memory
+    except Exception:
+        return 0
+    from . import security
+    existing = {b.text.strip().lower() for b in load().beliefs}
+    queued = security.read_state(_proposals_file(), default=None) or {"items": []}
+    seen = existing | {p.get("text", "").strip().lower() for p in queued["items"]}
+
+    # record which SOURCE turns we've already mined, so a turn that matches more
+    # than one cue (e.g. "I believe family comes before everything") can never
+    # keep yielding new fragments on re-scans. One conviction per turn, the best.
+    mined = set(queued.get("mined", []))
+
+    added = 0
+    for e in memory.entries(limit=limit):
+        said = (e.get("prompt") or "").strip()
+        if len(said) < 12:
+            continue
+        src_key = said.lower()
+        if src_key in mined:
+            continue
+        # gather every cue hit for this turn, keep the single strongest candidate
+        cands: list[str] = []
+        for cue in _BELIEF_CUES:
+            m = cue.search(said)
+            if not m:
+                continue
+            cand = _clean_candidate(m.group(1) if m.lastindex else said)
+            if 8 <= len(cand) <= 180:
+                cands.append(cand)
+        if not cands:
+            continue
+        mined.add(src_key)                       # this turn is now mined, once
+        best = max(cands, key=len)               # the fullest phrasing of the belief
+        key = best.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        queued["items"].insert(0, {
+            "text": best,
+            "source": said[:140],
+            "ts": e.get("ts") or "",
+        })
+        added += 1
+    queued["items"] = queued["items"][:40]
+    queued["mined"] = list(mined)[:400]
+    if added:
+        security.write_state(_proposals_file(), queued)
+    return added
+
+
+def proposals() -> list[dict[str, str]]:
+    from . import security
+    data = security.read_state(_proposals_file(), default=None) or {"items": []}
+    return list(data.get("items", []))
+
+
+def approve_proposal(index: int, about: str = "") -> str | None:
+    """Promote one queued proposal into her real convictions (embeds it)."""
+    from . import security
+    data = security.read_state(_proposals_file(), default=None) or {"items": []}
+    items = data.get("items", [])
+    if index < 0 or index >= len(items):
+        return None
+    p = items.pop(index)
+    add(p["text"], about=about)
+    security.write_state(_proposals_file(), data)
+    return p["text"]
+
+
+def dismiss_proposal(index: int) -> str | None:
+    from . import security
+    data = security.read_state(_proposals_file(), default=None) or {"items": []}
+    items = data.get("items", [])
+    if index < 0 or index >= len(items):
+        return None
+    p = items.pop(index)
+    security.write_state(_proposals_file(), data)
+    return p["text"]
+
+
 # ---- status / control --------------------------------------------------------
 def status() -> str:
     w = load()

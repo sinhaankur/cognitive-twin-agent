@@ -615,10 +615,48 @@ def _wisdom_command(rest: list[str]) -> int:
             for b in hits:
                 print(f"    · ({b.kind}) {b.text}")
         return 0
+    if sub == "learn":
+        # scan recent conversations for convictions she could keep (proposals only)
+        n = wisdom.scan_for_convictions()
+        if n:
+            print(f"  ✔ noticed {n} thing{'s' if n != 1 else ''} you seem to believe. "
+                  f"Review with `ctwin wisdom review`.")
+        else:
+            print("  nothing new stood out — she'll keep listening.")
+        return 0
+    if sub == "review":
+        props = wisdom.proposals()
+        if not props:
+            print("  nothing waiting. Run `ctwin wisdom learn` after some conversation.")
+            return 0
+        # non-interactive listing + interactive approve, matching the gentle tone
+        print("  Things you seem to believe — keep any as hers?\n")
+        for i, p in enumerate(props):
+            print(f"    [{i}] {p['text']}")
+            if p.get("source"):
+                print(f"         (from: “{p['source']}”)")
+        print("\n  keep:  ctwin wisdom keep <number>")
+        print("  drop:  ctwin wisdom drop <number>")
+        return 0
+    if sub == "keep":
+        if len(rest) < 2 or not rest[1].isdigit():
+            print("  usage: ctwin wisdom keep <number>  (see `ctwin wisdom review`)")
+            return 1
+        kept = wisdom.approve_proposal(int(rest[1]))
+        print(f"  ✔ kept — that's part of how she sees things now: “{kept}”" if kept
+              else "  no proposal at that number.")
+        return 0
+    if sub == "drop":
+        if len(rest) < 2 or not rest[1].isdigit():
+            print("  usage: ctwin wisdom drop <number>")
+            return 1
+        dropped = wisdom.dismiss_proposal(int(rest[1]))
+        print("  dismissed." if dropped else "  no proposal at that number.")
+        return 0
     if sub == "clear":
         print("  cleared." if wisdom.clear() else "  nothing to clear.")
         return 0
-    print(f"  unknown: wisdom {sub}. try: add / seed / test / clear")
+    print(f"  unknown: wisdom {sub}. try: add / seed / learn / review / keep / drop / test / clear")
     return 1
 
 

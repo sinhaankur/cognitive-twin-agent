@@ -121,7 +121,21 @@ def run() -> int:
         print("  No problem — you can add a voice later:")
         print("    python -m cognitive_twin.voice_clone set /path/to/voice.wav \"" + name + "\"\n")
 
-    # 4) private?
+    # 4) remember them — the life story (optional, the heart of the twin)
+    print("  One last thing, and it's the one that matters most.")
+    print("  A persona gives them a character; their LIFE is what makes it them —")
+    print("  the people they loved, the places, the things they always said.")
+    if _yes("Spend a few minutes remembering them now? (skippable, do it anytime)", True):
+        try:
+            from . import remember
+            remember.run()
+        except Exception:
+            print("  (you can do this anytime with: python -m cognitive_twin remember)\n")
+    else:
+        print("  Of course — whenever you're ready:")
+        print("    python -m cognitive_twin remember\n")
+
+    # 5) private?
     if _yes("Keep this twin private to this machine (never exportable/shareable)?", False):
         twins.set_private(twin_slug, True)
         print("  Marked private — this twin can't be exported.\n")

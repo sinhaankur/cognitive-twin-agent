@@ -39,6 +39,8 @@ struct OnboardingView: View {
                       systemImage: "waveform")
                 Label("Her senses (camera, hearing, Photos) are switches in the menu — all off until you say",
                       systemImage: "switch.2")
+                Label("Make her truly them: tell her their life — the people, places and sayings — by just talking, or “Remember them…” in the menu",
+                      systemImage: "heart.text.square")
             }
             .font(.caption)
             .foregroundStyle(.secondary)
