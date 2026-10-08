@@ -99,6 +99,14 @@ final class VoiceEngine: ObservableObject {
     var isolateVoice = false
     private var isolationApplied = false
 
+    /// True while the room has a media bed (music / television) playing — set by
+    /// EarEngine. When media is playing, the barge-in echo filter can't tell a
+    /// YouTube narrator from YOU (it keys on text, not acoustics), so it would
+    /// cut her off mid-sentence hearing the video as an interruption. While this
+    /// is set we demand a much stronger, acoustic barge signal (real voice energy
+    /// at the mic, right up close) instead of trusting transcribed words alone.
+    var mediaNoisy = false
+
     init() {
         let delegate = SpeechDelegate(
             onChange: { [weak self] speaking in
@@ -109,6 +117,39 @@ final class VoiceEngine: ObservableObject {
             })
         speechDelegate = delegate
         synth.delegate = delegate
+
+        // The #1 cause of "listening sometimes works, sometimes doesn't": a
+        // route change (AirPods in/out, a display with speakers, another app
+        // grabbing the device, a 44.1↔48 kHz sample-rate switch, sleep/wake)
+        // leaves the engine's cached input format stale. A stopped engine then
+        // throws on start(); a running one keeps the tap but the buffers stop
+        // arriving (mic "on" but deaf). AVAudioEngine fires this when its own
+        // config changes out from under it — rebind the live session on the new
+        // hardware so it never silently goes deaf.
+        NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.rebindAfterRouteChange() }
+        }
+    }
+
+    /// The audio route changed under an active session. Rebuild it on the new
+    /// hardware: a real listening turn restarts listening, a muted watch re-arms,
+    /// a muted barge-hunt is simply dropped (her voice path restarts it).
+    private func rebindAfterRouteChange() {
+        guard isListening || muted else { return }   // nothing live → nothing to do
+        let wasListening = isListening
+        let names = Array(nameWords)
+        let watching = keepWatching
+        tearDownSession()
+        isListening = false
+        muted = false
+        if wasListening {
+            NSLog("[Vera voice] audio route changed mid-turn — rebinding the mic")
+            startListening()
+        } else if watching && !names.isEmpty {
+            startNameWatch(names)
+        }
     }
 
     /// Request BOTH permissions the voice pipeline needs: Speech Recognition
@@ -231,6 +272,15 @@ final class VoiceEngine: ObservableObject {
             return
         }
         micUnavailable = false
+        // A REAL turn (a deliberate tap) always wins the single mic. If a muted
+        // session — the wake-word watch or a barge-in hunt — is holding it, the
+        // `request == nil` guard below would silently swallow the tap ("the mic
+        // button does nothing"). Tear that muted session down first so the tap
+        // always opens a real turn.
+        if !hunting && (muted || request != nil) {
+            keepWatching = false   // a deliberate turn overrides the idle name-watch
+            tearDownSession()
+        }
         // never listen over our own voice; this also ends any barge hunt, so a
         // real turn can always begin
         if !hunting { stopSpeaking() }
@@ -266,14 +316,32 @@ final class VoiceEngine: ObservableObject {
         req.requiresOnDeviceRecognition = recognizer?.supportsOnDeviceRecognition ?? false
         request = req
 
+        // Always rebind to the LIVE hardware. A stale cached input format (left
+        // over after a route change while the engine was stopped) is the quiet
+        // killer: start() throws, or the tap installs against the wrong format
+        // and never delivers buffers. Stopping + resetting drops every cached
+        // node state so the format we read next is the one the device is
+        // actually running right now.
+        engine.stop()
+        engine.reset()
         let input = engine.inputNode
+        input.removeTap(onBus: 0)
         // apply (or drop) voice isolation between sessions, never mid-flight
-        if !engine.isRunning && isolationApplied != isolateVoice {
+        if isolationApplied != isolateVoice {
             try? input.setVoiceProcessingEnabled(isolateVoice)
             isolationApplied = isolateVoice
         }
-        let format = input.outputFormat(forBus: 0)   // after any isolation change
-        input.removeTap(onBus: 0)
+        // inputFormat is the live device format (outputFormat can report a stale
+        // cached value right after a reset); 0-channel means no input is actually
+        // available yet (device still settling) — bail cleanly, the next tap retries.
+        let format = input.inputFormat(forBus: 0)
+        guard format.channelCount > 0, format.sampleRate > 0 else {
+            NSLog("[Vera voice] no live input format yet — not starting mic")
+            request = nil
+            isListening = false
+            micUnavailable = !hunting   // only tell the user when THEY asked
+            return
+        }
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             req.append(buffer)
             self?.updateLevel(from: buffer)
@@ -283,13 +351,29 @@ final class VoiceEngine: ObservableObject {
         do {
             try engine.start()
         } catch {
-            // Don't swallow this — a failed start is exactly why "the mic button
-            // does nothing". Log it and clean up so the next tap can retry.
-            NSLog("[Vera voice] AVAudioEngine.start() failed: \(error.localizedDescription)")
+            // A failed start is exactly why "the mic button does nothing". One
+            // reset+retry handles the common transient (the device renegotiated
+            // between our reset and start); only after that do we surface it.
+            NSLog("[Vera voice] AVAudioEngine.start() failed: \(error.localizedDescription) — retrying once")
             input.removeTap(onBus: 0)
-            request = nil
-            isListening = false
-            return
+            engine.reset()
+            let retryFormat = input.inputFormat(forBus: 0)
+            if retryFormat.channelCount > 0 {
+                input.installTap(onBus: 0, bufferSize: 1024, format: retryFormat) { [weak self] buffer, _ in
+                    req.append(buffer)
+                    self?.updateLevel(from: buffer)
+                }
+            }
+            do {
+                try engine.start()
+            } catch {
+                NSLog("[Vera voice] AVAudioEngine.start() failed again: \(error.localizedDescription)")
+                input.removeTap(onBus: 0)
+                request = nil
+                isListening = false
+                micUnavailable = !hunting   // best UX: say it's unavailable, don't look idle
+                return
+            }
         }
         if !hunting { isListening = true }
         permissionNeeded = false   // the mic is working now — clear any stale hint
@@ -360,7 +444,16 @@ final class VoiceEngine: ObservableObject {
             // with real voice energy at the mic. A false trigger here steals
             // the user's turn — err toward letting her finish.
             let tail = Self.trailingUserRun(segments, echo: echoWords)
-            if tail.count >= 3 || (tail.count >= 2 && level > 0.22) {
+            if mediaNoisy {
+                // A TV/music bed is playing: transcribed words alone are unreliable
+                // (they might be the video, not you). Require real voice energy AT
+                // the mic — someone speaking up close, over the bed — before we let
+                // her be interrupted. This is what stops "the speaker cuts out while
+                // I'm watching YouTube": the narrator can't barge in anymore.
+                if tail.count >= 3 && level > 0.3 {
+                    bargeIn(fromSegment: segments.count - tail.count)
+                }
+            } else if tail.count >= 3 || (tail.count >= 2 && level > 0.22) {
                 bargeIn(fromSegment: segments.count - tail.count)
             }
             return

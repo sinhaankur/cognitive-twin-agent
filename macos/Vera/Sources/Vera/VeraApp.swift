@@ -884,6 +884,9 @@ final class AppModel: ObservableObject {
         voice.onFinal = { [weak self] text in self?.handle(text, spoken: true) }
         // the ear tells the voice when the room needs isolation ("if needed")
         ear.onNoise = { [weak self] noisy in self?.voice.isolateVoice = noisy }
+        // …and when a TV / music bed is playing, so a video narrator can't
+        // false-trigger barge-in and cut her off mid-sentence.
+        ear.onMedia = { [weak self] media in self?.voice.mediaNoisy = media }
         enableLaunchAtLogin()      // so Anita is always there after a reboot
         autoUpdate()               // she keeps herself current — nothing to download
         installBrainServiceIfNeeded()  // run the brain as a launchd service (non-TCC)

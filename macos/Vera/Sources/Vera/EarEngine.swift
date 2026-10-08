@@ -19,6 +19,10 @@ final class EarEngine: NSObject, ObservableObject {
     /// The room's verdict, for whoever needs it: true while the ambient bed is
     /// noisy enough that the voice mic should isolate (VoiceEngine listens).
     var onNoise: ((Bool) -> Void)?
+    /// True specifically while MEDIA (music / television) is playing — a stricter
+    /// signal than onNoise (which also fires on wind/traffic). The voice engine
+    /// uses this to stop a TV/video narrator from false-triggering barge-in.
+    var onMedia: ((Bool) -> Void)?
 
     private let engine = AVAudioEngine()
     private var analyzer: SNAudioStreamAnalyzer?
@@ -76,6 +80,7 @@ final class EarEngine: NSObject, ObservableObject {
         on = false
         heard = ""
         onNoise?(false)                          // no ear, no isolation verdict
+        onMedia?(false)                          // …and no media verdict either (can't stick on)
         Self.send(path: "/api/presence/ambient/stop", body: [:])   // she forgets at once
     }
 
@@ -124,6 +129,10 @@ extension EarEngine: SNResultsObserving {
                                          "white noise", "television"]
             let noisy = self.loud > 0.3 || top.contains { noiseBed.contains($0.0) }
             self.onNoise?(noisy)
+            // media is the narrow case: a TV or music bed whose speech the voice
+            // engine must NOT read as the user interrupting.
+            let media: Set<String> = ["music", "television"]
+            self.onMedia?(top.contains { media.contains($0.0) })
         }
     }
 }
