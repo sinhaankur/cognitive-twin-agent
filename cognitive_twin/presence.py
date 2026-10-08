@@ -37,6 +37,16 @@ def _unit(v: Any) -> float | None:
         return None
 
 
+def _signed(v: Any) -> float | None:
+    """A -1..1 signal (a trend slope: negative falling, positive rising), or None."""
+    if v is None:
+        return None
+    try:
+        return max(-1.0, min(1.0, float(v)))
+    except (TypeError, ValueError):
+        return None
+
+
 def update(sig: dict[str, Any]) -> None:
     """Store the latest derived reading from the (opt-in) camera sender."""
     global _last
@@ -52,6 +62,13 @@ def update(sig: dict[str, Any]) -> None:
         "frown": _unit(sig.get("frown")),
         "blink_rate": (float(sig["blink_rate"]) if isinstance(sig.get("blink_rate"), (int, float)) else None),
         "attending": (bool(sig["attending"]) if sig.get("attending") is not None else None),
+        # FEELING OVER TIME — the arc of the face, not the still frame. A plain
+        # phrase ("brightening", "winding down") plus signed trend magnitudes, sent
+        # only while something is actually moving. Lets her respond to the SHIFT.
+        "trend": (sig.get("trend") if isinstance(sig.get("trend"), str) and sig.get("trend") else None),
+        "trend_mood": _signed(sig.get("trend_mood")),
+        "trend_tension": _signed(sig.get("trend_tension")),
+        "trend_energy": _signed(sig.get("trend_energy")),
         "source": sig.get("source") if sig.get("source") in ("face", "flow") else "flow",
         "ts": time.time(),
     }
@@ -163,9 +180,19 @@ def _face_context() -> str:
     elif c.get("lean") == "out":
         bits.append("leaning back")
     kind = "face cues" if c.get("source") == "face" else "motion cues"
+    # FEELING OVER TIME: the arc across the last ~30s, when it's actually moving.
+    # This is the part that lets her meet a SHIFT ("you seem to be winding down")
+    # rather than only the frozen frame — still measured, never a claimed feeling.
+    trend = c.get("trend")
+    trend_line = ""
+    if trend:
+        trend_line = (f" Over the last little while their expression has been "
+                      f"{trend} (a measured trend, not a claimed feeling) — you may "
+                      f"gently meet the shift if it fits, without naming it clinically.")
     return ("Right now you can see the user (their camera, on-device, opt-in): "
             "they look " + ", ".join(bits) + f". These are measured {kind} only — "
-            "respond naturally, never claim to know their feelings from this.")
+            "respond naturally, never claim to know their feelings from this."
+            + trend_line)
 
 
 def status() -> str:

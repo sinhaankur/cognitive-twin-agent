@@ -64,6 +64,20 @@ final class FaceEngine: NSObject, ObservableObject {
     private var smile = 0.0, browKnit = 0.0, frown = 0.0, energy = 0.0
     private var attending = true
     private var dimRoom = false
+    // ---- FEELING OVER TIME ----------------------------------------------------
+    // The snapshot (smiling / brow knit) says what's on the face NOW. The arc of
+    // a conversation is in how it CHANGES: brightening, tensing, winding down.
+    // We keep a short rolling history and read the slope — like optical flow for
+    // affect — so Vera can respond to the shift, not just the still frame.
+    private struct Affect { let t: Date; let smile: Double; let brow: Double
+                            let frown: Double; let energy: Double }
+    private var affectHistory: [Affect] = []
+    private let affectWindow: TimeInterval = 30     // seconds we read the trend over
+    // Published trend, each in -1…+1 (negative = falling, positive = rising):
+    @Published var trendMood = 0.0      // ↑ brightening (smile up / brow+frown down)
+    @Published var trendTension = 0.0   // ↑ tensing (brow-knit / frown rising)
+    @Published var trendEnergy = 0.0    // ↑ more animated, ↓ winding down / settling
+    @Published var moodLine = ""        // one plain phrase, or "" when nothing's moving
     // auto-framing: the face fills the little window (Face ID-style) and the
     // frame glides after you rather than jumping — smoothed centre + span
     private var frameC = CGPoint(x: 0.5, y: 0.5)
@@ -346,6 +360,9 @@ final class FaceEngine: NSObject, ObservableObject {
                                 x: x, y: min(0.85, y + 0.11), color: violet))
         }
 
+        // feeling OVER TIME: fold this sample in and read the slope.
+        updateAffectTrend()
+
         var bits: [String] = []
         if smile > 0.5 { bits.append("smiling") }
         if browKnit > 0.5 { bits.append("brow knitted") }
@@ -354,6 +371,8 @@ final class FaceEngine: NSObject, ObservableObject {
         bits.append(attending ? "attentive" : "looking away")
         bits.append(energy < 0.08 ? "very still" : energy < 0.28 ? "calm"
                     : energy < 0.6 ? "animated" : "very animated")
+        // the trend, when something is actually moving, reads last
+        if !moodLine.isEmpty { bits.append(moodLine) }
         let line = "reading: " + bits.joined(separator: " · ")
 
         let m = (smile, browKnit, frown, blinkRate, attending, dimRoom)
@@ -372,6 +391,63 @@ final class FaceEngine: NSObject, ObservableObject {
 
     // ---- honest facts to the local server --------------------------------------
 
+    /// Fold the current expression into the rolling history and read its slope —
+    /// the arc of feeling, not the still frame. Trends are least-squares slopes
+    /// over the last `affectWindow` seconds, scaled so a clear change lands near
+    /// ±1. Only a sustained move (not frame jitter) produces a `moodLine`.
+    private func updateAffectTrend() {
+        let now = Date()
+        affectHistory.append(Affect(t: now, smile: smile, brow: browKnit,
+                                    frown: frown, energy: energy))
+        // drop anything older than the window
+        affectHistory.removeAll { now.timeIntervalSince($0.t) > affectWindow }
+        // need a few seconds of history before a trend means anything
+        guard let first = affectHistory.first,
+              affectHistory.count >= 5,
+              now.timeIntervalSince(first.t) >= 6 else {
+            trendMood = 0; trendTension = 0; trendEnergy = 0; moodLine = ""
+            return
+        }
+        // least-squares slope of y against seconds, over the window
+        func slope(_ pick: (Affect) -> Double) -> Double {
+            let t0 = first.t
+            let xs = affectHistory.map { $0.t.timeIntervalSince(t0) }
+            let ys = affectHistory.map(pick)
+            let n = Double(xs.count)
+            let mx = xs.reduce(0,+) / n, my = ys.reduce(0,+) / n
+            var num = 0.0, den = 0.0
+            for i in 0..<xs.count { num += (xs[i]-mx)*(ys[i]-my); den += (xs[i]-mx)*(xs[i]-mx) }
+            return den == 0 ? 0 : num/den      // units: per second
+        }
+        // scale per-second slope by the window so a full 0→1 swing ≈ ±1
+        let k = affectWindow
+        let sSmile = slope { $0.smile } * k
+        let sBrow  = slope { $0.brow } * k
+        let sFrown = slope { $0.frown } * k
+        let sEnergy = slope { $0.energy } * k
+        func clamp(_ v: Double) -> Double { min(1, max(-1, v)) }
+        // mood rises when the smile grows and the brow/frown ease
+        trendMood    = clamp(sSmile - 0.5 * sBrow - 0.5 * sFrown)
+        trendTension = clamp(0.6 * sBrow + 0.4 * sFrown)
+        trendEnergy  = clamp(sEnergy)
+
+        // plain words, only when a move is real (hysteresis so it doesn't flicker)
+        let strong = 0.22
+        if trendTension > strong && trendTension > trendMood {
+            moodLine = "tensing a little"
+        } else if trendMood > strong {
+            moodLine = "brightening"
+        } else if trendMood < -strong {
+            moodLine = "dimming a little"
+        } else if trendEnergy < -strong {
+            moodLine = "winding down"
+        } else if trendEnergy > strong {
+            moodLine = "picking up"
+        } else {
+            moodLine = ""
+        }
+    }
+
     private func postSignals() {
         var body: [String: Any] = ["present": present, "energy": energy, "source": "face"]
         if present {
@@ -382,6 +458,15 @@ final class FaceEngine: NSObject, ObservableObject {
                 body["brow"] = (browKnit * 100).rounded() / 100
                 body["frown"] = (frown * 100).rounded() / 100
                 body["blink_rate"] = blinkRate
+                // FEELING OVER TIME — the arc, so she can respond to the shift
+                // ("you've been brightening", "you seem to be winding down"), not
+                // just the still frame. Only sent when a trend is actually moving.
+                if !moodLine.isEmpty {
+                    body["trend"] = moodLine
+                    body["trend_mood"] = (trendMood * 100).rounded() / 100
+                    body["trend_tension"] = (trendTension * 100).rounded() / 100
+                    body["trend_energy"] = (trendEnergy * 100).rounded() / 100
+                }
             }
             body["attending"] = attending
         }
