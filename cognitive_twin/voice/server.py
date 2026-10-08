@@ -1086,6 +1086,25 @@ def _warm_voice_clone() -> None:
     threading.Thread(target=warm, daemon=True).start()
 
 
+def _active_tts_label() -> str:
+    """The TTS engine she ACTUALLY speaks with — same preference order as the
+    /api/speak path (Kokoro → Piper → macOS say). The old banner always printed
+    'macOS say' even when Kokoro was live, which was misleading in the logs."""
+    try:
+        from . import kokoro_tts
+        if kokoro_tts.is_available():
+            return f"Kokoro neural ({kokoro_tts.current_voice()})"
+    except Exception:
+        pass
+    try:
+        from . import piper_tts
+        if piper_tts.is_available():
+            return "Piper neural"
+    except Exception:
+        pass
+    return "macOS say" if tts.is_available() else "unavailable"
+
+
 def serve(port: int = DEFAULT_PORT, *, open_browser: bool = True, model: str | None = None) -> None:
     # Speak as the ACTIVE twin: point every storage module (persona, memory,
     # soul, voice, activity) at its folder, exactly like the CLI does. Without
@@ -1102,7 +1121,7 @@ def serve(port: int = DEFAULT_PORT, *, open_browser: bool = True, model: str | N
     httpd = make_server(port, model)
     url = f"http://{HOST}:{port}"
     print(f"Vera · Siri UI at {url}")
-    print(f"  TTS: {'macOS say' if tts.is_available() else 'unavailable'} · {stt.status()}")
+    print(f"  voice: {_active_tts_label()} · {stt.status()}")
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:

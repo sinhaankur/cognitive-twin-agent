@@ -16,7 +16,7 @@ import sys
 import threading
 import webbrowser
 
-from .server import make_server, HOST, DEFAULT_PORT
+from .server import make_server, HOST, DEFAULT_PORT, _active_tts_label
 from . import tts, stt
 
 
@@ -49,7 +49,7 @@ def run(port: int = DEFAULT_PORT) -> None:
                 rumps.MenuItem("Speak to the Twin", callback=self.speak),
                 rumps.MenuItem("Open panel", callback=self.open_panel),
                 None,
-                rumps.MenuItem(f"TTS: {'macOS say' if tts.is_available() else 'off'}", callback=None),
+                rumps.MenuItem(f"Voice: {_active_tts_label()}", callback=None),
                 rumps.MenuItem(stt.status(), callback=None),
                 None,
                 rumps.MenuItem("Quit", callback=self.quit),
