@@ -202,6 +202,29 @@ def thought_path(prompt: str) -> dict[str, Any]:
     # stance and paces the voice. Placed right after memory, per the brain's
     # anatomical order (memory → feel → reason → voice).
     path = ["memory", "feel", "persona"]
+    # her life + mind light up when the moment actually draws on them — a question
+    # about people/memory pulls the life story; a hard or seeking moment pulls a
+    # fitting conviction (wisdom RAG). Only show them when they'd really fire.
+    try:
+        from . import life_story as _life
+        if not _life.load().is_empty() and any(
+            w in p for w in ("remember", "you", "mum", "mom", "dad", "home", "when i was",
+                             "miss", "used to", "always said", "family", "story")):
+            path.append("life")
+    except Exception:
+        pass
+    try:
+        from . import wisdom as _wisdom
+        # only show wisdom when a conviction CLEARLY fits (a seeking/feeling/
+        # advice moment), not on a trivial factual ask like "what is 2+2".
+        seeking = any(w in p for w in (
+            "feel", "lost", "worr", "afraid", "scared", "should i", "don't know",
+            "stuck", "overwhelm", "tired", "fail", "mistake", "guilt", "advice",
+            "help me", "what do i do", "anxious", "stress", "hard", "struggl"))
+        if seeking and _wisdom.retrieve(prompt, k=1):
+            path.append("wisdom")
+    except Exception:
+        pass
     if any(w in p for w in ("feel", "sad", "miss", "love", "tired", "happy")):
         path.append("mood")
     if any(w in p for w in ("today", "now", "tonight", "morning", "sleep", "work")):
