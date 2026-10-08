@@ -203,6 +203,17 @@ class Agent:
                     parts.append(lived)
             except Exception:
                 pass
+            # HER MIND — the convictions that fit THIS moment, retrieved (RAG) from
+            # her own worldview so a reply can carry real, specific wisdom instead
+            # of generic warmth. Retrieval keeps it grounded + relevant; empty when
+            # no belief of hers fits (she never performs wisdom she doesn't hold).
+            try:
+                from .. import wisdom as _wisdom
+                mind = _wisdom.context_for_prompt(user_input, k=2)
+                if mind:
+                    parts.append(mind)
+            except Exception:
+                pass
             # personality dials — user-tunable TONE (warmth / humor / playfulness),
             # modulating how she expresses herself without changing who she is.
             try:

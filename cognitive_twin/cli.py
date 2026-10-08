@@ -572,6 +572,56 @@ def _remember_command(rest: list[str]) -> int:
     return 0
 
 
+def _wisdom_command(rest: list[str]) -> int:
+    """`ctwin wisdom` — her mind: the convictions she speaks from.
+
+      ctwin wisdom                       → show her convictions + retrieval mode
+      ctwin wisdom add "belief" [about]  → record one of her convictions
+      ctwin wisdom seed                  → lay down a gentle universal starter set
+      ctwin wisdom test "a question"     → see which convictions fit that moment
+      ctwin wisdom clear                 → forget them (your control)
+    """
+    from . import wisdom
+    sub = rest[0].lower() if rest else ""
+    if not rest or sub == "status":
+        print("  " + wisdom.status())
+        return 0
+    if sub == "add":
+        text = " ".join(rest[1:]).strip()
+        if not text:
+            print('  usage: ctwin wisdom add "the belief, in her words" [topic it\'s about]')
+            return 1
+        # allow an optional trailing "| about words" for the retrieval topic
+        about = ""
+        if "|" in text:
+            text, _, about = text.partition("|")
+        wisdom.add(text.strip(), about.strip())
+        print("  ✔ noted — that's part of how she sees things now.")
+        return 0
+    if sub == "seed":
+        n = wisdom.seed_if_empty()
+        print(f"  ✔ added {n} starter convictions." if n else "  she already has her own convictions — nothing seeded.")
+        return 0
+    if sub == "test":
+        q = " ".join(rest[1:]).strip()
+        if not q:
+            print('  usage: ctwin wisdom test "I keep second-guessing everything"')
+            return 1
+        hits = wisdom.retrieve(q, k=3)
+        if not hits:
+            print("  (no conviction of hers fits that — she'd simply be present.)")
+        else:
+            print("  she'd speak from:")
+            for b in hits:
+                print(f"    · ({b.kind}) {b.text}")
+        return 0
+    if sub == "clear":
+        print("  cleared." if wisdom.clear() else "  nothing to clear.")
+        return 0
+    print(f"  unknown: wisdom {sub}. try: add / seed / test / clear")
+    return 1
+
+
 def _day_command(rest: list[str]) -> int:
     """`ctwin day` — your day, shadowed. Numbers refer to the printed list."""
     from . import shadow
@@ -859,6 +909,8 @@ def main(argv: list[str] | None = None) -> int:
         return _voiceprofile_command(raw[1:])
     if raw and raw[0] == "remember":
         return _remember_command(raw[1:])
+    if raw and raw[0] == "wisdom":
+        return _wisdom_command(raw[1:])
     if raw and raw[0] == "rhythms":
         return _rhythms_command(raw[1:])
     if raw and raw[0] == "reflect":
