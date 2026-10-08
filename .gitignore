@@ -26,3 +26,8 @@ ios/DerivedData/
 training/adapters/
 training/vera-tuned/
 training/data/
+
+# on-device twin state must NEVER be committed (sealed personal data / test residue)
+life_story.json
+persona.json
+.cognitive-twin/
