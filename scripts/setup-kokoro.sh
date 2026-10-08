@@ -42,9 +42,9 @@ cp -f "$REPO/scripts/kokoro_synth.py" "$VERA_HOME/kokoro_synth.py"
 
 # 5. warm it once so the model + spacy data download now, not on first reply
 echo "  warming the model (one-time download)…"
-printf '%s\n' '{"text":"ready","voice":"af_bella","speed":0.92}' \
+printf '%s\n' '{"text":"ready","voice":"af_heart","speed":0.92}' \
   | "$VERA_HOME/kokoro-venv/bin/python3" "$VERA_HOME/kokoro_synth.py" >/dev/null 2>&1 &
 WPID=$!; sleep 25; kill "$WPID" 2>/dev/null || true
 
-echo "✓ Kokoro ready. Default voice: Bella (af_bella)."
+echo "✓ Kokoro ready. Default voice: Heart (af_heart)."
 echo "  Now run: ./scripts/install-service.sh"
