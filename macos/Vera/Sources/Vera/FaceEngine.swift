@@ -43,6 +43,14 @@ final class FaceEngine: NSObject, ObservableObject {
     @Published var readAttending = true
     @Published var facePresent = false
     @Published var lowLight = false             // dim room: reads steadier, says so
+    // ---- READING THE ROOM -----------------------------------------------------
+    // How many people are present, how many are looking toward her, a plain
+    // social-context line, and whether a voice right now is likely meant for
+    // Vera (so she can respond to you, not jump into others' conversation).
+    @Published var peopleCount = 0
+    @Published var attendingCount = 0           // of those, how many face the camera
+    @Published var roomContext = ""             // "with you", "a group · 2 looking her way", …
+    @Published var likelyAddressingHer = true   // gate the listening side can read
 
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "vera.eye", qos: .userInitiated)
@@ -470,8 +478,24 @@ final class FaceEngine: NSObject, ObservableObject {
             }
             body["attending"] = attending
         }
+        // Reading the room — always sent (even with no primary face, there may
+        // be people in view). Lets the server/agent know the social context so a
+        // voice can be routed as "to Vera" vs. "room chatter". Snapshot the
+        // main-thread values; a frame's staleness here is harmless.
+        let people = peopleCountSnapshot
+        body["people"] = people
+        body["people_attending"] = attendingCountSnapshot
+        if !roomContextSnapshot.isEmpty { body["room_context"] = roomContextSnapshot }
+        body["addressing_her"] = likelyAddressingHerSnapshot
         Self.post(path: "/api/presence", body: body)
     }
+
+    // queue-side mirrors of the published room values, updated alongside them so
+    // postSignals() (on `queue`) reads them without hopping threads.
+    private var peopleCountSnapshot = 0
+    private var attendingCountSnapshot = 0
+    private var roomContextSnapshot = ""
+    private var likelyAddressingHerSnapshot = true
 
     private static func post(path: String, body: [String: Any]) {
         guard let url = URL(string: "http://127.0.0.1:7878" + path),
@@ -492,8 +516,62 @@ extension FaceEngine: AVCaptureVideoDataOutputSampleBufferDelegate {
         dimRoom = Self.isDim(pixels)
         let request = VNDetectFaceLandmarksRequest()
         try? sequence.perform([request], on: pixels)
-        let face = (request.results ?? []).max { $0.boundingBox.width < $1.boundingBox.width }
+        let faces = request.results ?? []
+        // Read the whole room, not just the nearest face: how many people, and
+        // how many are looking toward the camera (toward HER). The nearest face
+        // still drives the expression/orb reading below.
+        readRoom(faces)
+        let face = faces.max { $0.boundingBox.width < $1.boundingBox.width }
         ingest(face)          // delegate already runs on `queue`
+    }
+
+    /// Count people and infer the social context from every visible face:
+    /// is the user speaking to Vera, or to other people in the room?
+    ///
+    /// Signals, all measured (never guessed): the number of faces, and for each
+    /// its yaw — a face turned toward the camera (|yaw| small) is "attending"
+    /// (looking at her). From these we read a plain context so she can decide
+    /// whether a nearby voice is meant for her:
+    ///   • 0 faces            → "no one in view"
+    ///   • 1, attending       → "with you"            (talking to her)
+    ///   • 1, looking away    → "you, turned away"    (maybe not to her)
+    ///   • 2+, ≥1 attending   → "a group, X looking over"  (some address her)
+    ///   • 2+, none attending → "people talking"      (room chatter, not her)
+    private func readRoom(_ faces: [VNFaceObservation]) {
+        let count = faces.count
+        // A face counts as "looking at her" when it's turned roughly toward the
+        // camera — same yaw threshold the single-face attention uses.
+        let attendingCount = faces.filter { f in
+            abs(f.yaw?.doubleValue ?? 1.0) < 0.35
+        }.count
+
+        let context: String
+        switch count {
+        case 0:  context = "no one in view"
+        case 1:  context = attendingCount == 1 ? "with you" : "you, turned away"
+        default:
+            context = attendingCount == 0
+                ? "people talking (not to her)"
+                : "a group · \(attendingCount) looking her way"
+        }
+        // "Is this voice likely meant for Vera?" — true when exactly one person
+        // is present and attending, OR (in a group) at least one person is
+        // looking at her. This is the hook the listening side can gate on.
+        let addressingHer = (count == 1 && attendingCount == 1) ||
+                            (count >= 2 && attendingCount >= 1)
+
+        // queue-side mirrors for postSignals() (we're already on `queue` here)
+        peopleCountSnapshot = count
+        attendingCountSnapshot = attendingCount
+        roomContextSnapshot = context
+        likelyAddressingHerSnapshot = addressingHer
+
+        DispatchQueue.main.async {
+            self.peopleCount = count
+            self.attendingCount = attendingCount
+            self.roomContext = context
+            self.likelyAddressingHer = addressingHer
+        }
     }
 
     /// Mean luma of a sparse sample of the frame — a dim room makes Vision's

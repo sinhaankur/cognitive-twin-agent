@@ -100,6 +100,41 @@ def test_face_and_ear_compose():
     presence.stop(); presence.stop_ambient()
 
 
+def test_room_solo_with_you():
+    presence.update({"present": True, "energy": 0.3, "source": "face",
+                     "people": 1, "people_attending": 1, "addressing_her": True})
+    ctx = presence.context_for_prompt()
+    assert "just the two of you" in ctx
+    presence.stop()
+
+
+def test_room_group_chatter_tells_her_to_hold_back():
+    """The whole point: in a group where no one's looking at her, she should be
+    told this is likely not meant for her — so she doesn't jump into chatter."""
+    presence.update({"present": True, "energy": 0.5, "source": "face",
+                     "people": 3, "people_attending": 0, "addressing_her": False})
+    ctx = presence.context_for_prompt()
+    assert "3 people" in ctx
+    assert "not to you" in ctx and ("Stay quiet" in ctx or "unless" in ctx)
+    presence.stop()
+
+
+def test_room_group_someone_addressing_her():
+    presence.update({"present": True, "energy": 0.4, "source": "face",
+                     "people": 2, "people_attending": 1, "addressing_her": True})
+    ctx = presence.context_for_prompt()
+    assert "2 people" in ctx and "looking toward you" in ctx
+    presence.stop()
+
+
+def test_room_fields_ignored_when_absent():
+    """No room data (e.g. browser optical-flow eye) → no room line, no crash."""
+    presence.update({"present": True, "energy": 0.2, "source": "flow"})
+    ctx = presence.context_for_prompt()
+    assert "people here" not in ctx and "two of you" not in ctx
+    presence.stop()
+
+
 if __name__ == "__main__":
     fns = [g for n, g in sorted(globals().items())
            if n.startswith("test_") and callable(g)]

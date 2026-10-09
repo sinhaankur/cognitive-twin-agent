@@ -62,6 +62,14 @@ def update(sig: dict[str, Any]) -> None:
         "frown": _unit(sig.get("frown")),
         "blink_rate": (float(sig["blink_rate"]) if isinstance(sig.get("blink_rate"), (int, float)) else None),
         "attending": (bool(sig["attending"]) if sig.get("attending") is not None else None),
+        # READING THE ROOM — how many people are in view, how many are looking
+        # toward her, a plain social-context line, and whether a voice right now
+        # is likely meant for Vera vs. the people around you. Measured (face
+        # count + yaw), never guessed. Lets her know when NOT to jump in.
+        "people": (int(sig["people"]) if isinstance(sig.get("people"), (int, float)) else None),
+        "people_attending": (int(sig["people_attending"]) if isinstance(sig.get("people_attending"), (int, float)) else None),
+        "room_context": (sig.get("room_context") if isinstance(sig.get("room_context"), str) and sig.get("room_context") else None),
+        "addressing_her": (bool(sig["addressing_her"]) if sig.get("addressing_her") is not None else None),
         # FEELING OVER TIME — the arc of the face, not the still frame. A plain
         # phrase ("brightening", "winding down") plus signed trend magnitudes, sent
         # only while something is actually moving. Lets her respond to the SHIFT.
@@ -180,6 +188,30 @@ def _face_context() -> str:
     elif c.get("lean") == "out":
         bits.append("leaning back")
     kind = "face cues" if c.get("source") == "face" else "motion cues"
+    # READING THE ROOM: how many people, and whether this moment is likely
+    # directed at her. This is what lets her hold back in a group instead of
+    # answering chatter meant for someone else.
+    room_line = ""
+    people = c.get("people")
+    if isinstance(people, int):
+        if people == 0:
+            room_line = " No one is in view right now."
+        elif people == 1:
+            if c.get("addressing_her") is False:
+                room_line = (" It's just the two of you, but they're turned away — "
+                             "this may not be meant for you; answer lightly, or wait.")
+            else:
+                room_line = " It's just the two of you — they're with you."
+        else:  # 2+
+            att = c.get("people_attending") or 0
+            if not c.get("addressing_her"):
+                room_line = (f" There are {people} people here and none are looking your "
+                             "way — this is likely them talking to each other, not to you. "
+                             "Stay quiet unless clearly addressed.")
+            else:
+                room_line = (f" There are {people} people here, {att} looking toward you — "
+                             "you're in a group, so only respond to what's clearly meant "
+                             "for you, and keep it brief and aware of the others.")
     # FEELING OVER TIME: the arc across the last ~30s, when it's actually moving.
     # This is the part that lets her meet a SHIFT ("you seem to be winding down")
     # rather than only the frozen frame — still measured, never a claimed feeling.
@@ -192,7 +224,7 @@ def _face_context() -> str:
     return ("Right now you can see the user (their camera, on-device, opt-in): "
             "they look " + ", ".join(bits) + f". These are measured {kind} only — "
             "respond naturally, never claim to know their feelings from this."
-            + trend_line)
+            + trend_line + room_line)
 
 
 def status() -> str:
