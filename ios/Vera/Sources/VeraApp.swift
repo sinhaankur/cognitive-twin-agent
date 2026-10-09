@@ -55,6 +55,28 @@ final class TwinModel: ObservableObject {
         return name
     }
 
+    // Can she actually be reached right now? Parity with the macOS app, which
+    // shows a live green/orange dot. nil = unknown (not yet checked / no host).
+    @Published var reachable: Bool? = nil
+
+    /// Quietly check whether the model host answers. Mirrors the macOS health
+    /// watchdog; called on appear and after a host change. Never blocks the UI.
+    func refreshReachability() {
+        let raw = modelHost.trimmingCharacters(in: .whitespaces)
+        // No host set → unknown, not "down" (don't nag before setup).
+        guard !raw.isEmpty else { reachable = nil; return }
+        let hostPort = raw.contains(":") ? raw : "\(raw):11434"
+        guard let url = URL(string: "http://\(hostPort)/") else { reachable = false; return }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 5
+        URLSession.shared.dataTask(with: req) { data, resp, err in
+            let ok = err == nil &&
+                ((resp as? HTTPURLResponse)?.statusCode == 200 ||
+                 (String(data: data ?? Data(), encoding: .utf8) ?? "").lowercased().contains("ollama"))
+            DispatchQueue.main.async { self.reachable = ok }
+        }.resume()
+    }
+
     // "See a loved one in 3D" — opt-in, persisted. On a phone there's no local
     // Blender pipeline, so the USDZ likeness is *built on your Mac* and arrives
     // with the memory vault (or dropped into the app's Documents). We only ever

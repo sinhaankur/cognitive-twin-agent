@@ -20,11 +20,23 @@ struct TwinView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 18) {
-                // One clean control on the top-right — a Tailscale-style menu
-                // with an identity header and grouped items, instead of a row
-                // of bare floating icons.
-                HStack {
+                // One clean control on the top-right — a crafted menu with an
+                // identity header and grouped items. A quiet reachability dot
+                // sits to its left (parity with the macOS app's status dot), so
+                // "can she be reached?" is answerable at a glance.
+                HStack(spacing: 12) {
                     Spacer()
+                    if let reachable = model.reachable {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(reachable ? Color.green : Color.orange)
+                                .frame(width: 7, height: 7)
+                            Text(reachable ? "connected" : "unreachable")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.5))
+                        }
+                        .transition(.opacity)
+                    }
                     TopMenu(
                         name: model.personaName,
                         onWhoSheIs: { showPersona = true },
@@ -34,6 +46,7 @@ struct TwinView: View {
                 }
                 .padding(.horizontal)
                 .padding(.top, 4)
+                .animation(.easeInOut(duration: 0.25), value: model.reachable)
 
                 Spacer()
 
@@ -79,9 +92,12 @@ struct TwinView: View {
             }
         }
         .onReceive(timer) { _ in phase += 0.06 + (model.thinking ? 0.2 : 0) }
+        .onAppear { model.refreshReachability() }
         .sheet(isPresented: $showPersona) { PersonaEditor().environmentObject(model) }
         .sheet(isPresented: $showBrain) { BrainView().environmentObject(model) }
-        .sheet(isPresented: $showSettings) { SettingsView().environmentObject(model) }
+        .sheet(isPresented: $showSettings, onDismiss: { model.refreshReachability() }) {
+            SettingsView().environmentObject(model)
+        }
     }
 
     private func send() {
