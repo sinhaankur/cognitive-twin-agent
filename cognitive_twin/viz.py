@@ -714,6 +714,30 @@ _PAGE = r"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
     border-left:2px solid rgba(var(--feel), .5)}
   #anatomy .rsys b{color:rgba(var(--feel), 1);font-weight:600}
   #anatomy .rdim{font-size:8px;color:rgba(150,160,180,.55);margin-top:2px;line-height:1.35}
+  /* ── the limbic NEURAL NETWORK, made visible: hidden neurons firing ── */
+  #anatomy .net{margin-top:5px;padding:6px 8px;background:rgba(var(--feel),.06);
+    border-radius:6px;border-left:2px solid rgba(var(--feel),.5)}
+  #anatomy .netrow{display:flex;align-items:flex-end;gap:3px;height:34px;margin:4px 0 2px}
+  #anatomy .neuron{flex:1;min-width:5px;background:rgba(var(--feel),.18);border-radius:2px 2px 0 0;
+    position:relative;transition:height .5s cubic-bezier(.16,1,.3,1),background .5s ease,box-shadow .5s ease}
+  #anatomy .neuron.fire{background:rgba(var(--feel),.95);box-shadow:0 0 9px rgba(var(--feel),.7)}
+  #anatomy .netio{display:flex;justify-content:space-between;font-family:var(--mono);
+    font-size:8px;color:rgba(150,160,180,.6);letter-spacing:.02em}
+  #anatomy .netreads{font-size:8.5px;color:rgba(190,200,225,.8);font-family:var(--mono);margin-top:3px}
+  #anatomy .netreads b{color:rgba(var(--feel),1)}
+  /* ── RAG retrieval, made visible: scored convictions + the floor ── */
+  #anatomy .rag{margin-top:5px;padding:6px 8px;background:rgba(var(--feel),.06);
+    border-radius:6px;border-left:2px solid rgba(var(--feel),.5)}
+  #anatomy .ragcand{display:flex;align-items:center;gap:7px;margin:3px 0;font-size:9.5px}
+  #anatomy .ragbar{flex:0 0 46px;height:4px;border-radius:3px;background:rgba(150,160,180,.18);
+    position:relative;overflow:hidden}
+  #anatomy .ragbar i{position:absolute;left:0;top:0;bottom:0;background:rgba(var(--feel),.75);border-radius:3px}
+  #anatomy .ragcand.kept .ragbar i{background:rgba(var(--feel),1);box-shadow:0 0 6px rgba(var(--feel),.6)}
+  #anatomy .ragcand .rt{flex:1;color:var(--ink-dim);font-family:var(--sans);line-height:1.3;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #anatomy .ragcand.kept .rt{color:rgba(var(--feel),.95)}
+  #anatomy .ragcand .rs{font-family:var(--mono);font-size:8px;color:rgba(150,160,180,.7);flex:0 0 auto}
+  #anatomy .ragcand.dropped{opacity:.42}
   #anatomy .anorigin{font-size:10px;letter-spacing:.01em;color:var(--ink-dim);
     line-height:1.55;margin-top:16px;border-top:1px solid var(--line);padding-top:13px;
     font-family:var(--sans);grid-column:1/-1}
@@ -2210,6 +2234,8 @@ async function renderAnatomy(q){
   const notes = active.notes || {};
   const ai = active.ai || {}, mem = active.memory || {};
   const feel = active.feeling || {};
+  const anet = active.affect_net || null;   // the limbic neural network
+  const rag = active.rag || null;            // retrieval over her convictions
   list.innerHTML = "";
   const items = [];
   (d.regions || []).forEach(r => {
@@ -2224,6 +2250,26 @@ async function renderAnatomy(q){
         + '  valence ' + (feel.valence>=0?'+':'') + feel.valence
         + ' · arousal ' + feel.arousal
         + '<div class="rdim">valence = heavy(−1) … glad(+1) · arousal = calm(0) … lit(1)</div></div>';
+      // HOW THE FEELING IS COMPUTED — a REAL neural network, its hidden neurons
+      // firing for your words. Not a word list: a net trained with backprop.
+      if (anet && anet.hidden && anet.hidden.length){
+        const mx = Math.max(0.001, ...anet.hidden.map(Math.abs));
+        const bars = anet.hidden.map((h,i) => {
+          const pct = Math.max(6, Math.round(Math.abs(h)/mx*100));
+          const fire = h > 0.01 ? ' fire' : '';
+          return '<div class="neuron'+fire+'" data-i="'+i+'" style="height:'+pct+'%"></div>';
+        }).join("");
+        const nv = anet.net ? anet.net.valence : (anet.output?anet.output[0]:0);
+        const na = anet.net ? anet.net.arousal : (anet.output?anet.output[1]:0);
+        const lex = anet.lexicon
+          ? ' · lexicon anchor <b>'+(anet.lexicon.valence>=0?'+':'')+anet.lexicon.valence+'</b>'
+          : '';
+        extra += '<div class="net"><div class="netio"><span>input cues</span>'
+          + '<span>'+(anet.hidden.length)+' hidden neurons</span><span>valence · arousal</span></div>'
+          + '<div class="netrow">'+bars+'</div>'
+          + '<div class="netreads">net reads <b>'+(nv>=0?'+':'')+nv+'</b> valence · <b>'+na+'</b> arousal'+lex+'</div>'
+          + '<div class="rdim">a real net ('+(anet.source||'neural-net')+'), trained with backprop — the lit bars are neurons that fired for your words. runs with no numpy, no model; the lexicon anchors it.</div></div>';
+      }
     }
     // HOW AI WORKS — surfaced right at the cortex, where the model lives
     if (r.id === "cortex"){
@@ -2233,10 +2279,35 @@ async function renderAnatomy(q){
         : '<b>no model</b> — she composes from her own stance + feeling') + '</div>';
     }
     // HOW MEMORY WORKS — surfaced at the hippocampus
-    if (r.id === "hippocampus" && (mem.held != null)){
-      extra = '<div class="rsys">' + mem.held + ' memories held · '
-        + (mem.recalled || 0) + ' recalled now'
-        + '<div class="rdim">sealed on-device · related ones cluster · reused ones grow stronger</div></div>';
+    if (r.id === "hippocampus"){
+      if (mem.held != null){
+        extra = '<div class="rsys">' + mem.held + ' memories held · '
+          + (mem.recalled || 0) + ' recalled now'
+          + '<div class="rdim">sealed on-device · related ones cluster · reused ones grow stronger</div></div>';
+      }
+      // HOW RAG WORKS — central to who she is. Her life + convictions aren't baked
+      // into the model; she RETRIEVES the few that fit this moment. Show the real
+      // scored retrieval, and the relevance floor she won't reach below.
+      if (rag && rag.candidates){
+        let rows = "";
+        if (rag.candidates.length){
+          const mx = Math.max(0.001, ...rag.candidates.map(c => c.score));
+          rows = rag.candidates.map(c => {
+            const w = Math.max(4, Math.round(c.score/mx*100));
+            const cls = c.kept ? ' kept' : ' dropped';
+            const t = (c.text||'').replace(/</g,'&lt;');
+            return '<div class="ragcand'+cls+'"><div class="ragbar"><i style="width:'+w+'%"></i></div>'
+              + '<div class="rt" title="'+t+'">'+t+'</div><div class="rs">'+c.score+'</div></div>';
+          }).join("");
+        } else {
+          rows = '<div class="rdim">no convictions indexed in this environment yet — '
+            + 'on her own machine, her beliefs live here and are retrieved per moment.</div>';
+        }
+        extra += '<div class="rag"><div class="netio"><span>RAG · '+(rag.method||'keyword')+'</span>'
+          + '<span>'+(rag.kept||0)+' kept / floor '+(rag.floor!=null?rag.floor:'0.08')+'</span></div>'
+          + rows
+          + '<div class="rdim">she doesn\\'t memorise a person inside the model — she retrieves the convictions that truly fit (meaning + words), and nothing when none clears the floor. the model only phrases what RAG surfaced. this is why her words feel like <i>her</i>.</div></div>';
+      }
     }
     li.innerHTML = '<span class="rlab">' + r.label + '</span>'
       + '<span class="rfac">' + r.faculty + '</span>'

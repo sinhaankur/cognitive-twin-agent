@@ -178,6 +178,50 @@ def retrieve(query: str, k: int = 2, alpha: float = 0.6) -> list[Belief]:
     return [b for s, b in ranked[:k] if s > 0.08]
 
 
+def retrieve_scored(query: str, k: int = 4, alpha: float = 0.6) -> dict:
+    """Same retrieval as :func:`retrieve`, but RETURNS THE SCORES — for showing how
+    RAG works in the Mind view. Read-only; never changes what she says. Reports the
+    method actually used (hybrid semantic+keyword, or keyword-only when no embedder),
+    the top candidates with their scores, and which cleared the relevance floor."""
+    w = load()
+    floor = 0.08
+    out: dict = {"query": query, "floor": floor, "method": "keyword",
+                 "candidates": [], "kept": 0, "held": len(w.beliefs)}
+    if not w.beliefs:
+        return out
+    kw = [_keyword_score(b, query) for b in w.beliefs]
+    sem: list[float] | None = None
+    scores = list(kw)
+    try:
+        from . import rag
+        if rag.embeddings_available() and any(b.vector for b in w.beliefs):
+            qv = rag.embed_one(query)
+            if qv:
+                sem = [_cosine(qv, b.vector) if b.vector else 0.0 for b in w.beliefs]
+                scores = [alpha * s + (1 - alpha) * kwi for s, kwi in zip(sem, kw)]
+                out["method"] = "semantic+keyword"
+                out["alpha"] = alpha
+    except Exception:
+        pass
+    rows = []
+    for i, b in enumerate(w.beliefs):
+        rows.append({
+            "text": b.text,
+            "about": getattr(b, "about", ""),
+            "score": round(float(scores[i]), 3),
+            "keyword": round(float(kw[i]), 3),
+            "semantic": (round(float(sem[i]), 3) if sem is not None else None),
+            "kept": False,
+        })
+    rows.sort(key=lambda r: r["score"], reverse=True)
+    top = rows[:k]
+    for r in top:
+        r["kept"] = r["score"] > floor
+    out["candidates"] = top
+    out["kept"] = sum(1 for r in top if r["kept"])
+    return out
+
+
 def context_for_prompt(query: str, k: int = 2) -> str:
     """The retrieved convictions, compiled so she speaks FROM them this turn —
     quietly, as her own view, never quoting them as if reading a card."""

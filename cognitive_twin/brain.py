@@ -382,6 +382,27 @@ def engine_flow(prompt: str) -> dict[str, Any]:
             "delivery": sig.delivery,
             "notes": notes,
         }
+        # HOW THE LIMBIC SYSTEM FEELS (honest): a REAL neural network, not a word
+        # list. The amygdala learns affect from examples; here it's a small net
+        # trained with backprop (brain.regions.affect_net), whose hidden neurons
+        # we expose so the Mind view can show the limbic system *firing* for the
+        # phrase. It runs with or without numpy on the same weights (never a
+        # dependency), and the hand-tuned lexicon anchors it + is the fallback.
+        lim = sig.analysis.get("limbic")
+        if lim:
+            out["active"]["affect_net"] = {
+                "source": lim.get("source"),
+                "features": lim.get("features", []),
+                "input": [round(float(x), 3) for x in lim.get("input", [])],
+                "hidden": [round(float(x), 3) for x in lim.get("hidden", [])],
+                "output": [round(float(x), 3) for x in lim.get("output", [])],
+                "net": lim.get("net"),
+                "lexicon": lim.get("lexicon"),
+                "note": "a real neural net reads the feeling — trained on labelled "
+                        "moments with backprop, not a lookup. the hidden neurons "
+                        "here fired for your words. it needs no numpy to run and no "
+                        "model to feel; the lexicon anchors it and is the fallback.",
+            }
         # HOW THE AI WORKS (honest): the model is ONE organ — the cortex — and it's
         # optional. Show which local model the router would pick (by rule, no cloud),
         # or that she'd run on her own words if none is present.
@@ -409,6 +430,31 @@ def engine_flow(prompt: str) -> dict[str, Any]:
                 "note": "memories are stored on-device and sealed. related ones "
                         "cluster; the ones she actually reuses grow stronger and "
                         "drift toward her core (reconsolidation).",
+            }
+        except Exception:
+            pass
+        # HOW RAG WORKS — this is central to who she is: her life and convictions
+        # aren't baked into the model (it would forget, or invent). She RETRIEVES
+        # them. For this prompt, show the real scored retrieval over her wisdom —
+        # the method used (semantic+keyword, or keyword-only), the top candidates
+        # with scores, and which cleared the relevance floor (below it she stays
+        # present rather than forcing an unrelated maxim). This is why the chat
+        # makes sense: she speaks FROM what genuinely fits the moment.
+        try:
+            from . import wisdom as _wis
+            rag = _wis.retrieve_scored(prompt, k=4)
+            out["active"]["rag"] = {
+                "method": rag.get("method"),
+                "held": rag.get("held", 0),
+                "kept": rag.get("kept", 0),
+                "floor": rag.get("floor"),
+                "alpha": rag.get("alpha"),
+                "candidates": rag.get("candidates", []),
+                "note": "her convictions live in a sealed on-device index. each turn "
+                        "retrieves the few that truly fit — semantic meaning blended "
+                        "with keyword overlap — and nothing when none clears the "
+                        "floor. the model only phrases what RAG surfaced; it never "
+                        "invents her. this grounding is why her words feel like her.",
             }
         except Exception:
             pass
