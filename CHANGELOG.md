@@ -3,6 +3,28 @@
 All notable changes to Vera. Format loosely follows [Keep a Changelog](https://keepachangelog.com);
 versions are the app's `CFBundleShortVersionString`.
 
+## [Unreleased] — iOS parity
+
+Bringing the iOS (Anita) app toward the mature macOS app, shipped as small
+version-controlled increments.
+
+### Added (iOS)
+- **Settings & Privacy screen** — where she thinks (model host + model), her
+  presence (3D likeness toggle, persona), and privacy (remembered-count +
+  forget-everything with confirm). Phone-shaped; no desktop-only installers.
+- **Crafted top-right menu** — one control (a soft monogram chip) opening a glass
+  sheet with an identity header + grouped rows, replacing three bare icons. Its
+  own look, matching the Siri-orb world.
+- **Model host, end-to-end** — the Rust core reads `CTWIN_OLLAMA_HOST`
+  (host or host:port; blank = localhost), set from the persisted host in
+  Settings, so a phone can reach an Ollama on a machine you own over the tailnet.
+  ABI-stable (no C signature change). +3 core tests.
+- **ATS for local networking** — iOS blocks cleartext HTTP by default; added
+  `NSAllowsLocalNetworking` (local/tailnet only, not arbitrary loads) so the
+  http Ollama connection actually works.
+- **Test connection** in Settings + a **live reachability dot** on the main
+  screen (green/orange + label), matching the macOS status indicator.
+
 ## [0.3.1] — 2026-10-07
 
 A stability release: chat was hanging and, once unstuck, every reply took 55-70s.
