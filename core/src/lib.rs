@@ -183,6 +183,36 @@ pub mod ffi {
     /// Run one full agent turn against a local Ollama model and return the
     /// answer. Inputs: model name, persona JSON, recent-prompts JSON array, and
     /// the user's message. Returns the answer text (or an "[error] …" string).
+    /// Build an Ollama client honoring an optional host override from the
+    /// environment, so a phone (no local Ollama) can point at a machine it owns.
+    ///
+    /// `CTWIN_OLLAMA_HOST` accepts `host` or `host:port`
+    /// (e.g. `my-mac.tailnet.ts.net` or `192.168.1.5:11434`). Unset or malformed
+    /// → the default `localhost:11434`, so desktop behavior is unchanged.
+    /// ABI-stable: no change to the C signature, so existing shells keep working.
+    fn ollama_client_from_env(model: &str) -> llm::OllamaClient {
+        match std::env::var("CTWIN_OLLAMA_HOST") {
+            Ok(raw) if !raw.trim().is_empty() => {
+                let (host, port) = parse_host_port(raw.trim());
+                llm::OllamaClient::with_host(model, host, port)
+            }
+            _ => llm::OllamaClient::new(model),
+        }
+    }
+
+    /// Split `host` or `host:port` into (host, port), defaulting the port to
+    /// 11434. A trailing `:something` that isn't a valid port is treated as part
+    /// of the host, so a bare DNS name is never mangled. Pure + tested.
+    fn parse_host_port(raw: &str) -> (String, u16) {
+        match raw.rsplit_once(':') {
+            Some((h, p)) => match p.parse::<u16>() {
+                Ok(port) if !h.is_empty() => (h.to_string(), port),
+                _ => (raw.to_string(), 11434),
+            },
+            None => (raw.to_string(), 11434),
+        }
+    }
+
     /// This is the one call an iOS/macOS shell needs to talk to the twin.
     #[no_mangle]
     pub extern "C" fn ctwin_ask(
@@ -197,7 +227,8 @@ pub mod ffi {
             serde_json::from_str(unsafe { cstr(recent_prompts_json) }).unwrap_or_default();
         let input = unsafe { cstr(user_input) };
 
-        let client = llm::OllamaClient::new(if model.is_empty() { "llama3.2" } else { model });
+        let model = if model.is_empty() { "llama3.2" } else { model };
+        let client = ollama_client_from_env(model);
         let mut agent = Agent::new(client).with_persona(persona);
         agent.set_history(recents);
         match agent.ask(input) {
@@ -224,6 +255,31 @@ pub mod ffi {
     pub extern "C" fn ctwin_string_free(p: *mut c_char) {
         if !p.is_null() {
             unsafe { drop(CString::from_raw(p)) };
+        }
+    }
+
+    #[cfg(test)]
+    mod host_tests {
+        use super::parse_host_port;
+
+        #[test]
+        fn bare_host_defaults_port() {
+            assert_eq!(parse_host_port("my-mac.tailnet.ts.net"),
+                       ("my-mac.tailnet.ts.net".to_string(), 11434));
+        }
+
+        #[test]
+        fn host_with_port() {
+            assert_eq!(parse_host_port("192.168.1.5:11434"),
+                       ("192.168.1.5".to_string(), 11434));
+            assert_eq!(parse_host_port("box:1234"), ("box".to_string(), 1234));
+        }
+
+        #[test]
+        fn trailing_colon_non_port_stays_host() {
+            // "host:" or "host:notaport" → the whole thing is the host, default port.
+            assert_eq!(parse_host_port("weird:name"), ("weird:name".to_string(), 11434));
+            assert_eq!(parse_host_port("host:"), ("host:".to_string(), 11434));
         }
     }
 }

@@ -30,7 +30,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Where she thinks")
                 } footer: {
-                    Text("A phone can't run the model itself. Point this at a machine you own that does — your Mac or home server running Ollama, reached privately over your Tailscale network. Nothing is sent to a third party.")
+                    Text("A phone can't run the model itself. Point this at a machine you own that does — your Mac or home server running Ollama (e.g. my-mac.tailnet.ts.net, or host:port), reached privately over your Tailscale network. Leave blank to use localhost. Nothing is sent to a third party.")
                 }
 
                 // ── Her presence ──────────────────────────────────────────

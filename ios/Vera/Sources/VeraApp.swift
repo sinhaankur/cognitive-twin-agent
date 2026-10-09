@@ -94,6 +94,15 @@ final class TwinModel: ObservableObject {
         transcript = text
         answer = ""
         thinking = true
+        // Tell the Rust core where the model lives (a machine you own on your
+        // tailnet). The core reads CTWIN_OLLAMA_HOST; empty → it uses its
+        // localhost default, so nothing breaks when the host isn't set yet.
+        let host = modelHost.trimmingCharacters(in: .whitespaces)
+        if host.isEmpty {
+            unsetenv("CTWIN_OLLAMA_HOST")
+        } else {
+            setenv("CTWIN_OLLAMA_HOST", host, 1)
+        }
         Task {
             let reply = await TwinCore.ask(
                 model: modelName,
