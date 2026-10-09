@@ -23,6 +23,14 @@ final class TwinModel: ObservableObject {
     @Published var thinking = false
     @Published var modelName = "qwen2.5:3b"
 
+    // Where the model runs. A phone has no local Ollama, so this points at a
+    // machine you own that does (your Mac / home server) — persisted so it
+    // survives restarts. Empty = not yet configured. Local-network only by
+    // intent; nothing is sent to a third party.
+    @Published var modelHost: String = UserDefaults.standard.string(forKey: "modelHost") ?? "" {
+        didSet { UserDefaults.standard.set(modelHost, forKey: "modelHost") }
+    }
+
     // The persona is created/edited by the user; persisted locally (UserDefaults
     // here for simplicity — the Rust core compiles it identically to desktop).
     @Published var personaJSON: String =
@@ -35,6 +43,17 @@ final class TwinModel: ObservableObject {
 
     /// Read-only view of recent prompts, for the Brain graph.
     var recentPrompts: [String] { history }
+
+    /// Her name, parsed from the persona — for the menu identity header. Falls
+    /// back to a gentle default when no persona name is set yet.
+    var personaName: String {
+        guard let data = personaJSON.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let name = obj["name"] as? String,
+              !name.trimmingCharacters(in: .whitespaces).isEmpty
+        else { return "Your twin" }
+        return name
+    }
 
     // "See a loved one in 3D" — opt-in, persisted. On a phone there's no local
     // Blender pipeline, so the USDZ likeness is *built on your Mac* and arrives
@@ -56,6 +75,19 @@ final class TwinModel: ObservableObject {
     func savePersona(_ json: String) {
         personaJSON = json
         UserDefaults.standard.set(json, forKey: "persona")
+    }
+
+    /// How many prompts she's learned from — shown in Settings so "clear" is
+    /// never a mystery action.
+    var memoryCount: Int { history.count }
+
+    /// Forget the learned prompt history. The privacy promise ("inspect or wipe
+    /// everything") made real on the phone. Persona + portrait are left alone;
+    /// this only clears the day-to-day learned topics.
+    func clearMemory() {
+        history.removeAll()
+        UserDefaults.standard.removeObject(forKey: "history")
+        objectWillChange.send()
     }
 
     func ask(_ text: String) {
