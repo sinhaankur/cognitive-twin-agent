@@ -10,16 +10,31 @@ Two eyes feed this, both opt-in behind "See me", both fully on-device:
 No frame ever leaves the sender: only a handful of derived signals arrive
 here, and this module holds just the LATEST reading, in process memory.
 
+A THIRD sense, added here, needs no camera: the DEVICE ecosystem. The eyes see
+the person; this reads the *situation* around the moment — is a call or meeting
+running, is a video playing, is music on, or are you heads-down working — from
+what's on screen (frontmost app) and whether the microphone is live. Ankur's
+principle: *"if the ecosystem difference is not understood, the chat won't make
+sense."* A companion that answers mid-meeting isn't present, it's intrusive, so
+this lets her hold back. It is reactive only (it changes HOW she replies when you
+DO talk to her, never makes her speak first), opt-in, and — like everything in
+presence — stores NOTHING.
+
 Ephemeral by design: presence is the present tense. Nothing is written to disk,
 nothing enters memory.jsonl, and a reading older than a few seconds is treated
 as gone. Honesty rule: these are *measured* facts — "smiling" is a mouth shape,
 "brow knitted" is a distance — never invented emotions ("sad", "stressed");
 the agent may respond to what the camera actually measured, not to a guess
-dressed as a fact.
+dressed as a fact. The device read is the same: "the mic is live" and "Zoom is in
+front" are observations, offered with a confidence, never an assumption.
 """
 
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
+import struct
+import sys
 import time
 from typing import Any
 
@@ -147,10 +162,174 @@ def _energy_word(e: float) -> str:
     return "very animated"
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# THE DEVICE SENSE — the ecosystem around the moment (no camera, nothing stored)
+# ─────────────────────────────────────────────────────────────────────────────
+# A SEPARATE opt-in switch from "See me" (the camera). Off by default. Honours the
+# same global private/snooze gate as every other sense (places owns it).
+def _device_flag():
+    from . import places as _gate
+    return _gate._home() / "presence.device.enabled"
+
+
+def enable_device() -> None:
+    _device_flag().write_text("1", encoding="utf-8")
+
+
+def disable_device() -> None:
+    _device_flag().unlink(missing_ok=True)
+
+
+def device_enabled() -> bool:
+    return _device_flag().is_file()
+
+
+def _device_allowed() -> bool:
+    from . import places as _gate
+    return device_enabled() and not _gate.is_paused()
+
+
+# apps/sites that mean a live conversation is happening — never talk over it.
+_MEETING_APPS = {
+    "zoom.us", "zoom", "Microsoft Teams", "Teams", "Webex", "Cisco Webex Meetings",
+    "Google Meet", "Skype", "GoToMeeting", "BlueJeans", "Around", "Whereby",
+}
+_MEETING_TABS = ("meet.google.com", "google meet", "zoom meeting", "teams meeting",
+                 "webex", "whereby", "- meet")
+_VIDEO_APPS = {"QuickTime Player", "VLC", "Netflix", "TV", "IINA"}
+_VIDEO_TABS = ("youtube", "netflix", "- twitch", "vimeo", "disney+", "prime video",
+               "hulu", " max")
+_COMMS_APPS = {"Slack", "Discord", "FaceTime"}
+_BROWSERS = {"Google Chrome", "Brave Browser", "Safari", "Microsoft Edge", "Arc", "Firefox"}
+
+
+def _fourcc(s: str) -> int:
+    return struct.unpack(">I", s.encode())[0]
+
+
+def mic_active() -> bool | None:
+    """True if *some* process is capturing the default input device right now — the
+    honest signal for 'you're probably on a call'. Device-global via CoreAudio's
+    kAudioDevicePropertyDeviceIsRunningSomewhere; no sudo, no PyObjC. None when
+    it can't be read (non-macOS / no CoreAudio / error)."""
+    if sys.platform != "darwin":
+        return None
+    libpath = ctypes.util.find_library("CoreAudio")
+    if not libpath:
+        return None
+    try:
+        ca = ctypes.CDLL(libpath)
+    except OSError:
+        return None
+
+    class AOPA(ctypes.Structure):
+        _fields_ = [("mSelector", ctypes.c_uint32),
+                    ("mScope", ctypes.c_uint32),
+                    ("mElement", ctypes.c_uint32)]
+
+    kSystemObject, kScopeGlobal, kElementMain = 1, _fourcc("glob"), 0
+    try:
+        dev = ctypes.c_uint32(0); size = ctypes.c_uint32(4)
+        a1 = AOPA(_fourcc("dIn "), kScopeGlobal, kElementMain)
+        if ca.AudioObjectGetPropertyData(kSystemObject, ctypes.byref(a1), 0, None,
+                                         ctypes.byref(size), ctypes.byref(dev)) != 0 or dev.value == 0:
+            return None
+        running = ctypes.c_uint32(0); size = ctypes.c_uint32(4)
+        a2 = AOPA(_fourcc("gone"), kScopeGlobal, kElementMain)
+        if ca.AudioObjectGetPropertyData(dev.value, ctypes.byref(a2), 0, None,
+                                         ctypes.byref(size), ctypes.byref(running)) != 0:
+            return None
+        return bool(running.value)
+    except Exception:
+        return None
+
+
+def _frontmost() -> tuple[str, str]:
+    """(app, window title) of the frontmost app — reused from activity.py so there's
+    one probe, not two. ('', '') on failure / non-macOS."""
+    try:
+        from . import activity
+        return activity._frontmost()
+    except Exception:
+        return ("", "")
+
+
+def _music_playing() -> bool:
+    try:
+        from . import music
+        return music.now() is not None
+    except Exception:
+        return False
+
+
+def _tab_hits(title: str, needles) -> bool:
+    low = title.lower()
+    return any(n in low for n in needles)
+
+
+def device_now() -> dict[str, Any]:
+    """Read the device ecosystem right now — ephemeral, stores nothing. Returns a
+    dict: {activity, should_interject, confidence, reason, signals}. Neutral
+    ('unknown', interject=True) when off/paused/unreadable, so Vera is unchanged."""
+    neutral = {"activity": "unknown", "should_interject": True, "confidence": 0.0,
+               "reason": "device sense off or unreadable", "signals": {}}
+    if not _device_allowed():
+        return neutral
+    app, title = _frontmost()
+    mic = mic_active()
+    music_on = _music_playing()
+    sig = {"app": app, "title": title[:120], "mic": mic, "music": music_on}
+    is_browser = app in _BROWSERS
+
+    def out(activity, interject, conf, reason):
+        return {"activity": activity, "should_interject": interject,
+                "confidence": conf, "reason": reason, "signals": sig}
+
+    # 1) MEETING / CALL — strongest "hold back". Known app, or a meeting tab, or the
+    # mic live alongside a comms/browser app.
+    if app in _MEETING_APPS or (is_browser and _tab_hits(title, _MEETING_TABS)):
+        return (out("meeting", False, 0.95, f"{app} with the mic live — you're in a call")
+                if mic else out("meeting", False, 0.7, f"{app} is in front — a call may be running"))
+    if mic and (is_browser or app in _COMMS_APPS):
+        return out("call", False, 0.75, "your mic is live — sounds like you're talking to someone")
+    if mic:
+        return out("call", False, 0.55, "your mic is live — I'll wait")
+    # 2) VIDEO — you're watching; keep it short (but don't go silent)
+    if app in _VIDEO_APPS or (is_browser and _tab_hits(title, _VIDEO_TABS)):
+        return out("video", True, 0.7, "you're watching something — I'll keep it brief")
+    # 3) MUSIC — ambient; fine to talk
+    if music_on:
+        return out("music", True, 0.6, "music's on — just ambient")
+    # 4) WORK — an app in front, nothing special
+    if app:
+        return out("work", True, 0.4, f"heads-down in {app}")
+    return neutral
+
+
+def _device_context() -> str:
+    """The system-prompt line for the device ecosystem — ONLY when the moment calls
+    for restraint (a call/meeting, or a video). Empty otherwise, so ordinary turns
+    are unchanged. Reactive only: it shapes HOW she replies, never makes her speak."""
+    if not _device_allowed():
+        return ""
+    d = device_now()
+    act, conf = d["activity"], d["confidence"]
+    if act in ("meeting", "call") and conf >= 0.55:
+        return ("Right now they appear to be in a call or meeting (their mic is live / a "
+                "meeting app is in front, measured on-device). Keep any reply very short "
+                "and low-key, or just acknowledge and offer to pick it up after — do not "
+                "launch into anything, and never assume they were talking to you unless "
+                "they clearly addressed you.")
+    if act == "video" and conf >= 0.6:
+        return ("Right now they're watching something (measured on-device). Keep replies "
+                "brief so you don't pull their attention away.")
+    return ""
+
+
 def context_for_prompt() -> str:
     """Honest lines for the system prompt — empty when she can't sense you.
-    Composes whichever opt-in senses are live: the eye (face cues) and the
-    ear (ambient sound types)."""
+    Composes whichever opt-in senses are live: the eye (face cues), the ear
+    (ambient sound types), and the device sense (the ecosystem around the moment)."""
     parts = []
     face = _face_context()
     if face:
@@ -161,6 +340,9 @@ def context_for_prompt() -> str:
         parts.append("Around them (ambient sound, opt-in, on-device): "
                      f"{names} — a {_loud_word(amb['loud'])} room. Sound types "
                      "only, never recordings.")
+    dev = _device_context()
+    if dev:
+        parts.append(dev)
     return " ".join(parts)
 
 
@@ -229,6 +411,48 @@ def _face_context() -> str:
 
 def status() -> str:
     c = current()
-    if not c:
-        return "presence: off (opt-in camera not running)"
-    return f"presence: seeing you — {_energy_word(c['energy'])}"
+    cam = (f"seeing you — {_energy_word(c['energy'])}" if c else "camera off")
+    if device_enabled():
+        d = device_now()
+        dev = (f"device: {d['activity']} (conf {d['confidence']:.2f}) — {d['reason']}"
+               f"{', holding back' if not d['should_interject'] else ''}")
+    else:
+        dev = "device: off"
+    return f"presence: {cam} · {dev} · stores nothing"
+
+
+def device_status() -> str:
+    if not device_enabled():
+        return ("device sense: off. Reads what you're doing right now (call / video / "
+                "music / work) to know when to hold back — on-device, stores nothing. "
+                "Turn on: python3 -m cognitive_twin.presence device on")
+    d = device_now()
+    return (f"device sense: on. Right now: {d['activity']} (confidence {d['confidence']:.2f}) "
+            f"— {d['reason']}. {'holding back' if not d['should_interject'] else 'free to talk'}. "
+            f"Stores nothing.")
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+def _main(argv: list[str]) -> int:
+    cmd = argv[0] if argv else "status"
+    if cmd == "status":
+        print(status()); return 0
+    if cmd == "device":
+        sub = argv[1] if len(argv) > 1 else "status"
+        if sub in ("on", "enable"):
+            enable_device(); print("✓ Device sense on (opt-in). Reads the moment, stores nothing."); return 0
+        if sub in ("off", "disable"):
+            disable_device(); print("✓ Device sense off."); return 0
+        if sub == "now":
+            d = device_now()
+            print(f"{d['activity']} (confidence {d['confidence']:.2f}) — {d['reason']}")
+            print(f"  hold back: {not d['should_interject']} · signals: {d['signals']}")
+            return 0
+        print(device_status()); return 0
+    print("usage: python3 -m cognitive_twin.presence [status | device [on|off|now|status]]")
+    return 2
+
+
+if __name__ == "__main__":
+    import sys as _sys
+    raise SystemExit(_main(_sys.argv[1:]))

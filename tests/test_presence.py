@@ -135,6 +135,105 @@ def test_room_fields_ignored_when_absent():
     presence.stop()
 
 
+# ---- the device sense: the ecosystem around the moment (opt-in, EPHEMERAL) ----
+# Reactive-only: it tells her when to hold back; it never makes her speak. Stores
+# nothing. We patch the probes so no real app/mic is needed.
+
+def _patch_probes(monkeypatch, app="", title="", mic=None, music=False):
+    monkeypatch.setattr(presence, "_frontmost", lambda: (app, title))
+    monkeypatch.setattr(presence, "mic_active", lambda: mic)
+    monkeypatch.setattr(presence, "_music_playing", lambda: music)
+
+
+def test_device_off_by_default_is_neutral():
+    presence.disable_device()
+    assert presence.device_enabled() is False
+    d = presence.device_now()
+    assert d["activity"] == "unknown" and d["should_interject"] is True
+    assert presence._device_context() == ""        # silent when off
+
+
+def test_device_meeting_app_with_mic_holds_back(monkeypatch):
+    presence.enable_device()
+    _patch_probes(monkeypatch, app="zoom.us", title="Zoom Meeting", mic=True)
+    d = presence.device_now()
+    assert d["activity"] == "meeting" and d["should_interject"] is False
+    assert d["confidence"] >= 0.9
+    line = presence._device_context()
+    assert "call or meeting" in line and "very short" in line
+    presence.disable_device()
+
+
+def test_device_meeting_in_browser_tab(monkeypatch):
+    presence.enable_device()
+    _patch_probes(monkeypatch, app="Google Chrome",
+                  title="Standup - meet.google.com - Google Chrome", mic=True)
+    d = presence.device_now()
+    assert d["activity"] == "meeting" and d["should_interject"] is False
+    presence.disable_device()
+
+
+def test_device_video_keeps_it_brief(monkeypatch):
+    presence.enable_device()
+    _patch_probes(monkeypatch, app="Safari", title="Lofi mix - YouTube", mic=False)
+    d = presence.device_now()
+    assert d["activity"] == "video" and d["should_interject"] is True
+    assert "brief" in presence._device_context()
+    presence.disable_device()
+
+
+def test_device_music_is_ambient_not_holding_back(monkeypatch):
+    presence.enable_device()
+    _patch_probes(monkeypatch, app="Notes", title="", mic=False, music=True)
+    d = presence.device_now()
+    assert d["activity"] == "music" and d["should_interject"] is True
+    assert presence._device_context() == ""        # music doesn't change her replies
+    presence.disable_device()
+
+
+def test_device_plain_work_does_not_interrupt_replies(monkeypatch):
+    presence.enable_device()
+    _patch_probes(monkeypatch, app="Xcode", title="main.swift", mic=False)
+    d = presence.device_now()
+    assert d["activity"] == "work" and d["should_interject"] is True
+    assert presence._device_context() == ""
+    presence.disable_device()
+
+
+def test_device_mic_live_alone_is_a_call(monkeypatch):
+    presence.enable_device()
+    _patch_probes(monkeypatch, app="Terminal", title="", mic=True)
+    d = presence.device_now()
+    assert d["activity"] == "call" and d["should_interject"] is False
+    presence.disable_device()
+
+
+def test_device_sense_stores_nothing(monkeypatch, tmp_path):
+    """The whole privacy promise: reading the device NEVER writes a file."""
+    import os
+    monkeypatch.setenv("CTWIN_MEMORY_DIR", str(tmp_path))
+    presence.enable_device()                          # this writes ONLY the on-flag
+    _patch_probes(monkeypatch, app="zoom.us", title="", mic=True)
+    presence.device_now()
+    presence.device_now()
+    presence._device_context()
+    files = sorted(os.listdir(tmp_path))
+    # the only thing that may exist is the enable flag — never an activity log/state
+    assert "presence.jsonl" not in files
+    assert "presence_state.json" not in files
+    assert all(not f.endswith(".jsonl") for f in files)
+    presence.disable_device()
+
+
+def test_device_context_flows_through_main_context(monkeypatch):
+    """context_for_prompt() composes the device line alongside camera/ear."""
+    presence.enable_device()
+    _patch_probes(monkeypatch, app="zoom.us", title="Zoom Meeting", mic=True)
+    ctx = presence.context_for_prompt()
+    assert "call or meeting" in ctx
+    presence.disable_device()
+
+
 if __name__ == "__main__":
     fns = [g for n, g in sorted(globals().items())
            if n.startswith("test_") and callable(g)]
