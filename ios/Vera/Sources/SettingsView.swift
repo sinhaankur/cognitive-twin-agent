@@ -13,6 +13,8 @@ struct SettingsView: View {
 
     @State private var showPersona = false
     @State private var confirmClear = false
+    @State private var probing = false
+    @State private var reach: ReachResult?
 
     var body: some View {
         NavigationStack {
@@ -27,6 +29,34 @@ struct SettingsView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.body.monospaced())
+
+                    // Verify she can actually be reached before you rely on it —
+                    // a wrong host otherwise only shows up as a silent failure
+                    // mid-conversation.
+                    Button {
+                        testConnection()
+                    } label: {
+                        HStack {
+                            if probing {
+                                ProgressView().controlSize(.small)
+                                Text("Checking…")
+                            } else {
+                                Image(systemName: "dot.radiowaves.left.and.right")
+                                Text("Test connection")
+                            }
+                        }
+                    }
+                    .disabled(probing)
+
+                    if let reach {
+                        HStack(spacing: 8) {
+                            Image(systemName: reach.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                .foregroundStyle(reach.ok ? .green : .orange)
+                            Text(reach.message)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 } header: {
                     Text("Where she thinks")
                 } footer: {
@@ -96,6 +126,58 @@ struct SettingsView: View {
             } message: {
                 Text("This clears \(model.memoryCount) remembered item\(model.memoryCount == 1 ? "" : "s"). Her persona and 3D likeness are kept. This can't be undone.")
             }
+        }
+    }
+
+    // MARK: - Reachability
+
+    struct ReachResult { let ok: Bool; let message: String }
+
+    /// A quick, honest check that the Ollama host is actually reachable — hits
+    /// its root over HTTP (Ollama answers "Ollama is running"). Blank host →
+    /// checks localhost, matching what the core would dial.
+    private func testConnection() {
+        probing = true
+        reach = nil
+        let raw = model.modelHost.trimmingCharacters(in: .whitespaces)
+        let hostPort = raw.isEmpty ? "localhost:11434" : (raw.contains(":") ? raw : "\(raw):11434")
+        guard let url = URL(string: "http://\(hostPort)/") else {
+            reach = ReachResult(ok: false, message: "That host doesn’t look valid.")
+            probing = false
+            return
+        }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 6
+        let started = Date()
+        URLSession.shared.dataTask(with: req) { data, resp, err in
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            DispatchQueue.main.async {
+                probing = false
+                if let err = err as NSError? {
+                    reach = ReachResult(ok: false, message: Self.friendly(err))
+                    return
+                }
+                let body = String(data: data ?? Data(), encoding: .utf8) ?? ""
+                let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                if body.lowercased().contains("ollama") || code == 200 {
+                    reach = ReachResult(ok: true, message: "Reached \(hostPort) · \(ms) ms")
+                } else {
+                    reach = ReachResult(ok: false, message: "Answered, but doesn’t look like Ollama (HTTP \(code)).")
+                }
+            }
+        }.resume()
+    }
+
+    private static func friendly(_ err: NSError) -> String {
+        switch err.code {
+        case NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost:
+            return "Can’t reach that host. Is the machine on and Ollama running?"
+        case NSURLErrorTimedOut:
+            return "Timed out. Check you’re on the same tailnet."
+        case NSURLErrorNotConnectedToInternet:
+            return "No network. Connect to your tailnet and retry."
+        default:
+            return "Couldn’t connect (\(err.localizedDescription))."
         }
     }
 }

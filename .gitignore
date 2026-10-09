@@ -31,3 +31,4 @@ training/data/
 life_story.json
 persona.json
 .cognitive-twin/
+ios/Vera/Info.plist
