@@ -157,6 +157,57 @@ def recap() -> str:
     return "Your activity (from an Apple Health export, on-device): " + "; ".join(bits) + "."
 
 
+def context_for_prompt() -> str:
+    """A gentle 'how their body's been' block for the system prompt, so her care
+    is grounded — she can say 'you've been resting' or 'consistent lately' because
+    it's true, not guessed. Empty until she's been given an export."""
+    r = recap()
+    if not r:
+        return ""
+    return ("# HOW THEY'VE BEEN PHYSICALLY (from an Apple Health export, opt-in, "
+            "summary only — let it inform your care, don't recite it)\n" + r)
+
+
+def _days_since_last_workout() -> int | None:
+    s = load()
+    last = s.get("last_workout")
+    if not last:
+        return None
+    try:
+        return (_dt.date.today() - _dt.date.fromisoformat(last)).days
+    except ValueError:
+        return None
+
+
+def checkin_line() -> str | None:
+    """A warm CARE line grounded in real activity — for proactive check-ins. Praises
+    consistency, gently nudges a long gap, honours a rest day. None when she has no
+    data (so she says something else). Summary metadata only; never invents."""
+    if not is_enabled():
+        return None
+    s = load()
+    if not s or not s.get("total_workouts"):
+        return None
+    ad = s.get("active_days_30d", 0)
+    gap = _days_since_last_workout()
+    steps = s.get("avg_steps_30d", 0)
+    # a long gap → the gentlest nudge
+    if gap is not None and gap >= 5:
+        return (f"It's been about {gap} days since your last workout — no pressure, "
+                "just checking your body's getting some care.")
+    # strong consistency → warm praise
+    if ad >= 15:
+        return (f"You've moved on {ad} of the last 30 days — that's you taking care "
+                "of yourself. I notice, and I'm glad.")
+    # decent steps → a light, warm note
+    if steps >= 8000:
+        return f"You've been averaging around {steps:,} steps a day — your legs okay?"
+    # light activity → a soft invitation, never a scold
+    if ad and ad < 8:
+        return "How's your body feeling? A little movement might be kind to you today, if it fits."
+    return None
+
+
 def status() -> str:
     if not is_enabled():
         return "health off (point her at an Apple Health export to turn it on)"

@@ -301,6 +301,14 @@ class Agent:
                     parts.append(life)
             except Exception:
                 pass
+            # how their body's been (opt-in Apple Health summary) — grounds her care
+            try:
+                from .. import health as _health
+                body = _health.context_for_prompt()
+                if body:
+                    parts.append(body)
+            except Exception:
+                pass
             # a warm, reflective tone (original — no copyrighted lines)
             try:
                 from .. import mood as _mood

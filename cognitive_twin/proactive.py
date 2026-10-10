@@ -319,6 +319,17 @@ def _pick_companion_line() -> str:
         except Exception:
             pass
 
+    # sometimes a grounded CARE line about their body (Apple Health summary) — praise
+    # consistency, gently nudge a long gap, honour rest. Real data, never invented.
+    if random.random() < 0.25:
+        try:
+            from . import health
+            hl = health.checkin_line()
+            if hl and hl not in recent:
+                return hl
+        except Exception:
+            pass
+
     # occasionally (when light) bring a REAL current-affairs thought instead of a
     # canned line — grounded in actual on-device news, never invented.
     if mood != "heavy" and random.random() < 0.25:
