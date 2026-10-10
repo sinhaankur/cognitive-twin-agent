@@ -232,8 +232,19 @@ final class VoiceEngine: ObservableObject {
         level = 0; brightness = 0
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         didDeliverFinal = false
-        if clean.isEmpty { onListenEndedEmpty?() }
-        else { didDeliverFinal = true; Chime.done.play(); onFinal?(clean) }
+        if clean.isEmpty {
+            // Nothing intelligible this turn. Don't just go silent — a blank
+            // "listening…" that leads nowhere is the "she says listen but does
+            // nothing" complaint. Show a brief, honest cue so you KNOW she tried
+            // and will keep listening. The always-on loop re-arms right after.
+            transcript = "didn't catch that — still listening"
+            onListenEndedEmpty?()
+        } else {
+            transcript = clean          // SHOW what she heard, even before replying
+            didDeliverFinal = true
+            Chime.done.play()
+            onFinal?(clean)
+        }
     }
 
     /// A published mirror of the permission state so SwiftUI re-renders the banner

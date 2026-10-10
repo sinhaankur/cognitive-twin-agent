@@ -489,8 +489,12 @@ class _Handler(BaseHTTPRequestHandler):
                     is_you = voice_id.is_you(raw)
             except Exception:
                 is_you = None
-            self._json(200, {"text": text if heard else "", "heard": heard,
-                             "is_you": is_you})
+            # Return the heard text EVEN when it's in the noise set, so the app can
+            # show "I heard: …" rather than going silent (the "says listen, shows
+            # nothing" complaint). `heard` still tells the app whether to ACT on it
+            # as a command — so stray "you"/"thank you" mishearings don't trigger a
+            # turn, but the user still gets honest feedback that she's hearing.
+            self._json(200, {"text": text, "heard": heard, "is_you": is_you})
             return
         if self.path == "/api/voice/enroll":
             # teach her YOUR voice: POST a WAV of your speech; it folds into your

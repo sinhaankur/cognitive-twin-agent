@@ -197,6 +197,14 @@ final class WhisperListener {
         do {
             let (data, _) = try await URLSession.shared.data(for: req)
             let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            // The server now returns the heard text even for noise words, with a
+            // `heard` flag telling us whether to ACT on it. Only act on real
+            // speech (heard == true); a stray "you"/"thank you" mishearing has
+            // heard == false → treat as an empty turn (no command), so she doesn't
+            // answer phantoms. The display cue for "didn't catch that" is handled
+            // in whisperFinal.
+            let heard = (obj["heard"] as? Bool) ?? true
+            guard heard else { return "" }
             return (obj["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         } catch {
             NSLog("[Vera whisper] transcribe failed: \(error.localizedDescription)")

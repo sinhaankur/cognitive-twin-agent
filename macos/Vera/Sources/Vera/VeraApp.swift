@@ -364,12 +364,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 440, height: 520),
-            styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        // Use an NSHostingController (NOT a bare NSHostingView): a SwiftUI `Form`
+        // inside a raw NSHostingView in a hand-made window lays its rows out at
+        // zero height — the window opens but the body is BLANK (the reported bug).
+        // The controller gives SwiftUI the proper hosting/layout context, and we
+        // size the window to the view's fitting size so nothing is clipped.
+        let host = NSHostingController(rootView: SettingsView().environmentObject(model))
+        let w = NSWindow(contentViewController: host)
+        w.styleMask = [.titled, .closable]
         w.title = "\(model.assistantName) — Settings"
         w.isReleasedWhenClosed = false
-        w.contentView = NSHostingView(rootView: SettingsView().environmentObject(model))
+        w.setContentSize(NSSize(width: 440, height: 520))
         w.center()
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -600,9 +605,18 @@ final class AppModel: ObservableObject {
     @MainActor
     func turnIsAddressedToHer() -> Bool {
         let eye = FaceEngine.shared
-        // camera not actually seeing anyone → no basis to gate; let it through.
-        guard eye.facePresent else { return true }
-        return eye.likelyAddressingHer
+        // FAIL OPEN, always, unless we're CERTAIN it's not for her. The earlier
+        // version dropped a turn whenever the camera saw a face that wasn't
+        // "attending" — but the attention heuristic is noisy (a glance away, the
+        // camera off-axis), so it silently ate the user's OWN speech ("says
+        // listening, doesn't listen"). That's far worse than occasionally
+        // answering stray room talk. So we only drop when there are clearly
+        // MULTIPLE people AND none is looking at her — a genuine side-conversation.
+        // One person present (you), or anyone attending, always gets through.
+        guard eye.facePresent else { return true }          // can't tell → answer
+        if eye.peopleCount <= 1 { return true }             // just you → always answer
+        if eye.attendingCount >= 1 { return true }          // someone's facing her → answer
+        return false                                        // 2+ people, none facing → room chatter
     }
     @Published var turns: [ChatTurn] = []     // the chat conversation
     // A file you've attached to send with your next message (name + extracted
