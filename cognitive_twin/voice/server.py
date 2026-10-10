@@ -716,20 +716,40 @@ class _Handler(BaseHTTPRequestHandler):
                 #    (the same neural voice the app plays via /api/voice/piper), never
                 #    macOS `say`. Synthesize + play the WAV server-side. This keeps a
                 #    single voice everywhere and can't hang on a missing clone.
+                #
+                #    IMPORTANT: when Kokoro IS available, we must NOT fall back to the
+                #    robotic macOS `say` just because her first (cold) synth came back
+                #    empty — that's the "voice reverts to the AI voice" bug. A cold
+                #    load is slow, not broken: retry once (the worker is warm by then)
+                #    so she keeps HER voice. `say` is only for when Kokoro truly can't run.
+                kokoro_up = False
+                spoke_with = "none"
+                if cloned:
+                    spoke_with = "clone"
                 if not ok:
                     try:
                         from . import kokoro_tts
-                        if kokoro_tts.is_available():
+                        kokoro_up = kokoro_tts.is_available()
+                        if kokoro_up:
+                            kokoro_tts.warm()            # ensure warm so the 1st line is HER voice
                             wav = kokoro_tts.synth_wav(text)
+                            if not wav:
+                                wav = kokoro_tts.synth_wav(text)   # retry after the cold load
                             if wav:
                                 _play_wav_bytes(wav)
                                 ok = True
+                                spoke_with = "kokoro"
                     except Exception:
                         ok = False
-                # 3) Last resort only if Kokoro itself is unavailable.
-                if not ok:
+                # 3) macOS `say` ONLY when Kokoro genuinely isn't available (not
+                #    installed) — never as a silent substitute for her real voice.
+                if not ok and not kokoro_up:
                     ok = tts.speak(text, blocking=False)
-            self._json(200, {"ok": ok, "cloned": cloned})
+                    if ok:
+                        spoke_with = "system"
+            # tell the caller WHICH voice spoke (so the app can be honest about it —
+            # and know if it ever had to use the system voice).
+            self._json(200, {"ok": ok, "cloned": cloned, "voice": spoke_with})
         elif self.path == "/api/speak/stop":
             # barge-in: the user spoke over her — silence playback mid-word
             stopped = False
@@ -1044,17 +1064,20 @@ def _warm_kokoro() -> None:
     def warm_loop() -> None:
         import time
         from . import kokoro_tts
-        # initial warm (loads the model)
+        # initial warm, RIGHT NOW (loads the model + worker so the FIRST user turn
+        # is already warm — no cold synth racing startup, which was dropping the
+        # connection and reverting her to the robotic voice).
         try:
             if kokoro_tts.is_available():
-                kokoro_tts.synth_wav("ready")
+                kokoro_tts.warm()                 # boot the worker + model
+                kokoro_tts.synth_wav("ready")     # force the slow first synth here
         except Exception:
             pass
-        # heartbeat: keep it warm so it never falls back to the cold path. 60s is
-        # comfortably inside the window where the model stays resident, so synths
-        # stay on the warm (~fast) path instead of the 20-40s cold reload.
+        # heartbeat: re-synth a tiny phrase so the model never drifts cold. 45s keeps
+        # a safe margin under the idle-unload window, so every real synth is on the
+        # fast (~0.3-1s) warm path and never falls back.
         while True:
-            time.sleep(60)
+            time.sleep(45)
             try:
                 if kokoro_tts.is_available():
                     kokoro_tts.synth_wav(".")   # tiny, cheap — just keeps it hot

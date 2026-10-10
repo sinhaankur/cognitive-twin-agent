@@ -238,6 +238,14 @@ def _speakable(text: str) -> str:
     return " ".join(text.split())
 
 
+def warm() -> bool:
+    """Make sure her voice is warm NOW (load the worker + model if cold). Returns
+    True once the worker is up. Safe to call repeatedly; used before the first synth
+    so she never has to fall back to a robotic voice just because she was cold."""
+    with _lock:
+        return _ensure_worker() is not None
+
+
 def synth_wav(text: str, *, speed: float | None = None) -> bytes | None:
     """Synthesize `text` to WAV bytes with Kokoro in Vera's voice (af_heart by
     default). ``speed`` defaults to DEFAULT_SPEED (0.92 — calm, present, warm; the
@@ -250,6 +258,10 @@ def synth_wav(text: str, *, speed: float | None = None) -> bytes | None:
     if not text:
         return None
     with _lock:
+        # a COLD worker was just started by _ensure_worker → its first synth is the
+        # slow one, so give that first line extra head-room (otherwise it times out
+        # and the caller drops to the robotic voice — the "voice reverts" bug).
+        was_cold = _proc is None or _proc.poll() is not None
         proc = _ensure_worker()
         if not proc or not proc.stdin or not proc.stdout:
             return None
@@ -259,7 +271,9 @@ def synth_wav(text: str, *, speed: float | None = None) -> bytes | None:
             proc.stdin.write(req + "\n")
             proc.stdin.flush()
             # bounded read: a worker that stalls mid-synth must not hang the chat.
-            resp = _readline_timeout(proc, _SYNTH_TIMEOUT)
+            # First synth after a cold start is slow → a longer budget for that one.
+            budget = (_SYNTH_TIMEOUT + _READY_TIMEOUT) if was_cold else _SYNTH_TIMEOUT
+            resp = _readline_timeout(proc, budget)
             if resp is None:
                 _reset_worker()   # presumed wedged → kill, next call restarts fresh
                 return None
