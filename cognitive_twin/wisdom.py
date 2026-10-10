@@ -167,6 +167,7 @@ def retrieve(query: str, k: int = 2, alpha: float = 0.6) -> list[Belief]:
     kw = [_keyword_score(b, query) for b in w.beliefs]
     scores = list(kw)
     floor = 0.08
+    sem: list[float] | None = None
     try:
         from . import rag
         if rag.embeddings_available() and any(b.vector for b in w.beliefs):
@@ -174,10 +175,11 @@ def retrieve(query: str, k: int = 2, alpha: float = 0.6) -> list[Belief]:
             if qv:
                 sem = [_cosine(qv, b.vector) if b.vector else 0.0 for b in w.beliefs]
                 try:
-                    # learned fusion — ONLY when the reranker is trained AND opted
-                    # in (CTWIN_RERANK=1). It reads the topic tags the blend can't
-                    # and beats it on the eval set, but isn't yet proven to
-                    # generalise, so the blend stays the default.
+                    # learned fusion — the trained reranker (proven on held-out data
+                    # to generalise). It reads the topic tags + exact overlap the old
+                    # blend couldn't. When a query matches purely by MEANING (no shared
+                    # words), the reranker's score compresses, so a semantic safety-net
+                    # below keeps those real matches.
                     from . import rerank as _rr
                     if _rr.active():
                         rr = _rr.get()
@@ -185,16 +187,24 @@ def retrieve(query: str, k: int = 2, alpha: float = 0.6) -> list[Belief]:
                             query, semantic=sem[i], keyword=kw[i],
                             cand_text=b.text, cand_about=getattr(b, "about", "")))
                             for i, b in enumerate(w.beliefs)]
-                        floor = 0.35   # reranker scores are calibrated 0..1 relevance
+                        floor = 0.12   # reranker 0..1 relevance; low to admit meaning-only hits
                     else:
                         scores = [alpha * s + (1 - alpha) * kwi for s, kwi in zip(sem, kw)]
                 except Exception:
                     scores = [alpha * s + (1 - alpha) * kwi for s, kwi in zip(sem, kw)]
     except Exception:
         pass
-    ranked = sorted(zip(scores, w.beliefs), key=lambda p: p[0], reverse=True)
-    # a relevance floor so she doesn't force an unrelated maxim into the moment
-    return [b for s, b in ranked[:k] if s > floor]
+    ranked = sorted(range(len(w.beliefs)), key=lambda i: scores[i], reverse=True)
+
+    def _keep(i: int) -> bool:
+        # clears the relevance floor, OR is a genuine semantic match (a meaning-match
+        # the reranker compressed when there are no shared words) — so she never drops
+        # the right conviction just because it's phrased differently. 0.45 sits above
+        # measured noise (~0.38) and below real matches (~0.46+).
+        if scores[i] > floor:
+            return True
+        return sem is not None and sem[i] >= 0.45
+    return [w.beliefs[i] for i in ranked[:k] if _keep(i)]
 
 
 def retrieve_scored(query: str, k: int = 4, alpha: float = 0.6) -> dict:

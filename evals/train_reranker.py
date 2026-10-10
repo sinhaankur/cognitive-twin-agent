@@ -23,6 +23,7 @@ import math
 from cognitive_twin import rerank
 from cognitive_twin import wisdom
 from evals.rag_embed_benchmark import GOLD, embed
+from evals.rerank_trainset import split as _split
 
 
 EMBED_MODEL = "nomic-embed-text"
@@ -72,20 +73,24 @@ def _gold_index(docs, snippet) -> int:
     return -1
 
 
-def build_samples():
-    """Compute real features for every (query, candidate) pair, labelled."""
+def _embed_corpus():
     seed = wisdom._SEED
     docs = [s["text"] for s in seed]
     abouts = [s.get("about", "") for s in seed]
-    # embed the corpus once
     print(f"embedding {len(docs)} convictions with {EMBED_MODEL}…")
     doc_vecs = [embed(EMBED_MODEL, d) for d in docs]
     if any(v is None for v in doc_vecs):
         raise SystemExit(f"embedder '{EMBED_MODEL}' unavailable — `ollama pull {EMBED_MODEL}`")
+    return docs, abouts, doc_vecs
 
+
+def build_for_queries(query_pairs, docs, abouts, doc_vecs):
+    """Compute features for a list of (query, gold_snippet). Returns
+    (samples, per_query_feats): samples = [(features, label)] for training;
+    per_query_feats = [(gold_index, [features per candidate])] for metrics."""
     samples: list[tuple[list[float], int]] = []
-    per_query_feats = []   # keep for the metrics pass
-    for q, snip in GOLD:
+    per_query_feats = []
+    for q, snip in query_pairs:
         gi = _gold_index(docs, snip)
         qv = embed(EMBED_MODEL, q)
         kw = _keyword_scores(docs, q)
@@ -97,7 +102,7 @@ def build_samples():
             samples.append((f, 1 if i == gi else 0))
             feats_for_q.append(f)
         per_query_feats.append((gi, feats_for_q))
-    return docs, per_query_feats, samples
+    return samples, per_query_feats
 
 
 def _metrics_from_scores(per_query_feats, score_fn) -> dict:
@@ -131,38 +136,56 @@ def _fmt(m):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-save", action="store_true", help="measure only, don't save weights")
+    ap.add_argument("--legacy", action="store_true",
+                    help="train+test on the tiny GOLD set (the old overfit path)")
     args = ap.parse_args()
 
-    docs, per_query_feats, samples = build_samples()
-    pos = sum(1 for _, y in samples if y)
-    print(f"built {len(samples)} pairs ({pos} gold / {len(samples)-pos} other) "
-          f"over {len(docs)} convictions, {len(GOLD)} queries\n")
+    docs, abouts, doc_vecs = _embed_corpus()
 
-    baseline = _metrics_from_scores(per_query_feats, _blend_score())
-    print("hand-tuned blend (the guess):")
+    if args.legacy:
+        train_q = test_q = GOLD
+        print("LEGACY: train == test on the 12-query GOLD set (overfit)\n")
+    else:
+        train_q, test_q = _split()
+        print(f"train on {len(train_q)} query phrasings · HELD-OUT test on {len(test_q)} "
+              f"the reranker never sees in training\n")
+
+    train_samples, _ = build_for_queries(train_q, docs, abouts, doc_vecs)
+    _, test_feats = build_for_queries(test_q, docs, abouts, doc_vecs)
+    pos = sum(1 for _, y in train_samples if y)
+    print(f"training pairs: {len(train_samples)} ({pos} gold / {len(train_samples)-pos} other)\n")
+
+    # measured on the HELD-OUT test set — the honest number
+    baseline = _metrics_from_scores(test_feats, _blend_score())
+    print("hand-tuned blend (the guess) — on held-out test:")
     print("  " + _fmt(baseline))
 
-    model = rerank.train(samples)
+    model = rerank.train(train_samples)
     model.metrics = None
-    trained = _metrics_from_scores(per_query_feats, model.score)
-    print("\ntrained reranker (learned fusion):")
+    trained = _metrics_from_scores(test_feats, model.score)
+    print("\ntrained reranker (learned fusion) — on held-out test:")
     print("  " + _fmt(trained))
     print("  weights:", {k: round(v, 3) for k, v in zip(rerank.FEATURES, model.w)},
           "bias", round(model.b, 3))
 
     lift1 = (trained["hit@1"] - baseline["hit@1"]) * 100
     liftm = trained["mrr"] - baseline["mrr"]
-    print(f"\n→ lift: {lift1:+.1f} pts hit@1 · {liftm:+.3f} MRR")
+    print(f"\n→ held-out lift: {lift1:+.1f} pts hit@1 · {liftm:+.3f} MRR")
 
     better = (trained["hit@1"], trained["mrr"]) >= (baseline["hit@1"], baseline["mrr"])
+    generalises = not args.legacy and better
     if args.no_save:
         print("(--no-save: not written)")
     elif better:
-        model.metrics = {"baseline": baseline, "trained": trained}
+        model.metrics = {"baseline": baseline, "trained": trained,
+                         "held_out": not args.legacy, "generalises": generalises}
         model.save()
-        print(f"✓ saved → {rerank.WEIGHTS_PATH.name} (it wins, so it ships)")
+        note = "wins on HELD-OUT data — it generalises" if generalises else "wins (legacy/overfit)"
+        print(f"✓ saved → {rerank.WEIGHTS_PATH.name} ({note})")
+        if generalises:
+            print("  → it's now safe to make the reranker the DEFAULT (rerank.active()).")
     else:
-        print("✗ not saved — the trained model did not beat the blend; keeping the guess")
+        print("✗ not saved — the trained model did not beat the blend on held-out; keeping the guess")
     return 0
 
 

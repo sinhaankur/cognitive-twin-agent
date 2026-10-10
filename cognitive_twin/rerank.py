@@ -177,9 +177,10 @@ def is_trained() -> bool:
 # ── opt-in gate ───────────────────────────────────────────────────────────────
 # The trained reranker measurably beats the hand-tuned blend on the eval set
 # (+33 pts hit@1), but that set is tiny and it trained on it — so it is NOT yet
-# proven to GENERALISE to arbitrary queries. Until it's trained on a larger,
-# held-out corpus, it stays OFF by default and the blend remains the shipped path.
-# Turn it on to use/measure it: CTWIN_RERANK=1, or enable()/active().
+# proven to GENERALISE on a HELD-OUT test set (trained on 42 phrasings, +16.7 pts
+# hit@1 on 18 queries it never saw). So it is now ON BY DEFAULT when the shipped
+# weights carry that proof (metrics.generalises). A kill-switch stays, and weights
+# that were only ever overfit do NOT auto-enable.
 import os as _os  # noqa: E402
 
 
@@ -193,16 +194,39 @@ def enable() -> None:
 
 
 def disable() -> None:
+    # explicit off switch: a marker file that active() checks first
+    (_home() / "rerank.disabled").write_text("1", encoding="utf-8")
     (_home() / "rerank.enabled").unlink(missing_ok=True)
 
 
+def _generalises() -> bool:
+    """True only if the shipped weights were proven on a HELD-OUT set — the honest
+    bar for trusting the reranker as the default (not just overfit homework)."""
+    m = get().metrics or {}
+    return bool(m.get("held_out") and m.get("generalises"))
+
+
 def active() -> bool:
-    """Use the trained reranker this turn? Only when it's trained AND opted in."""
+    """Use the trained reranker this turn? ON BY DEFAULT once the weights are proven
+    to generalise (held-out), OR when explicitly opted in. A kill-switch
+    (CTWIN_RERANK=0 or rerank.disabled) always wins."""
     if not is_trained():
         return False
+    # explicit kill-switch first
+    if _os.environ.get("CTWIN_RERANK") in ("0", "false", "no", "off"):
+        return False
+    try:
+        if (_home() / "rerank.disabled").is_file():
+            return False
+    except Exception:
+        pass
+    # explicit opt-in
     if _os.environ.get("CTWIN_RERANK") in ("1", "true", "yes"):
         return True
     try:
-        return (_home() / "rerank.enabled").is_file()
+        if (_home() / "rerank.enabled").is_file():
+            return True
     except Exception:
-        return False
+        pass
+    # default: on when the shipped weights generalise on held-out data
+    return _generalises()

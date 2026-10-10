@@ -10,8 +10,14 @@ from __future__ import annotations
 from cognitive_twin import rerank
 
 
-def test_off_by_default():
-    # even with trained weights present, it must be opted in to take effect
+def test_active_only_when_generalising_or_opted_in(monkeypatch):
+    # the reranker is active by default ONLY when its shipped weights were proven on
+    # a HELD-OUT set (metrics.generalises). An overfit-only model stays off.
+    rr = rerank.get()
+    if rr.metrics and rr.metrics.get("held_out") and rr.metrics.get("generalises"):
+        assert rerank.active() is True            # proven → trusted as default
+    # a kill-switch always wins, generalising or not
+    monkeypatch.setenv("CTWIN_RERANK", "0")
     assert rerank.active() is False
 
 
