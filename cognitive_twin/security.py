@@ -399,6 +399,15 @@ def _check_egress() -> tuple[bool, str, str]:
         # Sends only your AdGuard admin credential (from Keychain) to your own box —
         # never conversation, persona, or memory. See adblock.py.
         "adblock.py",
+        # day-to-day health report: exercises the LOCAL brain (127.0.0.1:7878) with
+        # a health GET, a tiny LLM prompt, and a synthetic transcribe clip, to prove
+        # the paths actually work. Loopback only — never leaves the machine, sends
+        # no conversation/persona/memory. See diagnostics.py.
+        "diagnostics.py",
+        # scenario / stress harness: drives the LOCAL brain (127.0.0.1:7878) through
+        # the full range of real turns to measure behaviour + latency. Loopback
+        # only, synthetic prompts — nothing leaves the machine. See stress.py.
+        "stress.py",
     }
     unknown = [h for h in hits if h.split(":")[0].split("/")[-1] not in known]
     if unknown:

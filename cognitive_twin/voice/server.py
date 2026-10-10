@@ -221,6 +221,16 @@ class _Handler(BaseHTTPRequestHandler):
                 "neural_voice": ("kokoro" if kokoro_tts.is_available()
                                  else "piper" if piper_tts.is_available() else ""),
             })
+        elif self.path == "/api/diagnose":
+            # Full day-to-day diagnostics: runs every check (LLM/voice/mic/opener
+            # + subsystems + security + perf) and logs the run for trend tracking.
+            # Loopback only; it exercises THIS brain from inside, so the snapshot
+            # reflects the live process.
+            try:
+                from .. import diagnostics
+                self._json(200, diagnostics.run().as_dict())
+            except Exception as e:
+                self._json(200, {"ok": False, "error": str(e)})
         elif self.path == "/api/status":
             # ONE honest snapshot of every subsystem, so the app (and the user) can
             # SEE what's working at a glance instead of guessing — brain, voice,

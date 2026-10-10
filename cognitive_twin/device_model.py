@@ -23,11 +23,28 @@ import os
 import shutil
 import subprocess
 
-# How long Ollama keeps an idle model loaded. Keeping it short means a heavy model
-# doesn't sit in RAM after you're done — the machine breathes again between turns.
-# Override with CTWIN_KEEP_ALIVE (e.g. "30m", "0" to unload immediately, "-1" to
-# pin forever). Default: 5 minutes — warm enough for a conversation, gone when idle.
-KEEP_ALIVE: str = os.environ.get("CTWIN_KEEP_ALIVE", "5m").strip() or "5m"
+# How long Ollama keeps an idle model loaded. This is the single biggest lever on
+# how FAST she feels: if the model gets evicted between turns, every turn pays the
+# cold-load cost (tens of seconds on a 6GB model — "why is she so slow"). If the
+# machine has ample RAM, there's no reason to evict a small chat model, so we keep
+# it resident much longer; only on tight machines do we unload promptly to let the
+# box breathe. Override with CTWIN_KEEP_ALIVE ("30m", "0" = unload now, "-1" = pin
+# forever). A companion should answer in a beat, not reload her brain each time.
+def _default_keep_alive() -> str:
+    try:
+        import subprocess as _sp
+        gb = int(_sp.run(["sysctl", "-n", "hw.memsize"], capture_output=True,
+                         text=True, timeout=3).stdout.strip()) / (1024 ** 3)
+    except Exception:
+        gb = 16  # unknown → assume a middling machine
+    if gb >= 24:
+        return "2h"     # roomy (a small chat model is a rounding error) → stay warm
+    if gb >= 12:
+        return "30m"    # comfortable → warm across a working session
+    return "5m"         # tight → unload promptly so the machine breathes
+
+
+KEEP_ALIVE: str = os.environ.get("CTWIN_KEEP_ALIVE", "").strip() or _default_keep_alive()
 
 # Embedding-only models — they produce vectors, not chat. They must never be
 # offered as, or auto-selected as, the chat model (picking one makes Vera error).

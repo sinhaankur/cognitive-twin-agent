@@ -982,6 +982,9 @@ def main(argv: list[str] | None = None) -> int:
     if raw and raw[0] == "setup":
         from . import onboarding
         return onboarding.run()
+    if raw and raw[0] == "diagnose":
+        from . import diagnostics
+        return diagnostics._main(raw[1:])
     if raw and raw[0] == "twin":
         return _twin_command(raw[1:])
     if raw and raw[0] == "council":
