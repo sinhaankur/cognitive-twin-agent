@@ -57,6 +57,27 @@ _PEOPLE = re.compile(
     r"\b(my\s+(mother|mom|mum|father|dad|wife|husband|partner|son|daughter|"
     r"sister|brother|friend|boss|colleague|dog|cat))\b", re.IGNORECASE)
 
+# PERSONALITY cues — how THIS person communicates + what they're drawn to, read
+# from how they chat (Ankur: "the way I chat, you understand my personality — cater
+# to that so the LLM knows who I am"). Observed, never invented; each is a light
+# signal counted over time, and the strongest become a "who they are" line in the
+# prompt. Kept simple on purpose (a small, legible map, not a profiler).
+_PERSONALITY = {
+    # communication style
+    "direct": re.compile(r"\b(just|honestly|basically|straight up|cut to|no bs|bottom line)\b", re.I),
+    "curious": re.compile(r"\?|^(why|how|what if|wonder|curious)\b", re.I),
+    "playful": re.compile(r"\b(haha|lol|lmao|😂|😄|jk|kidding)\b|!{2,}", re.I),
+    "reflective": re.compile(r"\b(i think|i feel|i believe|i realised|realized|wonder|meaning|lately)\b", re.I),
+    "driven": re.compile(r"\b(build|ship|launch|goal|want to|let's|lets go|make|create|push)\b", re.I),
+    "big-picture": re.compile(r"\b(vision|future|overall|the point|ultimately|in the end|so on)\b", re.I),
+    # what they care about (interests)
+    "tech/AI": re.compile(r"\b(ai|llm|model|code|app|engine|build|rag|neural|data|software)\b", re.I),
+    "space/science": re.compile(r"\b(space|universe|satellite|planet|star|physics|science|math)\b", re.I),
+    "world/news": re.compile(r"\b(news|war|politics|country|india|world|economy|climate)\b", re.I),
+    "family/people": re.compile(r"\b(family|mother|mom|father|son|wife|friend|people|loved)\b", re.I),
+    "design/craft": re.compile(r"\b(design|craft|beautiful|aesthetic|art|visual|clean|polish)\b", re.I),
+}
+
 # Topic/thread seeds — what a turn is *about* beyond the feeling. Light, honest.
 _STOP = set("i you the a an to of and is it im i'm that this me my we so are was for "
             "on in with feel feeling really just about have has had do does my mine "
@@ -68,7 +89,8 @@ def _now() -> float:
 
 
 def _blank() -> dict[str, Any]:
-    return {"feelings": {}, "people": {}, "threads": [], "updated": None, "turns": 0}
+    return {"feelings": {}, "people": {}, "threads": [], "personality": {},
+            "updated": None, "turns": 0}
 
 
 def load() -> dict[str, Any]:
@@ -137,10 +159,34 @@ def observe(text: str) -> dict[str, Any]:
                  "first": now, "last": now})
     data["threads"] = _decay(data["threads"], now)
 
+    # personality — how they communicate + what they're drawn to. Count each cue
+    # that fires; the strongest, steadiest traits become "who they are" for the LLM.
+    pers = data.get("personality", {})
+    for trait, pat in _PERSONALITY.items():
+        if pat.search(t):
+            p = pers.get(trait, {"count": 0, "last": 0})
+            p["count"] += 1
+            p["last"] = now
+            pers[trait] = p
+    data["personality"] = pers
+
     data["turns"] = data.get("turns", 0) + 1
     data["updated"] = now
     _save(data)
     return data
+
+
+# traits only count once they've shown up enough to be real (not a one-off word).
+_PERSONALITY_MIN = 3
+
+
+def personality_profile(k: int = 5) -> list[str]:
+    """The person's strongest observed traits/interests, most-seen first — only the
+    ones seen enough times to be real. Empty until she's learned a few."""
+    pers = load().get("personality", {})
+    strong = [(name, v) for name, v in pers.items() if v.get("count", 0) >= _PERSONALITY_MIN]
+    strong.sort(key=lambda kv: (kv[1].get("count", 0), kv[1].get("last", 0)), reverse=True)
+    return [name for name, _ in strong[:k]]
 
 
 def _recent_feelings(data: dict[str, Any], k: int = 3) -> list[str]:
@@ -158,6 +204,15 @@ def context_for_prompt(max_threads: int = 3) -> str:
     if not data.get("turns"):
         return ""
     bits: list[str] = []
+
+    # WHO THEY ARE — their personality, learned from how they chat, so the model's
+    # replies fit THEM (not a generic user). Observed, never flattering invention.
+    traits = personality_profile()
+    if traits:
+        bits.append("who they are (how they come across): " + ", ".join(traits)
+                    + " — meet them there, but don't just mirror them: knowing them "
+                    "is for warmth and fit, never an echo chamber. Still offer other "
+                    "angles and gently widen their view when it helps.")
 
     feelings = _recent_feelings(data)
     if feelings:
