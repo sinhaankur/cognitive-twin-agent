@@ -66,6 +66,11 @@ _RISK: dict[str, str] = {
     "places_analysis": "read", "social_status": "read", "social_summary": "read",
     "drive_list": "read", "drive_read": "read", "drive_checkpoint": "read",
     "job_fit": "read", "think_routes": "read",
+    # step-by-step plans: reading status is a read; starting/advancing a plan writes
+    # only to her own sealed checklist (the STEPS' real actions keep their own gates).
+    "plan_status": "read",
+    "plan_start": "write_local", "plan_next": "write_local",
+    "plan_skip": "write_local", "plan_stop": "write_local",
     # local writes (Vera's own sealed store)
     "note_task": "write_local", "complete_task": "write_local",
     "set_daily_commitment": "write_local",

@@ -320,6 +320,15 @@ class Agent:
                     parts.append(body)
             except Exception:
                 pass
+            # a plan in progress — so a multi-step chain stays coherent (she knows
+            # the goal + the current step, helps with THIS one, moves on when done)
+            try:
+                from .. import task_chain as _tc
+                plan = _tc.context_for_prompt()
+                if plan:
+                    parts.append(plan)
+            except Exception:
+                pass
             # a warm, reflective tone (original — no copyrighted lines)
             try:
                 from .. import mood as _mood
