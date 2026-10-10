@@ -163,6 +163,28 @@ def fetch_text(url: str, *, approved: bool = False, max_chars: int = 20000) -> s
         return f"[error] couldn't fetch: {e}"
 
 
+def fetch_raw(url: str, *, approved: bool = False, max_chars: int = 40000) -> str:
+    """Like fetch_text, but returns the RAW body WITHOUT stripping tags — for feeds
+    (RSS/XML/JSON) where the markup carries the structure. Same fence: lockdown
+    check, allow-list, permission mode, and sealed audit all apply identically. Read
+    -only, never saves. Returns the text or a clear [status] string."""
+    if security.is_locked():
+        return "[blocked] Vera is in lockdown — internet halted until you release the kill switch."
+    blk = _check(url, approved=approved, saving=False)
+    if blk:
+        return blk
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": _UA})
+        with urllib.request.urlopen(req, timeout=_TIMEOUT) as r:
+            raw = r.read(_MAX_BYTES + 1)
+        text = raw.decode("utf-8", "replace")
+        _audit("fetch-raw", url, True, f"{len(text)} chars")
+        return text[:max_chars]
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        _audit("fetch-raw", url, False, str(e))
+        return f"[error] couldn't fetch: {e}"
+
+
 def download(url: str, *, approved: bool = False) -> str:
     """Download a file from an allowed host into the sandbox. Needs approval
     unless in 'auto' mode. Returns where it landed, or a status string."""

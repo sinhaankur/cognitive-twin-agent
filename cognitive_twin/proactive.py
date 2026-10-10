@@ -323,33 +323,196 @@ def _pick_companion_line() -> str:
     return random.choice(allpool) if allpool else "Hey — just thinking of you."
 
 
+# ── real current affairs: a genuine headline, through the fenced doorway ───────
+# Ankur's steer: keep POLITICS limited; mostly events that could actually affect
+# him. So we filter heavy political/conflict items down and prefer the things that
+# touch a life — science, tech, space, health, weather/disasters, India, economy.
+_CA_FILE = "proactive_news.json"            # a short cache so she doesn't re-fetch
+_CA_TTL_S = 3 * 3600                         # news is fresh enough for ~3 hours
+# BBC News RSS — keyless, reliable, real headlines + a one-line summary. World +
+# the sections that match "events that affect you". Fetched through net.py's fenced,
+# allow-listed, read-only doorway; the host is added to the allow-list on first use.
+_CA_HOST = "feeds.bbci.co.uk"
+_CA_FEEDS = [
+    "https://feeds.bbci.co.uk/news/world/rss.xml",
+    "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
+    "https://feeds.bbci.co.uk/news/technology/rss.xml",
+]
+
+# drop items dominated by PARTISAN politics (campaigns, party noise). War/conflict
+# is NOT dropped — Ankur wants major events that matter (war, climate) even if
+# they're political-adjacent; only the electoral/party churn is filtered.
+_CA_POLITICS = (
+    "election", "campaign", "senator", "parliament vote", "impeach", "ballot",
+    "primary election", "congressman", "party leader", "coalition talks",
+    "poll shows", "approval rating", "cabinet reshuffle", "by-election",
+)
+# the things that could actually affect you / are worth a human chat — war + climate
+# + science/tech/space + health + economy. Places are added live from YOUR geography.
+_CA_RELEVANT = (
+    # war / major conflict (events that matter)
+    "war", "conflict", "ceasefire", "attack", "strike", "invasion", "troops",
+    "hostage", "peace deal", "evacuat",
+    # climate / weather / disasters
+    "earthquake", "storm", "hurricane", "cyclone", "flood", "heatwave", "heat",
+    "wildfire", "drought", "climate", "tsunami", "landslide", "monsoon",
+    # science / tech / space
+    "space", "nasa", "isro", "rocket", "launch", "moon", "mars", "satellite",
+    "ai", "chip", "technology", "science", "study", "discover", "breakthrough",
+    # health / economy
+    "health", "vaccine", "outbreak", "disease", "economy", "inflation", "market",
+    "rupee", "interest rate", "record",
+)
+# home anchors — always relevant, plus whatever his real geography adds.
+_CA_HOME = ("toronto", "ontario", "canada", "india", "indian")
+
+
+def _my_places() -> set[str]:
+    """Places that are YOURS — so news near them is news that touches you. Home
+    anchors (Toronto, India) + places you've actually been, learned from your photo
+    geolocation (opt-in) and movement history. Lowercased place/city/region words."""
+    places = set(_CA_HOME)
+    # from photo-location memories (photos.learn_places → "a place you've been: X")
+    try:
+        from . import memory
+        for e in memory.entries():
+            if e.get("source") == "photos-places":
+                name = (e.get("prompt") or "").split(":", 1)[-1].strip().lower()
+                for tok in name.replace(",", " ").split():
+                    if len(tok) >= 4:
+                        places.add(tok)
+    except Exception:
+        pass
+    # from movement history (top places)
+    try:
+        from . import places as _pl
+        for st in _pl.top_places(limit=12):
+            nm = (getattr(st, "place", "") or "").lower()
+            for tok in nm.replace(",", " ").split():
+                if len(tok) >= 4 and tok != "unnamed":
+                    places.add(tok)
+    except Exception:
+        pass
+    return places
+
+
+def _ca_cache() -> dict:
+    d = security.read_state(security.path(_CA_FILE), default={})
+    return d if isinstance(d, dict) else {}
+
+
+import re as _re_ca
+_CA_WORD = _re_ca.compile(r"[a-z]+")
+
+
+def _ca_has(words: set[str], needles) -> int:
+    """Count needle-keywords present as WHOLE WORDS (prefix match on a word, so
+    'wildfires' matches 'wildfire') — never a mid-word substring. Avoids false hits
+    like 'theatre' matching 'heat'. Kept deliberately simple."""
+    n = 0
+    for needle in needles:
+        if any(w == needle or w.startswith(needle) for w in words):
+            n += 1
+    return n
+
+
+def _ca_relevant_rank(text: str, places: set[str] | None = None) -> int:
+    """How relevant a headline is to YOU. Partisan politics → dropped (-1). News
+    NEAR your places (Toronto / India / where you've been) gets a big boost; war,
+    climate, science, etc. get a smaller one. Higher = surface sooner."""
+    low = text.lower()
+    words = set(_CA_WORD.findall(low))
+    # politics phrases can be multi-word, so keep a substring check for those
+    if any(p in low for p in _CA_POLITICS):
+        return -1
+    score = _ca_has(words, _CA_RELEVANT)
+    if places:
+        score += 5 * _ca_has(words, places)      # near-you events matter most
+    return score
+
+
+def _near_me(text: str, places: set[str]) -> bool:
+    words = set(_CA_WORD.findall(text.lower()))
+    return _ca_has(words, places) > 0
+
+
+def _fetch_headlines() -> list[str]:
+    """Real headlines from BBC News RSS, through net.py's fenced, allow-listed,
+    read-only doorway. Simple on purpose: RSS is plain <title>/<description>, so a
+    small regex is enough — no parser, no key, no personal data sent. Returns clean
+    one-line headlines, or [] if unreachable/not allowed."""
+    try:
+        from . import net
+        import html as _html
+        import re as _re
+        # make sure BBC's feed host is allow-listed (idempotent); it's a public,
+        # low-risk news feed — the same class as the wikipedia.org default.
+        try:
+            if _CA_HOST not in net._cfg().get("allow", []):
+                net.allow(_CA_HOST)
+        except Exception:
+            pass
+        out: list[str] = []
+        seen: set[str] = set()
+        for url in _CA_FEEDS:
+            raw = net.fetch_raw(url, max_chars=40000)   # RAW RSS (tags intact)
+            if not raw or raw[:1] == "[":               # [blocked]/[error]/[needs approval]
+                continue
+            for t in _re.findall(r"<title>\s*(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?\s*</title>", raw, _re.S):
+                it = _html.unescape(_re.sub(r"\s+", " ", t)).strip().rstrip(".")
+                low = it.lower()
+                if (12 <= len(it) <= 160 and low not in seen
+                        and "bbc news" not in low and low != "bbc"):
+                    seen.add(low); out.append(it)
+        return out
+    except Exception:
+        return []
+
+
 def _current_affairs_line() -> str | None:
-    """A real 'something people are talking about' line — grounded in actual news,
-    fetched only through Vera's existing fenced, opt-in research doorway (never a
-    new egress, never invented). Returns None if news isn't reachable/allowed, so
-    she simply talks about something else instead of making anything up."""
+    """A real 'something people are talking about' line — a genuine headline, fetched
+    only through Vera's fenced, allow-listed, read-only doorway (net.py). Politics is
+    kept light; events that could affect you are preferred. Never invented: returns
+    None when news isn't reachable/allowed, so she talks about something else."""
     try:
-        from . import research  # Vera's single allow-listed internet doorway
+        from . import net
+        if net.security.is_locked():          # honour the kill switch
+            return None
     except Exception:
         return None
-    try:
-        # Only if the user has enabled web research (same gate as everything else).
-        if not getattr(research, "is_enabled", lambda: False)():
-            return None
-        headline = None
-        for fn in ("top_headline", "headline", "current_affairs"):
-            f = getattr(research, fn, None)
-            if callable(f):
-                headline = f()
-                break
-        if not headline:
-            return None
-        headline = str(headline).strip().rstrip(".")
-        if not headline:
-            return None
-        return f"Saw something in the news — {headline}. What do you make of that?"
-    except Exception:
+
+    cache = _ca_cache()
+    headlines = cache.get("headlines") or []
+    fresh = (time.time() - float(cache.get("at", 0))) < _CA_TTL_S
+    if not (fresh and headlines):
+        headlines = _fetch_headlines()
+        if headlines:
+            security.write_state(security.path(_CA_FILE),
+                                 {"at": time.time(), "headlines": headlines})
+    if not headlines:
         return None
+
+    # rank by relevance TO YOU: near-your-places first, then war/climate/science;
+    # partisan politics dropped. REQUIRE a relevance hit (>=1) so bare topic names
+    # ("Musical theatre") never surface as "news" — only genuine events do, and if
+    # none qualify she returns None and talks about something else (never invents).
+    places = _my_places()
+    recent = set(_ca_cache().get("spoken", []))
+    ranked = sorted(headlines, key=lambda h: _ca_relevant_rank(h, places), reverse=True)
+    pick = next((h for h in ranked
+                 if _ca_relevant_rank(h, places) >= 1 and h not in recent), None)
+    if pick is None:
+        pick = next((h for h in ranked if _ca_relevant_rank(h, places) >= 1), None)
+    if not pick:
+        return None
+    # remember we used it (rotate), keep the cache
+    c = _ca_cache()
+    c["spoken"] = ([pick] + c.get("spoken", []))[:12]
+    security.write_state(security.path(_CA_FILE), c)
+    # phrase it warmly — flag when it's close to home
+    if _near_me(pick, places):
+        return f"Something close to home in the news — {pick}. Have you heard?"
+    return f"Saw something in the news — {pick}. What do you make of that?"
 
 
 def companion_checkin(speak: bool = True) -> str | None:
