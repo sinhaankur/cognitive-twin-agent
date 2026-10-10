@@ -121,6 +121,16 @@ piece was software that keeps that presence *entirely yours*. That's Vera.
 
 ## Quick start
 
+**New here? Start with the guides — plain language, about five minutes each:**
+
+- 🖥️ **[Install on your Mac](./docs/INSTALL.md)** — one command, the easy path.
+- 📱 **[Connect your iPhone](./docs/IPHONE-SETUP.md)** — reach the model on your Mac,
+  privately over Tailscale.
+- ☁️ **[Sync across devices](./docs/ICLOUD-SYNC.md)** — the same Vera on Mac + iPhone,
+  through your own iCloud.
+
+For the hands-on, here's the short version:
+
 ```bash
 # 1. install Ollama (https://ollama.com) and pull a tool-capable model
 ollama pull qwen2.5:3b        # or llama3.2, etc.

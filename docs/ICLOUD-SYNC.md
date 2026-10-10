@@ -5,19 +5,24 @@ memory through **your own iCloud Drive** — no server of ours, nothing public.
 
 ## Why it's safe + private
 
-- The bundle is **encrypted before it ever touches iCloud** (`vault.export_bundle`,
-  ChaCha20-Poly1305 under a passphrase you set). iCloud only holds ciphertext —
-  Apple can't read it, nor can anyone else.
-- It lives in a **private iCloud Drive container scoped to your Apple ID**
-  (`iCloud.com.sinhaankur.vera`). The trust is your iCloud account: the same person
-  Apple already authenticates on both devices. Vera doesn't invent its own login —
-  it inherits that.
-- **Per-device keys never move.** The bundle carries memory, not a device's sealing
-  key (`sync.merge_bundle` refuses key material). Each device keeps its own
-  Keychain key; the shared passphrase unlocks the bundle.
-- Pulling is a **merge, never an overwrite** — both devices' edits survive; newest
-  wins on a true conflict.
-- No iCloud / not signed in → every call is a clean **no-op**. Vera stays local.
+- **Encrypted before it ever reaches iCloud.** iCloud only ever holds a locked
+  file — Apple can't read it, and neither can anyone else. Only your devices, with
+  your passphrase, can open it.
+- **It's your iCloud, not ours.** The file lives in your own private iCloud Drive,
+  tied to your Apple ID — the same account you're already signed into on both
+  devices. There's no account of ours, nothing public.
+- **Keys stay put.** Each device keeps its own key; only the memory travels, never
+  the keys.
+- **Syncing merges, never overwrites.** Both devices' changes survive; on a real
+  clash, the newer one wins.
+- **No iCloud? No problem.** If you're not signed in, Vera simply stays local.
+
+<details><summary>Under the hood (for the curious)</summary>
+
+The bundle is sealed with ChaCha20-Poly1305 via `vault.export_bundle`; it lives in
+the `iCloud.com.sinhaankur.vera` container; `sync.merge_bundle` does the per-record
+merge and refuses to move any device's key material.
+</details>
 
 ## How it works
 

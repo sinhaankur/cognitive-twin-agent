@@ -48,6 +48,8 @@ account needed for the basic app — see the note on iCloud below).
 3. Plug in your iPhone, select it as the destination, press **Run**.
 4. First launch on the phone: **Settings → General → VPN & Device Management →
    trust your developer profile**, then open Vera.
+5. **Connect her to her brain.** A phone can't run the model; it reaches the one
+   on your Mac, privately over Tailscale. See **[IPHONE-SETUP.md](./IPHONE-SETUP.md)**.
 
 **iCloud sync note:** a *free* Apple account can't use the iCloud capability, so a
 free build installs **without** cross-device sync (the app still works fully). For
