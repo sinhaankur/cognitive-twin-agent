@@ -5,7 +5,7 @@ name: Anita
 options:
   bundleIdPrefix: com.sinhaankur
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "16.4"
   createIntermediateGroups: true
 
 targets:
@@ -51,6 +51,14 @@ targets:
     # two devices stay in step through the user's iCloud, nothing public. The bundle
     # is already encrypted before it touches iCloud (vault.export_bundle), so iCloud
     # only ever holds ciphertext.
+    #
+    # ⚠ FREE-TEAM NOTE: a free personal Apple team CANNOT sign the iCloud capability
+    # ("Personal development teams do not support the iCloud capability"). To
+    # SIDE-LOAD on a free team, strip this `entitlements:` block + the
+    # NSUbiquitousContainers Info.plist key, regenerate, and build — the app installs
+    # and runs fully, just without iCloud sync (the Python sync_icloud is a no-op
+    # until a device grants the entitlement). With a paid Developer Program account,
+    # keep this as-is and iCloud sync works on device. (See docs/ICLOUD-SYNC.md.)
     entitlements:
       path: Vera/Anita.entitlements
       properties:

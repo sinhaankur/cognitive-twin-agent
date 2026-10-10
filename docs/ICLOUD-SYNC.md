@@ -66,3 +66,36 @@ interactive Xcode build (I can't do it headless). Steps:
 
 Once both devices have the app, iCloud on, and the same passphrase, they stay in
 step — health, activity, emotion, memory, all of it, privately through your iCloud.
+
+## ⚠ Free Apple team vs. iCloud — the real tradeoff
+
+A **free personal Apple team cannot sign the iCloud capability** ("Personal
+development teams do not support the iCloud capability"). So on the free tier you
+pick one:
+
+- **Install free on your iPhone now** → strip the `entitlements:` block + the
+  `NSUbiquitousContainers` key from `ios/project.yml`, regenerate, build. The app
+  installs and runs **fully**; `sync_icloud` is simply a no-op until a device has
+  the entitlement. (This is how the app was side-loaded onto the iPhone.)
+- **iCloud sync on device** → needs the **paid Apple Developer Program** ($99/yr).
+  Keep the entitlement as committed and it works.
+
+The sync CODE is built + tested either way — it just activates when a build carries
+the entitlement.
+
+### The exact commands used to side-load (free team, no iCloud)
+
+```bash
+cd core && ./build-xcframework.sh          # build the Rust core
+cd ../ios
+# (strip the entitlements + NSUbiquitousContainers from project.yml for free team)
+xcodegen generate
+xcodebuild -project Anita.xcodeproj -scheme Anita \
+  -destination "platform=iOS,id=<your-iphone-udid>" -configuration Debug \
+  -allowProvisioningUpdates DEVELOPMENT_TEAM=<team> CODE_SIGN_STYLE=Automatic build
+xcrun devicectl device install app --device <your-iphone-udid> \
+  ~/Library/Developer/Xcode/DerivedData/Anita-*/Build/Products/Debug-iphoneos/Anita.app
+```
+
+First launch on the phone: **Settings → General → VPN & Device Management → trust
+your developer profile**, then tap Vera.
