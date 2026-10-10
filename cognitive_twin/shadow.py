@@ -217,6 +217,41 @@ def open_tasks() -> list[Task]:
     return [t for t in tasks() if not t.done and not t.dropped]
 
 
+# What text is TRUSTWORTHY enough to say back to you unprompted (the launch
+# nudge). A task you typed/kept is trusted; a task "heard" from the room is NOT —
+# before the mic was addressee-gated it transcribed background speech / TV and
+# turned fragments ("he is up to his head") into fake to-dos. The opener must
+# never read those back. We also reject anything that doesn't look like a real,
+# self-contained task clause.
+_TRUSTED_SOURCES = {"you", "kept"}
+
+
+def _looks_like_task(text: str) -> bool:
+    """A cheap honesty check: a real task reads like an action/item, not a stray
+    sentence fragment scraped from speech. Require a few real words and no tell-
+    tale mid-sentence pronoun openers ('he …', 'it just …') that mark garbage."""
+    t = (text or "").strip()
+    w = t.split()
+    if len(w) < 2 or len(t) > 120:
+        return False
+    # fragments that start mid-thought are almost always misheard prose, not tasks
+    first = w[0].lower().strip(".,:;")
+    if first in {"he", "she", "it", "they", "him", "her", "them", "yes", "no", "and", "but", "so", "use"}:
+        return False
+    return True
+
+
+def opener_tasks() -> list[Task]:
+    """Open tasks safe to surface UNPROMPTED at launch: trusted source only, and
+    only if they actually read like a task. Keeps the misheard-speech garbage out
+    of her first words. The full day view (`open_tasks`) still shows everything —
+    this gate is specifically for the proactive opener."""
+    return [
+        t for t in open_tasks()
+        if (t.source in _TRUSTED_SOURCES) and _looks_like_task(t.text)
+    ]
+
+
 def done_today() -> list[Task]:
     today = _dt.date.today().isoformat()
     return [t for t in tasks() if t.done.startswith(today) and not t.dropped]

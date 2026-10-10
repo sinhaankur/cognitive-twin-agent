@@ -277,7 +277,10 @@ class _Handler(BaseHTTPRequestHandler):
             # there's genuinely nothing, so the greeting stays just a warm hello.
             try:
                 from .. import shadow
-                tasks = shadow.open_tasks()
+                # opener_tasks (not open_tasks): only TRUSTED, task-shaped items.
+                # This keeps misheard-speech garbage ("he is up to his head") out
+                # of her unprompted first words — the "dummy opener" bug.
+                tasks = shadow.opener_tasks()
                 if tasks:
                     more = f" (and {len(tasks) - 1} more)" if len(tasks) > 1 else ""
                     self._json(200, {"text": f"Still on your plate: {tasks[0].text}{more}."})

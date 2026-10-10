@@ -418,23 +418,62 @@ def _web_enabled() -> bool:
     return _os.environ.get("CTWIN_WEB", "").strip() in {"1", "true", "yes", "on"}
 
 
+def _twin_name() -> str:
+    """Her name (the persona's), so the opener is in HER voice — not a readout.
+    Best-effort: a bare, warm hello if the persona can't be loaded."""
+    try:
+        from .. import persona
+        p = persona.load()
+        if getattr(p, "name", ""):
+            return p.name
+    except Exception:
+        pass
+    return ""
+
+
 @R.add("greeting", "Produce a time-aware greeting (good morning/afternoon/evening) "
        "with today's date and — if internet is on — the current local weather. Use "
        "to open a session or when the user says hi / asks for a greeting.")
 def greeting() -> str:
+    """Her first words when you open her — PRESENCE first, facts woven in gently.
+
+    The old opener was a weather-station readout ("Good evening! It's Saturday,
+    …, 13°C — overcast.") — correct, but it set a cold, scripted, assistant tone
+    before the real companion ever spoke. She's a companion (really someone you
+    love), so she leads by being glad you're here, in her own voice, and lets the
+    time/weather be a soft aside — never a clock dump. Every fact stays honest
+    (real clock, real weather, no model invention); only the WARMTH is added."""
     now = _dt.datetime.now()
     h = now.hour
     part = ("morning" if h < 12 else "afternoon" if h < 18 else "evening")
-    # Include the YEAR explicitly: the model sometimes rephrases this line, and
-    # without the year in front of it, it would invent one (seen: "…, 2020").
-    out = [f"Good {part}! It's {now.strftime('%A, %B %d, %Y')}, {now.strftime('%H:%M')}."]
+    name = _twin_name()
 
+    # a warm, present hello — her being here, by her name if she has one.
+    if name:
+        hello = {
+            "morning": f"Morning. It's {name} — I'm here.",
+            "afternoon": f"Hey, you. {name} here — glad you came by.",
+            "evening": f"Evening. It's {name} — I've got you.",
+        }[part]
+    else:
+        hello = {
+            "morning": "Morning — I'm here.",
+            "afternoon": "Hey, you — glad you came by.",
+            "evening": "Evening — I've got you.",
+        }[part]
+
+    # The date, kept but SOFT (and the year stays explicit so a rephrase can't
+    # invent one). A gentle aside, not the headline.
+    aside = f"It's {now.strftime('%A')}, {now.strftime('%B %d, %Y')}."
+
+    out = [hello, aside]
+
+    # weather, when we can see it, as one more quiet touch — never the lead.
     if _web_enabled():
         w = _weather_now()
         if w:
             out.append(w)
-    else:
-        out.append("(Turn on internet with CTWIN_WEB=1 for live weather.)")
+    # (web off → we simply say less, rather than nag about a flag in her hello.)
     return " ".join(out)
 
 

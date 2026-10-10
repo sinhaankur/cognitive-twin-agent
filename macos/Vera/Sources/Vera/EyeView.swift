@@ -20,7 +20,13 @@ struct EyeView: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Color(red: 0.02, green: 0.024, blue: 0.04)
-            TimelineView(.animation) { tl in
+            // Redraw at a fixed ~20fps, NOT TimelineView(.animation). `.animation`
+            // repaints the Canvas at the full display rate (60–120fps) forever —
+            // even when idle it pinned a whole CPU core (the breathing reticle and
+            // the gliding face don't need 120fps). The camera only produces ~30fps
+            // of landmark data anyway, so 20fps is smooth and a fraction of the
+            // cost. This is what kept the app hot while "doing nothing".
+            TimelineView(.periodic(from: .now, by: 1.0 / 20.0)) { tl in
                 let t = tl.date.timeIntervalSinceReferenceDate
                 Canvas { g, size in
                     drawFrameTicks(g: &g, size: size)

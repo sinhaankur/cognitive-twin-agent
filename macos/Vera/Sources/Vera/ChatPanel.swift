@@ -7,9 +7,9 @@ import SwiftUI
 struct ChatPanel: View {
     @ObservedObject var model: AppModel
     @State private var typed = ""
-    @State private var phase: CGFloat = 0
     @FocusState private var focused: Bool
-    private let timer = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
+    // Orb animation comes from the ONE shared driver (model.orbPhase) — no
+    // per-view 60fps timer, so this panel rests when she rests.
 
     // Vera's palette — warm sandstone gold (matches the orb), used sparingly.
     private static let gold = Color(red: 0.86, green: 0.68, blue: 0.38)
@@ -21,10 +21,6 @@ struct ChatPanel: View {
             inputBar
         }
         .background(Color.black.opacity(0.001))     // let the window material show
-        .onReceive(timer) { _ in
-            phase += 0.05 + model.amplitude * 0.30
-            model.syncPhase()
-        }
         .onAppear {
             focused = true
             model.voice.refreshPermissionState()   // live status, no stale banner
@@ -38,10 +34,29 @@ struct ChatPanel: View {
     }
 
     // MARK: - Header
+    // When she's simply present, the sub-line shows whose voice you're hearing;
+    // the moment anything is happening (waking / listening / thinking / speaking /
+    // warming the voice) it shows that honest state instead.
+    private var statusSubline: String {
+        if model.status == .ready {
+            return model.clonedVoiceReady
+                ? "in \(model.assistantName)'s voice"
+                : "voice: \(model.activeVoiceLabel)"
+        }
+        return model.statusLine
+    }
+    private var statusTint: Color {
+        switch model.status {
+        case .ready:        return model.clonedVoiceReady ? .pink.opacity(0.9) : .secondary
+        case .needsMic:     return .orange
+        case .listening:    return .red.opacity(0.85)
+        default:            return .secondary
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 11) {
-            SiriOrb(amplitude: model.amplitude, phase: phase, tint: model.tint, brightness: model.brightness)
-                .frame(width: 32, height: 32)
+            LiveOrb(model: model, size: 32)   // isolated: ticks here, not the panel
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
                     Text(model.assistantName)
@@ -56,16 +71,22 @@ struct ChatPanel: View {
                     Circle()
                         .fill(model.serverUp ? Color.green.opacity(0.9) : Color.orange.opacity(0.9))
                         .frame(width: 5, height: 5)
-                    // Always show WHICH voice is active — her own cloned voice (named),
-                    // or the chosen neural voice. You should never wonder whose voice
-                    // you're hearing.
-                    Text(model.serverUp
-                         ? (model.clonedVoiceReady
-                            ? "in \(model.assistantName)'s voice"
-                            : "voice: \(model.activeVoiceLabel)")
-                         : "waking…")
+                    // The LIVE, honest status — the words that carry the feeling of
+                    // what she's doing right now (waking her mind… / listening… /
+                    // thinking… / warming her voice… / here with you). Never a
+                    // frozen, silent header; if it's loading, it SAYS so. When she's
+                    // simply present, show which voice you're hearing instead.
+                    Text(statusSubline)
                         .font(.system(size: 10.5, design: .default))
-                        .foregroundStyle(model.clonedVoiceReady ? .pink.opacity(0.9) : .secondary)
+                        .foregroundStyle(statusTint)
+                    // a tiny breathing dot while loading/working, so you can SEE it's
+                    // alive and not stuck (Claude-style "working…").
+                    if model.isBusyState {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .scaleEffect(0.6)
+                            .frame(width: 10, height: 10)
+                    }
                 }
             }
             Spacer()
@@ -141,7 +162,7 @@ struct ChatPanel: View {
                                 .id(turn.id)
                         }
                         if model.phase == .thinking {
-                            ThinkingRow(phase: phase,
+                            ThinkingRow(phase: model.orbPhase,
                                         elapsed: Date().timeIntervalSince(model.thinkingSince))
                                 .id("thinking")
                                 .transition(.opacity)
@@ -171,8 +192,7 @@ struct ChatPanel: View {
     // A warm, calm first impression instead of a blank panel.
     private var emptyState: some View {
         VStack(spacing: 14) {
-            SiriOrb(amplitude: 0.2, phase: phase, tint: model.tint, brightness: model.brightness)
-                .frame(width: 56, height: 56)
+            LiveOrb(model: model, size: 56)   // isolated animating orb
                 .opacity(0.9)
             VStack(spacing: 5) {
                 Text("I'm here.")

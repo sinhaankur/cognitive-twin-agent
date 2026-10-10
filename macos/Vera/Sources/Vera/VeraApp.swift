@@ -57,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         makeOrbWindow()
         makeChatWindow()
         model.start()                            // ready + greets independently
+        model.startOrbDriver()                   // ONE idle-aware orb animator (not 3 timers)
         model.refreshActivity()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.syncMenuChecks() }
         photosItem?.state = UserDefaults.standard.bool(forKey: "photosOn") ? .on : .off
@@ -986,6 +987,54 @@ final class AppModel: ObservableObject {
     var appleAvailable: Bool { AppleIntelligence.isAvailable }
     var appleStatus: String { AppleIntelligence.statusText }
 
+    // ── Honest status, in words that carry the feeling ──────────────────────────
+    // The one line the UI shows for "what is she doing right now" — the way Claude
+    // shows Thinking…/Searching… instead of a frozen gap. Ankur's rule: if it's
+    // loading, SAY loading; if the voice isn't ready, SAY it's warming; never a
+    // dead, silent UI. Order = priority (the most immediate state wins).
+    enum Status: Equatable {
+        case warmingBrain          // the local brain is still coming up
+        case needsMic              // waiting on the user to grant the mic
+        case listening             // mic open, hearing you
+        case thinking              // composing a reply
+        case speaking              // talking back
+        case warmingVoice          // her neural voice is still loading
+        case ready                 // present and at rest
+    }
+
+    var status: Status {
+        if !serverUp { return .warmingBrain }
+        if voice.permissionNeeded { return .needsMic }
+        if voice.isListening { return .listening }
+        if phase == .thinking { return .thinking }
+        if voice.isSpeaking { return .speaking }
+        // voice not yet usable (model still loading) but everything else is up
+        if speakReplies && !voice.piperAvailable { return .warmingVoice }
+        return .ready
+    }
+
+    /// The words for the current status — alive, never stuck, always honest.
+    var statusLine: String {
+        switch status {
+        case .warmingBrain:  return "waking her mind…"
+        case .needsMic:      return "needs the mic — tap to allow"
+        case .listening:     return "listening…"
+        case .thinking:      return "thinking…"
+        case .speaking:      return "speaking…"
+        case .warmingVoice:  return "warming her voice…"
+        case .ready:         return "here with you"
+        }
+    }
+
+    /// True whenever we're in a loading/working state — so the UI can show a
+    /// gentle progress cue (never a frozen, silent screen).
+    var isBusyState: Bool {
+        switch status {
+        case .warmingBrain, .thinking, .warmingVoice: return true
+        default: return false
+        }
+    }
+
     func start() {
         voice.requestPermission()
         // apply the saved voice choice (empty = auto-pick the warmest installed)
@@ -1745,10 +1794,67 @@ final class AppModel: ObservableObject {
     }
 
     func syncPhase() {
-        if voice.isListening { phase = .listening }
-        else if voice.isSpeaking { phase = .speaking }
-        else if phase != .thinking { phase = .idle }
+        // Assign only on a REAL change — @Published fires on every assignment, so
+        // writing the same value 60×/sec would still invalidate views. Computing
+        // the target first and setting only when different keeps idle ticks free.
+        let target: Phase = voice.isListening ? .listening
+            : voice.isSpeaking ? .speaking
+            : (phase == .thinking ? .thinking : .idle)
+        if phase != target { phase = target }
         // idle + switch on → she listens for her name (no-op if already armed)
         if wakeOn && phase == .idle { voice.startNameWatch(wakeNames) }
+    }
+
+    // ── ONE shared, idle-aware orb animation driver ─────────────────────────────
+    // Every orb (chat header, floating orb, main view) reads THIS published phase
+    // instead of each running its own 60fps Timer. The driver only ticks while
+    // something is actually moving — she's listening/speaking (live amplitude),
+    // or thinking — and STOPS when idle. Three always-on 60fps timers calling
+    // syncPhase() every frame were what pinned a CPU core while she just sat
+    // there; now an idle orb costs nothing. Call `orbAnimating(true/false)` is not
+    // needed — the driver self-gates off `amplitude`/`phase` each tick.
+    @Published var orbPhase: CGFloat = 0
+    @Published var orbSpringAmp: CGFloat = 0     // spring-tracked amplitude (shared)
+    @Published var orbPulse: CGFloat = 0         // breathing pulse for "thought waiting"
+    private var orbSpringVel: CGFloat = 0
+    private var orbTimer: Timer?
+
+    /// Start the shared driver once (from app launch). Safe to call repeatedly.
+    /// This is the ONLY animation clock in the app — every orb reads orbPhase /
+    /// orbSpringAmp / orbPulse.
+    ///
+    /// Runs at ~24fps, NOT 60. The orb's body is expensive to draw (several
+    /// blurred circles + radial gradients that QuartzCore/RenderBox re-rasterize
+    /// every time `orbPhase` changes). At 60fps that re-raster was ~44% CPU
+    /// whenever she was animating — and because the mic is always-on, she counts
+    /// as "listening" (amplitude ≥ 0.25) most of the time, so it ran constantly.
+    /// A glowing orb is perfectly smooth at 24fps; this ~halves the draw cost with
+    /// no perceptible change. It still does real work ONLY while something moves;
+    /// fully idle (no mic, no speech, no thought) it rests completely.
+    private static let orbFPS: Double = 24
+    func startOrbDriver() {
+        guard orbTimer == nil else { return }
+        orbTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / Self.orbFPS, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.syncPhase()   // cheap; only publishes on a real phase change
+
+            let dt = CGFloat(1.0 / Self.orbFPS)
+            let target = self.amplitude
+            // Are we animating, OR is the spring still settling toward rest?
+            let moving = target > 0.001 || self.orbSpringAmp > 0.001
+                || abs(self.orbSpringVel) > 0.001 || self.phase == .thinking
+                || self.hasThoughtWaiting
+            guard moving else { return }
+
+            // phase advance scaled by dt so the swirl speed is FPS-independent
+            self.orbPhase += (0.05 + self.orbSpringAmp * 0.30) * (60 * dt)
+            self.orbPulse = (sin(self.orbPhase * 0.9) + 1) / 2
+            // stiff spring toward the live amplitude: word onsets punch, silence
+            // settles — the same feel the per-view timers had, now in one place.
+            self.orbSpringVel += (target - self.orbSpringAmp) * 90 * dt
+            self.orbSpringVel *= exp(-dt * 14)
+            self.orbSpringAmp = max(0, self.orbSpringAmp + self.orbSpringVel * dt)
+            self.voice.speakPulse *= pow(0.86, 60 * dt)
+        }
     }
 }

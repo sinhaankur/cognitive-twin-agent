@@ -7,14 +7,11 @@ struct FloatingOrb: View {
     @ObservedObject var model: AppModel
     var onTap: () -> Void
 
-    @State private var phase: CGFloat = 0
-    @State private var pulse: CGFloat = 0      // breathing pulse for "thought waiting"
     @State private var pressed = false         // click/tap highlight
-    // spring-tracked amplitude: speech onsets PUNCH the orb (fast attack),
-    // silences let it settle (damped release) — linear easing feels dead
-    @State private var springAmp: CGFloat = 0
-    @State private var springVel: CGFloat = 0
-    private let timer = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
+    // Animation state (phase, spring-tracked amplitude, breathing pulse) now comes
+    // from the ONE shared driver on AppModel — no per-view 60fps timer. This orb
+    // just READS model.orbPhase / orbSpringAmp / orbPulse, so it rests exactly
+    // when she rests.
 
     var body: some View {
         ZStack {
@@ -23,7 +20,7 @@ struct FloatingOrb: View {
             if model.hasThoughtWaiting {
                 Circle()
                     .fill(RadialGradient(
-                        colors: [Color.pink.opacity(0.45 * pulse), .clear],
+                        colors: [Color.pink.opacity(0.45 * model.orbPulse), .clear],
                         center: .center, startRadius: 0,
                         endRadius: model.orbSize * 0.85))
                     .frame(width: model.orbSize * 1.7, height: model.orbSize * 1.7)
@@ -32,7 +29,8 @@ struct FloatingOrb: View {
             }
 
             ZStack {
-                SiriOrb(amplitude: springAmp, phase: phase, tint: model.tint, brightness: model.brightness)
+                SiriOrb(amplitude: model.orbSpringAmp, phase: model.orbPhase,
+                        tint: model.tint, brightness: model.brightness)
                 // press highlight: a bright ring that flashes on click
                 Circle()
                     .strokeBorder(Color.white.opacity(pressed ? 0.9 : 0), lineWidth: 3)
@@ -49,20 +47,6 @@ struct FloatingOrb: View {
         // out before the edge — no background, no square.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
-        .onReceive(timer) { _ in
-            phase += 0.05 + springAmp * 0.30
-            // slow, soft breathing pulse (0…1) for the waiting glow
-            pulse = (sin(phase * 0.9) + 1) / 2
-            // stiff spring toward the live target: ~90 N/m attack, damped so a
-            // word onset lands in ~3 frames and settles without ringing
-            let dt: CGFloat = 1.0 / 60.0
-            let target = model.amplitude
-            springVel += (target - springAmp) * 90 * dt
-            springVel *= exp(-dt * 14)
-            springAmp = max(0, springAmp + springVel * dt)
-            model.voice.speakPulse *= 0.86            // word pulses decay here
-            model.syncPhase()
-        }
         .help(model.hasThoughtWaiting ? "\(model.assistantName) has a thought for you"
                                       : "\(model.assistantName) — click to chat")
     }

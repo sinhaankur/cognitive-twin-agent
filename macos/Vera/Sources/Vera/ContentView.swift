@@ -3,11 +3,11 @@ import AppKit
 
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
-    @State private var phase: CGFloat = 0
     @State private var typed: String = ""
     @FocusState private var inputFocused: Bool
-    // drives the orb animation
-    private let timer = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
+    // The orb reads the ONE shared animation phase (model.orbPhase) — no per-view
+    // 60fps timer. It advances only while she's actually animating, so this view
+    // rests when she rests.
 
     var body: some View {
         VStack(spacing: 18) {
@@ -25,9 +25,9 @@ struct ContentView: View {
             .padding(.top, 10)
             .padding(.horizontal, 16)
 
-            // --- the Siri orb ---
-            SiriOrb(amplitude: model.amplitude, phase: phase, tint: model.tint, brightness: model.brightness)
-                .frame(width: 220, height: 220)
+            // --- the Siri orb (isolated so its 60fps phase ticks don't re-render
+            //     this whole view, incl. the TextField/FocusState below) ---
+            LiveOrb(model: model, size: 220)
                 .onTapGesture { model.micTapped() }
 
             // --- transcript (what you said) ---
@@ -60,12 +60,6 @@ struct ContentView: View {
                 .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onReceive(timer) { _ in
-            // advance the orb swirl; speed scales with how "active" we are
-            let speed = 0.05 + model.amplitude * 0.30
-            phase += speed
-            model.syncPhase()
-        }
         .sheet(isPresented: $model.showSettings) {
             SettingsView().environmentObject(model)
         }

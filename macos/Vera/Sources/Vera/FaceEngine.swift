@@ -62,6 +62,10 @@ final class FaceEngine: NSObject, ObservableObject {
     private let queue = DispatchQueue(label: "vera.eye", qos: .userInitiated)
     private let sequence = VNSequenceRequestHandler()
     private var postTimer: Timer?
+    // Vision throttle: run face-landmark detection at most this often (~13fps),
+    // even though the camera delivers ~30fps. Halves CPU with no visible change.
+    private static let visionMinInterval: CFTimeInterval = 1.0 / 13.0
+    private var lastVisionAt: CFTimeInterval = 0
 
     // ---- state below is touched ONLY on `queue` -----------------------------
     // rolling histories (~1.5 s at 30 fps), same signal logic as the page's flow.js
@@ -553,6 +557,17 @@ extension FaceEngine: AVCaptureVideoDataOutputSampleBufferDelegate {
                        didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
         guard let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        // THROTTLE Vision to ~13fps. The camera delivers 30fps, but running the
+        // (neural) face-landmark detector on EVERY frame is the bulk of the app's
+        // CPU while "See me" is on. A face's expression/pose doesn't change
+        // meaningfully faster than ~13fps, and the per-landmark temporal smoothing
+        // already glides between reads — so this halves the CPU with no visible
+        // change in how she sees you. Frames in between are simply dropped
+        // (alwaysDiscardsLateVideoFrames is already set).
+        let now = CACurrentMediaTime()
+        if now - lastVisionAt < Self.visionMinInterval { return }
+        lastVisionAt = now
+
         dimRoom = Self.isDim(pixels)
         let request = VNDetectFaceLandmarksRequest()
         try? sequence.perform([request], on: pixels)

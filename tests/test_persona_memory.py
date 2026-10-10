@@ -145,8 +145,13 @@ def test_media_consent_and_confirm_gate():
 
 def test_greeting_is_time_aware():
     out = default_registry.dispatch("greeting", {})
-    assert any(p in out for p in ("Good morning", "Good afternoon", "Good evening"))
-    print("✓ skills: greeting is time-aware")
+    # The opener leads with PRESENCE (warm, in her voice), not a weather readout,
+    # but it must still be time-aware: it carries a part-of-day word AND today's
+    # real weekday/date (facts stay honest; only the warmth was added).
+    import datetime as _dt
+    assert any(p in out for p in ("Morning", "afternoon", "Evening")), out
+    assert _dt.datetime.now().strftime("%A") in out, out
+    print("✓ skills: greeting is time-aware and present")
 
 
 if __name__ == "__main__":

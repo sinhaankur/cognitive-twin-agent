@@ -187,6 +187,24 @@ def test_welcome_back_mentions_pending_sightings(tmp_path=None):
         del os.environ["CTWIN_WATCH_FILE"]
 
 
+def test_opener_tasks_keeps_misheard_speech_out():
+    """The launch opener must never read back garbage the mic misheard from the
+    room. opener_tasks() surfaces only TRUSTED, task-shaped items; a 'heard'
+    fragment like 'he is up to his head' stays out even though it's an open task
+    in the full day view."""
+    sh = _fresh()
+    sh.add("call the plumber", source="you")        # real, typed → surfaces
+    sh.add("he is up to his head", source="heard")  # misheard room speech → out
+    sh.add("use", source="heard")                   # fragment → out
+
+    opener = [t.text for t in sh.opener_tasks()]
+    assert "call the plumber" in opener
+    assert "he is up to his head" not in opener
+    assert "use" not in opener
+    # the full day view still holds everything — the opener is a stricter gate
+    assert len(sh.open_tasks()) >= 3
+
+
 if __name__ == "__main__":
     fns = [g for n, g in sorted(globals().items())
            if n.startswith("test_") and callable(g)]
