@@ -698,10 +698,16 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             agent = self.server.agent  # type: ignore[attr-defined]
             # "internal": scripted prompts (the app's greeting etc.) — answer
-            # them, but never learn from them as if the user said it
+            # them, but never learn from them as if the user said it.
             internal = bool(data.get("internal"))
+            # VOICE IDENTITY GATE: if the app says this clip was clearly NOT you
+            # (is_you=false, voiceprint enrolled), she'll still respond, but won't
+            # LEARN from it or capture tasks — so the TV / another person can't put
+            # a to-do on your plate (the root of the mis-heard "die" bug).
+            not_you = data.get("is_you") is False
+            record = (not internal) and (not not_you)
             try:
-                answer, route = _run_once_capture(agent, text, record=not internal)
+                answer, route = _run_once_capture(agent, text, record=record)
             except Exception as e:  # never 500 the UI on an agent hiccup
                 self._json(200, {"answer": _llm_error_message(e), "route": None})
                 return

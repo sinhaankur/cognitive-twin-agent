@@ -409,9 +409,65 @@ def _vault_command(rest: list[str]) -> int:
     return 1
 
 
+def _record_wav(seconds: int = 5) -> bytes | None:
+    """Record `seconds` of mono 16k mic audio to WAV bytes, on-device. Tries sox's
+    `rec`, then `ffmpeg` (avfoundation). None if neither is available. Nothing is
+    stored beyond the in-memory bytes the caller uses."""
+    import shutil
+    import subprocess
+    import tempfile
+    out = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+    try:
+        print(f"Speak naturally for {seconds} seconds…")
+        if shutil.which("rec"):
+            subprocess.run(["rec", "-q", "-c", "1", "-r", "16000", out, "trim", "0", str(seconds)],
+                           check=True, timeout=seconds + 10)
+        elif shutil.which("ffmpeg"):
+            subprocess.run(["ffmpeg", "-y", "-f", "avfoundation", "-i", ":0",
+                            "-t", str(seconds), "-ac", "1", "-ar", "16000", out],
+                           check=True, timeout=seconds + 15,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            return None
+        data = Path(out).read_bytes()
+        return data if data[:4] == b"RIFF" else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+    finally:
+        try:
+            Path(out).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def _voice_command(rest: list[str]) -> int:
     """`ctwin voice` — launch the Siri-style voice UI. Default: native menubar
-    (needs rumps); --web runs the browser version (no extra deps)."""
+    (needs rumps); --web runs the browser version (no extra deps).
+
+    `ctwin voice enroll [file.wav]` — teach her YOUR voice so she knows you from
+    others / the TV. With a file, enrolls it; otherwise records ~5s from the mic
+    (needs `rec`/sox or ffmpeg). Repeat a few times for a surer print.
+    `ctwin voice forget` clears it; `ctwin voice whoami` shows the status."""
+    if rest and rest[0] in ("enroll", "forget", "whoami", "identity"):
+        from . import voice_id
+        sub = rest[0]
+        if sub == "forget":
+            voice_id.clear(); print("Forgot your voiceprint. (Re-enroll any time.)"); return 0
+        if sub in ("whoami", "identity"):
+            print(voice_id.status()); return 0
+        # enroll: a file, or record from the mic
+        wav: bytes | None = None
+        if len(rest) >= 2 and Path(rest[1]).is_file():
+            wav = Path(rest[1]).read_bytes()
+        else:
+            wav = _record_wav(seconds=5)
+            if wav is None:
+                print("Couldn't record — install sox (`brew install sox`) or pass a WAV: "
+                      "ctwin voice enroll clip.wav")
+                return 1
+        print(voice_id.enroll(wav))
+        return 0
+
     va = argparse.ArgumentParser(prog="ctwin voice", description="Local Siri-style voice UI.")
     va.add_argument("--web", action="store_true", help="run the browser UI instead of the menubar")
     va.add_argument("--port", type=int, default=7878)
