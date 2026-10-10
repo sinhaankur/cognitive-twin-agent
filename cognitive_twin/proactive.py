@@ -333,7 +333,9 @@ def companion_checkin(speak: bool = True) -> str | None:
 
 def _speak_aloud(text: str) -> bool:
     """Speak a line through the running voice server (Kokoro). Best-effort + local;
-    silent no-op if the server isn't up. Never blocks the caller for long."""
+    silent no-op if the server isn't up. Runs on a background thread (the companion
+    loop), so it can afford to wait for a COLD first synth (~15-25s) — a 3s timeout
+    made her first check-in silently time out."""
     import json
     import os
     import urllib.request
@@ -346,7 +348,9 @@ def _speak_aloud(text: str) -> bool:
             data=json.dumps({"text": text}).encode(),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=3) as r:
+        # 40s: comfortably covers a cold Kokoro load; the server plays server-side
+        # and returns when done. The loop is a daemon thread, so waiting is fine.
+        with urllib.request.urlopen(req, timeout=40) as r:
             return json.loads(r.read()).get("ok", False)
     except Exception:
         return False
