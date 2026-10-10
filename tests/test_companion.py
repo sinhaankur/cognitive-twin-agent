@@ -25,8 +25,18 @@ def test_companion_off_by_default(monkeypatch):
     assert proactive.companion_checkin(speak=False) is None
 
 
+def _awake(monkeypatch):
+    """Force not-quiet-hours + no device hold-back, so the test exercises the
+    check-in LOGIC rather than the wall-clock (she's silent at night by design)."""
+    monkeypatch.setattr(proactive, "_in_quiet_hours", lambda h: False)
+    import cognitive_twin.presence as _p
+    monkeypatch.setattr(_p, "device_now",
+                        lambda: {"activity": "unknown", "should_interject": True, "confidence": 0.0})
+
+
 def test_enable_then_due_and_speaks_a_line(monkeypatch):
     _fresh(monkeypatch)
+    _awake(monkeypatch)
     proactive.enable_companion(True)
     assert proactive.companion_enabled() is True
     line = proactive.companion_checkin(speak=False)   # due on a fresh store
@@ -35,6 +45,7 @@ def test_enable_then_due_and_speaks_a_line(monkeypatch):
 
 def test_cadence_blocks_a_second_line_right_away(monkeypatch):
     _fresh(monkeypatch)
+    _awake(monkeypatch)
     proactive.enable_companion(True)
     first = proactive.companion_checkin(speak=False)
     assert first
