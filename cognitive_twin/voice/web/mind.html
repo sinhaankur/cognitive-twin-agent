@@ -227,6 +227,18 @@ header p { color: var(--sub); font-size: 13.5px; margin: 6px 0 0; }
     <p id="sub">Ask her something — watch the thought move through her.</p>
   </header>
 
+  <!-- THE LIVING NET — her real limbic neural network as an instrument: signal
+       flowing through the layers, neurons glowing with their live activation.
+       Driven by /api/engineflow (the actual trained weights). -->
+  <div style="max-width:720px;margin:0 auto 10px;padding:0 20px">
+    <canvas id="netfield" style="width:100%;height:280px;border-radius:16px;
+      border:1px solid var(--card-edge);
+      background:radial-gradient(130% 90% at 50% 20%,#0b0a14 0%,#060509 70%,#040407 100%)"></canvas>
+    <p style="text-align:center;font-family:var(--mono);font-size:8px;letter-spacing:.14em;
+      text-transform:uppercase;color:var(--sub);margin-top:4px">
+      input cues → hidden neurons → felt output · particles trace the live signal · warm = high activation</p>
+  </div>
+
   <div class="stage-wrap">
     <div class="rail" id="rail">
       <div class="flow" id="flow"></div>
@@ -438,6 +450,74 @@ header p { color: var(--sub); font-size: 13.5px; margin: 6px 0 0; }
     const seed = new URLSearchParams(location.search).get("q");
     if (seed) { $("ask").value = ""; think(seed); }
   });
+
+  // ── THE LIVING NEURAL FIELD ────────────────────────────────────────────────
+  // Her limbic net as an instrument: input cues → hidden neurons → felt output,
+  // signal flowing as particles along weighted streamlines, nodes glowing with
+  // their REAL activation (from /api/engineflow). Warm = high, cool = low.
+  (function net(){
+    const cv = document.getElementById("netfield"); if(!cv) return;
+    const ctx = cv.getContext("2d"); if(!ctx) return;
+    const dpr = Math.min(2, window.devicePixelRatio||1);
+    let W=0,H=0, inputs=[],hiddens=[],outputs=[],edges=[],parts=[];
+    let data = null;  // latest /api/engineflow active block
+
+    function col(a,al){ a=Math.max(0,Math.min(1,a));
+      const s=[[159,139,255],[154,166,196],[255,210,122]];
+      const g=a<.5?0:1, f=a<.5?a/.5:(a-.5)/.5, c=s[g].map((v,i)=>Math.round(v+(s[g+1][i]-v)*f));
+      return "rgba("+c[0]+","+c[1]+","+c[2]+","+al+")"; }
+    function resize(){ const r=cv.getBoundingClientRect(); W=r.width; H=280;
+      cv.width=W*dpr; cv.height=H*dpr; ctx.setTransform(dpr,0,0,dpr,0,0); build(); }
+    function colX(n,i){ return W*(0.12+0.76*(n<=1?0.5:i/(n-1))); }
+    function build(){
+      const an = (data&&data.affect_net)||null;
+      const hid = an&&an.hidden&&an.hidden.length?an.hidden:[0,0,0,0,0,0,0,0];
+      const cues = an&&an.input?an.features.map((f,i)=>({f,v:an.input[i]})).filter(c=>c.v>0.02&&!c.f.startsWith("_")).slice(0,10):[];
+      const out = an&&an.output?[Math.abs(an.output[0]),an.output[1]]:[0.2,0.2];
+      const topY=40, midY=H*0.5, botY=H-40, mx=Math.max(0.001,...hid.map(Math.abs));
+      inputs = cues.map((c,i)=>({x:colX(Math.max(cues.length,1),i),y:topY,r:3+c.v*5,act:c.v,label:c.f}));
+      hiddens = hid.map((a,i)=>({x:colX(hid.length,i),y:midY,r:5+(Math.abs(a)/mx)*9,act:Math.abs(a)/mx}));
+      outputs = [{x:W*0.38,y:botY,r:7+out[0]*9,act:out[0],label:"valence"},
+                 {x:W*0.62,y:botY,r:7+out[1]*9,act:out[1],label:"arousal"}];
+      edges=[];
+      for(const a of inputs)for(const b of hiddens)edges.push({a,b,w:Math.min(1,a.act*(0.4+b.act))});
+      for(const a of hiddens)for(const b of outputs)edges.push({a,b,w:Math.min(1,a.act*(0.5+b.act))});
+    }
+    function frame(){
+      ctx.clearRect(0,0,W,H);
+      ctx.strokeStyle="rgba(150,160,185,0.12)"; ctx.lineWidth=1; ctx.strokeRect(8,8,W-16,H-16);
+      for(const e of edges){ if(e.w<0.06)continue;
+        const cx=(e.a.x+e.b.x)/2;
+        ctx.beginPath(); ctx.moveTo(e.a.x,e.a.y);
+        ctx.bezierCurveTo(cx,e.a.y+22,cx,e.b.y-22,e.b.x,e.b.y);
+        ctx.strokeStyle=col((e.a.act+e.b.act)/2,0.05+e.w*0.22); ctx.lineWidth=0.4+e.w*1.1; ctx.stroke(); }
+      for(const e of edges){ if(e.w>0.12&&Math.random()<e.w*0.07) parts.push({e,t:0,s:0.012+e.w*0.02}); }
+      if(parts.length>400)parts.splice(0,parts.length-400);
+      parts=parts.filter(p=>p.t<1);
+      for(const p of parts){ p.t+=p.s; const {a,b}=p.e, cx=(a.x+b.x)/2, t=p.t, m=1-t;
+        const x=m*m*m*a.x+3*m*m*t*cx+3*m*t*t*cx+t*t*t*b.x;
+        const y=m*m*m*a.y+3*m*m*t*(a.y+22)+3*m*t*t*(b.y-22)+t*t*t*b.y;
+        ctx.beginPath(); ctx.arc(x,y,1.2+p.e.w*1.5,0,6.283); ctx.fillStyle=col(p.e.b.act,0.8); ctx.fill(); }
+      const node=(n,ring)=>{ const g=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,n.r*2.4);
+        g.addColorStop(0,col(n.act,0.9)); g.addColorStop(1,col(n.act,0));
+        ctx.beginPath(); ctx.arc(n.x,n.y,n.r*2.4,0,6.283); ctx.fillStyle=g; ctx.fill();
+        ctx.beginPath(); ctx.arc(n.x,n.y,n.r,0,6.283); ctx.fillStyle=col(n.act,0.95); ctx.fill();
+        if(ring){ ctx.beginPath(); ctx.arc(n.x,n.y,n.r+2,0,6.283); ctx.strokeStyle=col(n.act,0.5); ctx.lineWidth=1; ctx.stroke(); } };
+      for(const n of hiddens)node(n,true); for(const n of inputs)node(n,false); for(const n of outputs)node(n,true);
+      ctx.font="8px ui-monospace,monospace"; ctx.textAlign="center";
+      for(const n of inputs)if(n.label&&n.act>0.05){ ctx.fillStyle=col(n.act,0.75); ctx.fillText(n.label,n.x,n.y-n.r-4); }
+      for(const n of outputs){ ctx.fillStyle=col(n.act,0.8); ctx.fillText(n.label,n.x,n.y+n.r+12); }
+      requestAnimationFrame(frame);
+    }
+    async function pull(q){ try{ const r=await fetch("/api/engineflow?q="+encodeURIComponent(q||"how are you"));
+      const d=await r.json(); data=d.active||null; build(); }catch(_){ } }
+    window.addEventListener("resize",resize); resize();
+    // refresh the activations whenever a thought runs (hook into the ask input)
+    const ask=document.getElementById("ask");
+    if(ask){ ask.form&&ask.form.addEventListener("submit",()=>setTimeout(()=>pull(ask.value),200)); }
+    pull("");  // initial read
+    requestAnimationFrame(frame);
+  })();
 })();
 </script>
 </body>

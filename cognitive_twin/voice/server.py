@@ -182,9 +182,10 @@ class _Handler(BaseHTTPRequestHandler):
             self._serve_file("app.js", "application/javascript; charset=utf-8")
         elif self.path == "/flow.js":
             self._serve_file("flow.js", "application/javascript; charset=utf-8")
-        elif self.path in ("/mind", "/mind.html"):
+        elif self.path.split("?")[0] in ("/mind", "/mind.html"):
             # The Mind — a calm, legible animated pipeline (question → retrieve →
             # feel → answer). Replaces the noisy galaxy; everything in the app.
+            # (split on ? so a seed like /mind?q=… still serves the page.)
             self._serve_file("mind.html", "text/html; charset=utf-8")
         elif self.path == "/eye":
             # the app's small preview window (see eye.html header note)
@@ -328,6 +329,17 @@ class _Handler(BaseHTTPRequestHandler):
             except Exception:
                 self._json(200, {"state": "unavailable", "voice": "system",
                                  "detail": "voice status unavailable"})
+        elif self.path.split("?")[0] == "/api/engineflow":
+            # The real limbic-net activations for a phrase — so the Mind page can
+            # draw the neural net as a living field (input cues → hidden neurons →
+            # felt output). Honest: every number is the engine's own forward pass.
+            import urllib.parse as _up
+            q = _up.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "").get("q", [""])[0]
+            try:
+                from .. import brain as _brain
+                self._json(200, _brain.engine_flow(q))
+            except Exception as e:
+                self._json(200, {"active": {}, "error": str(e)})
         elif self.path == "/api/activity/status":
             from .. import activity
             self._json(200, {
