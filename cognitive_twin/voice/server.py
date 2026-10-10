@@ -442,7 +442,16 @@ class _Handler(BaseHTTPRequestHandler):
                         _os.unlink(f.name)
                     except OSError:
                         pass
-            self._json(200, {"text": text.strip()})
+            text = text.strip()
+            # Whisper hallucinates stock phrases on silence/noise ("Thank you.",
+            # "you", "Bye.") — treat those (and anything too short) as NOT HEARD, so
+            # she asks you to repeat rather than acting on a phantom. `heard` tells
+            # the app it's a real utterance vs. a mishearing it should ignore.
+            _low = text.lower().strip(" .!,")
+            _noise = {"", "you", "thank you", "thanks", "bye", "bye.", "okay", "ok",
+                      "uh", "um", "hmm", "mm", "yeah", ".", "the", "so"}
+            heard = bool(text) and _low not in _noise and len(_low) >= 2
+            self._json(200, {"text": text if heard else "", "heard": heard})
             return
         if self.path == "/api/health/import":
             # Import an Apple Health export (parsed locally). Body: {"path": "..."}.

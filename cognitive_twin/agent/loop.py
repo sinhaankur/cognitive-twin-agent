@@ -136,6 +136,17 @@ class Agent:
         """``record=False`` answers without writing to memory — for scripted,
         internal prompts (greetings, background reflections). The twin should
         learn from the USER, never from its own boilerplate."""
+        # DIDN'T CATCH IT — a blank or noise-only turn (a mic mishearing, a stray
+        # sound) should never run the model or become a command. She says so, warmly,
+        # instead of answering a phantom. (Only on real user turns, not internal.)
+        if record:
+            _clean = (user_input or "").strip()
+            if len(_clean) < 2 or _clean.lower().strip(" .!,") in {
+                "you", "thank you", "thanks", "okay", "ok", "uh", "um", "hmm", "yeah"
+            }:
+                return AgentResult(
+                    answer="Sorry — I didn't quite catch that. Say it again?",
+                    steps=0, tool_calls=[], route=None)
         # SAFETY FIRST — before routing, before any model. If this turn contains
         # self-harm / suicidal language, a deterministic layer answers with a warm,
         # lifeline-naming response. A life-or-death moment must never depend on a

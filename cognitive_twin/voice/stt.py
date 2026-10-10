@@ -51,11 +51,12 @@ def _load(model_size: str) -> tuple[str, Any]:
 
 
 def _default_model() -> str:
-    """Model size for live dictation. `tiny.en` is ~3x faster than `base` on CPU
-    and plenty accurate for conversational turns — the right trade for an always-on
-    mic where latency is felt. Override with CTWIN_STT_MODEL (e.g. base, small.en)."""
+    """Model size for live dictation. `base.en` is the sweet spot — markedly more
+    accurate than `tiny.en` (which mis-heard words and turned real speech into
+    garble), still fast enough for a conversational turn on CPU. Override with
+    CTWIN_STT_MODEL (e.g. small.en for best accuracy, tiny.en for lowest latency)."""
     import os
-    return (os.environ.get("CTWIN_STT_MODEL") or "tiny.en").strip()
+    return (os.environ.get("CTWIN_STT_MODEL") or "base.en").strip()
 
 
 def warm(model_size: str | None = None) -> None:
