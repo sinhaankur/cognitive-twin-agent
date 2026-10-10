@@ -21,9 +21,9 @@ from cognitive_twin.voice import stt
 
 
 def test_default_model_is_fast_english():
-    # tiny.en is the right default for a latency-felt always-on mic.
+    # base.en is the accuracy/latency sweet spot (tiny.en mis-heard words).
     os.environ.pop("CTWIN_STT_MODEL", None)
-    assert stt._default_model() == "tiny.en"
+    assert stt._default_model() == "base.en"
 
 
 def test_default_model_env_override():
