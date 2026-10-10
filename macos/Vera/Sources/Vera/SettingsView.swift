@@ -274,6 +274,11 @@ struct SettingsView: View {
                 }
             }
             .formStyle(.grouped)
+            // A grouped Form inside a fixed-height VStack can collapse to ZERO
+            // height on macOS (the "Settings opens but is empty" bug) — it needs an
+            // explicit expanding frame to fill the space between header and footer
+            // instead of resolving to its intrinsic (~0) height.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack {
                 Circle().fill(model.serverUp ? .green : .orange).frame(width: 7, height: 7)
