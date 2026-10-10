@@ -951,6 +951,7 @@ def make_server(port: int = DEFAULT_PORT, model: str | None = None) -> Threading
     _warm_recall()       # preload activity/life-memory caches so the FIRST reply is fast
     _warm_model(httpd.agent)  # load the chat model(s) so the FIRST message isn't empty/slow
     _start_activity_sampler()  # observe device activity (only when enabled + not private)
+    _start_companion_loop()    # she reaches out warmly on her own (only when enabled)
     return httpd
 
 
@@ -1069,6 +1070,27 @@ def _start_activity_sampler() -> None:
             except Exception:
                 pass
             time.sleep(90)
+    threading.Thread(target=loop, daemon=True).start()
+
+
+def _start_companion_loop() -> None:
+    """Vera reaches out on her own — warm, chatty check-ins in her voice, so she's
+    a presence, not something that only answers (Ankur: 'not just waiting for me to
+    talk'). No-op unless the companion is enabled; the cadence, quiet hours, mood
+    gating (no jokes in heavy moments) and speaking all live in proactive.py. She
+    speaks through THIS server's /api/speak, so it's her one Kokoro voice."""
+    def loop():
+        import time
+        from .. import proactive
+        # a gentle delay so she doesn't greet the instant the service boots
+        time.sleep(120)
+        while True:
+            try:
+                proactive.companion_checkin(speak=True)  # no-op unless due + enabled
+            except Exception:
+                pass
+            # check every ~3 min; proactive.py decides if a line is actually due
+            time.sleep(180)
     threading.Thread(target=loop, daemon=True).start()
 
 
