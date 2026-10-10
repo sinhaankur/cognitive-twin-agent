@@ -221,6 +221,30 @@ class _Handler(BaseHTTPRequestHandler):
                 "neural_voice": ("kokoro" if kokoro_tts.is_available()
                                  else "piper" if piper_tts.is_available() else ""),
             })
+        elif self.path == "/api/status":
+            # ONE honest snapshot of every subsystem, so the app (and the user) can
+            # SEE what's working at a glance instead of guessing — brain, voice,
+            # ears, model. green = good, amber = warming/partial, red = down.
+            agent = self.server.agent  # type: ignore[attr-defined]
+            model = getattr(agent, "configured_model", None) or getattr(agent.client, "model", None)
+            from . import kokoro_tts
+            try:
+                vs = kokoro_tts.voice_state()
+            except Exception:
+                vs = {"state": "unavailable"}
+            voice_light = {"ready": "green", "warming": "amber"}.get(vs.get("state"), "red")
+            status = {
+                "brain":  {"light": "green" if model else "red",
+                           "detail": f"thinking with {model}" if model else "no model"},
+                "voice":  {"light": voice_light, "detail": vs.get("detail", ""),
+                           "state": vs.get("state")},
+                "ears":   {"light": "green" if stt.is_available() else "red",
+                           "detail": "listening (local Whisper)" if stt.is_available()
+                                     else "speech-to-text not available"},
+                "model":  model,
+            }
+            self._json(200, status)
+            return
         elif self.path == "/api/lockdown":
             # Kill-switch status: is Vera dormant (halted from reaching out/acting)?
             from .. import security
