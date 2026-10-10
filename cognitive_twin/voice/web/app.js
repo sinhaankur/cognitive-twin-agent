@@ -44,6 +44,33 @@
     if (!h.tts) setStatus("voice replies off (no macOS say) — text only");
   }).catch(() => {});
 
+  // --- her VOICE state: never leave the user guessing why she's silent ------
+  // A small indicator in the model pill area: warming (model loading) → ready,
+  // or "system voice" if her neural voice isn't installed. Polls until ready.
+  const elVoicePill = $("voicePill");
+  function renderVoice(st) {
+    if (!elVoicePill) return;
+    const map = {
+      ready:       { dot: "#34d399", text: "voice ready" },
+      warming:     { dot: "#fbbf24", text: "warming her voice…" },
+      unavailable: { dot: "#9aa6c4", text: "system voice" },
+    };
+    const m = map[st && st.state] || map.unavailable;
+    elVoicePill.innerHTML =
+      '<span class="vdot" style="background:' + m.dot + '"></span>' + m.text;
+    elVoicePill.title = (st && st.detail) || "";
+  }
+  function pollVoice(tries) {
+    fetch("/api/voice/status").then((r) => r.json()).then((st) => {
+      renderVoice(st);
+      // keep polling while she's still warming (the first model load is slow)
+      if (st && st.state === "warming" && (tries || 0) < 60) {
+        setTimeout(() => pollVoice((tries || 0) + 1), 1500);
+      }
+    }).catch(() => {});
+  }
+  pollVoice(0);
+
   // --- visible chat box -----------------------------------------------------
   const elChat = document.getElementById("chat");
   function bubble(role, text, cls) {

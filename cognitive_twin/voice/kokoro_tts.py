@@ -114,6 +114,22 @@ def set_voice(voice_id: str) -> bool:
 # ── the persistent, warm worker ────────────────────────────────────────────────
 _proc: subprocess.Popen | None = None
 _lock = threading.Lock()
+# her voice's live state, for the UI: "ready" once the worker is warm and has
+# synthesized, "warming" while the model loads, "unavailable" if it can't run.
+_warm: bool = False
+
+
+def voice_state() -> dict:
+    """What state her real voice is in, for the app to SHOW — so the user is never
+    guessing why she's silent. One of: ready / warming / unavailable."""
+    if not is_available():
+        return {"state": "unavailable", "voice": "system",
+                "detail": "her neural voice isn't installed — she uses the system voice"}
+    if _warm and _proc is not None and _proc.poll() is None:
+        return {"state": "ready", "voice": "kokoro",
+                "detail": "her voice is warm and ready"}
+    return {"state": "warming", "voice": "kokoro",
+            "detail": "warming her voice (loading the model)…"}
 
 # How long we'll ever wait on the worker before giving up and falling back to the
 # system voice. A stalled worker must NEVER wedge Vera's chat — synthesis is a
@@ -149,13 +165,14 @@ def _readline_timeout(proc: subprocess.Popen, timeout: float) -> str | None:
 
 def _reset_worker() -> None:
     """Kill the worker so the next call starts a fresh one. Safe to call anytime."""
-    global _proc
+    global _proc, _warm
     try:
         if _proc:
             _proc.kill()
     except OSError:
         pass
     _proc = None
+    _warm = False
 
 
 def _ensure_worker() -> subprocess.Popen | None:
@@ -185,6 +202,8 @@ def _ensure_worker() -> subprocess.Popen | None:
             if line is None:
                 _reset_worker()
                 return None
+        global _warm
+        _warm = True   # the worker is up and the model is loaded → her voice is ready
         return _proc
     except (OSError, ValueError):
         _proc = None

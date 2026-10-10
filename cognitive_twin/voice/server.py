@@ -318,6 +318,16 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/voice/clone/status":
             from .. import voice_clone
             self._json(200, {"ready": voice_clone.is_ready(), "status": voice_clone.status()})
+        elif self.path == "/api/voice/status":
+            # her voice's live state, so the app can SHOW loading/ready/unavailable
+            # instead of a silent gap. ready = warm Kokoro; warming = model loading;
+            # unavailable = no neural voice (system voice used).
+            try:
+                from . import kokoro_tts
+                self._json(200, kokoro_tts.voice_state())
+            except Exception:
+                self._json(200, {"state": "unavailable", "voice": "system",
+                                 "detail": "voice status unavailable"})
         elif self.path == "/api/activity/status":
             from .. import activity
             self._json(200, {
