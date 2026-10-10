@@ -37,7 +37,29 @@ targets:
         # NSAllowsArbitraryLoads — public internet still requires TLS.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        # Declare the private iCloud Drive container so it surfaces as a real folder
+        # the app (and the Mac side) can read/write the sealed sync bundle in.
+        NSUbiquitousContainers:
+          iCloud.com.sinhaankur.vera:
+            NSUbiquitousContainerIsDocumentScopePublic: false
+            NSUbiquitousContainerName: Vera
+            NSUbiquitousContainerSupportedFolderLevels: Any
         UILaunchScreen: {}
+    # iCloud entitlement: a private iCloud Drive container the app reads/writes the
+    # SEALED sync bundle in, scoped to the user's own Apple ID. The Mac side
+    # (sync_icloud.py) uses the SAME container — iCloud~com~sinhaankur~vera — so the
+    # two devices stay in step through the user's iCloud, nothing public. The bundle
+    # is already encrypted before it touches iCloud (vault.export_bundle), so iCloud
+    # only ever holds ciphertext.
+    entitlements:
+      path: Vera/Anita.entitlements
+      properties:
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.sinhaankur.vera
+        com.apple.developer.icloud-services:
+          - CloudDocuments
+        com.apple.developer.ubiquity-container-identifiers:
+          - iCloud.com.sinhaankur.vera
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sinhaankur.anita
