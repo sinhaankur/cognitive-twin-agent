@@ -159,3 +159,69 @@ def life_recap(days: int = 7) -> str:
         uniq = list(dict.fromkeys(places))
         parts.append("Places: " + ", ".join(uniq[:5]) + ".")
     return " ".join(parts)
+
+
+# ── "that day" recall — nostalgia from the same date in past years ─────────────
+def _moment_date(prompt: str) -> str:
+    """Pull the YYYY-MM-DD out of a photo-moment prompt (…'(2023-03-14)')."""
+    import re
+    m = re.search(r"\((\d{4}-\d{2}-\d{2})\)", prompt or "")
+    return m.group(1) if m else ""
+
+
+def on_this_day() -> list[str]:
+    """Moments from THIS calendar day (month-day) in past years — 'a year ago today
+    you were in Munnar'. The warm nostalgia photos are perfect for. Metadata only;
+    reads her sealed photo-memories; [] when there's nothing for today."""
+    from . import memory
+    import datetime as _dt
+    today = _dt.date.today()
+    md = f"{today.month:02d}-{today.day:02d}"
+    out: list[str] = []
+    for e in memory.entries():
+        if e.get("source") != "photos-moments":
+            continue
+        prompt = e.get("prompt") or ""
+        date = _moment_date(prompt)
+        if not date or date[5:] != md or date[:4] == str(today.year):
+            continue
+        years_ago = today.year - int(date[:4])
+        when = "a year ago today" if years_ago == 1 else f"{years_ago} years ago today"
+        gist = prompt.replace("a moment in your life: ", "").split(" (")[0]
+        out.append(f"{when}, {gist}")
+    return out
+
+
+def context_for_prompt(days: int = 7) -> str:
+    """A gentle 'what's been going on in their life' block for the system prompt, so
+    she can reference real moments warmly. Includes on-this-day nostalgia when there
+    is any. Empty when she hasn't learned any photo-moments (honest)."""
+    recap = life_recap(days)
+    otd = on_this_day()
+    if not recap and not otd:
+        return ""
+    bits = []
+    if otd:
+        bits.append("On this day in the past: " + "; ".join(otd[:2]) + ".")
+    if recap:
+        bits.append(recap)
+    return ("# THEIR LIFE LATELY (from their photos, opt-in, metadata only — "
+            "reference it warmly, never recite it like a log)\n" + " ".join(bits))
+
+
+def checkin_line() -> str | None:
+    """A warm companion line about a real moment, for proactive check-ins — an
+    on-this-day memory if there is one, else a recent place. None when she's learned
+    nothing, so she simply says something else. Metadata only; never invents."""
+    otd = on_this_day()
+    if otd:
+        return f"You know what I was thinking — {otd[0]}. Feels like a nice thing to remember."
+    import datetime as _dt
+    from . import memory
+    cutoff = (_dt.date.today() - _dt.timedelta(days=10)).isoformat()
+    for e in reversed(memory.entries()):
+        if e.get("source") == "photos-places" and (e.get("ts") or "")[:10] >= cutoff:
+            place = (e.get("prompt") or "").replace("a place you've been: ", "")
+            if place:
+                return f"I saw you were in {place} recently — how was it?"
+    return None

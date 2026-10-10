@@ -292,6 +292,15 @@ class Agent:
                     parts.append(work)
             except Exception:
                 pass
+            # their life lately, from photos (opt-in, metadata only) — real moments
+            # + on-this-day nostalgia, so she can reference their days warmly
+            try:
+                from .. import photos as _photos
+                life = _photos.context_for_prompt()
+                if life:
+                    parts.append(life)
+            except Exception:
+                pass
             # a warm, reflective tone (original — no copyrighted lines)
             try:
                 from .. import mood as _mood

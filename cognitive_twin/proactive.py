@@ -307,6 +307,18 @@ def _pick_companion_line() -> str:
     flavours = list(_FLAVOURS_HEAVY if mood == "heavy" else _FLAVOURS_LIGHT)
     random.shuffle(flavours)
 
+    # sometimes bring a REAL moment from their life (a photo memory / on-this-day) —
+    # warm nostalgia, grounded in metadata, never invented. Allowed in any mood (a
+    # gentle memory suits a heavy moment too).
+    if random.random() < 0.3:
+        try:
+            from . import photos
+            pm = photos.checkin_line()
+            if pm and pm not in recent:
+                return pm
+        except Exception:
+            pass
+
     # occasionally (when light) bring a REAL current-affairs thought instead of a
     # canned line — grounded in actual on-device news, never invented.
     if mood != "heavy" and random.random() < 0.25:
