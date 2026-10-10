@@ -152,8 +152,20 @@ class Agent:
                         pass
                 return AgentResult(answer=safe, steps=0, tool_calls=[], route=None)
         except Exception:
-            # If anything in the crisis path errors, fall through to the normal
-            # loop rather than crash — but the detector is stdlib-only by design.
+            pass
+
+        # "remember this about me" / "forget that" — teach her mid-conversation. A
+        # deterministic layer seals the fact to her persona and confirms warmly, so
+        # it sticks and shapes future replies (no model needed for a clear command).
+        try:
+            from .. import persona as _persona
+            if record:
+                _ack = _persona.handle_memory_command(user_input)
+                if _ack:
+                    return AgentResult(answer=_ack, steps=0, tool_calls=[], route=None)
+        except Exception:
+            # a remember/forget command should never crash the turn — on any error,
+            # fall through to the normal reply path.
             pass
 
         decision: RouteDecision | None = None

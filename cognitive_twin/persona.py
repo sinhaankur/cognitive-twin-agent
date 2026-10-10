@@ -75,16 +75,26 @@ class Persona:
     values: list[str] = field(default_factory=list)        # what matters to you
     style: str = ""                       # how you communicate
     expertise: list[str] = field(default_factory=list)     # domains you know
+    remembered: list[str] = field(default_factory=list)    # free-form facts taught in chat
 
     def is_empty(self) -> bool:
         return not any([self.name, self.about, self.traits, self.likes,
-                        self.dislikes, self.values, self.style, self.expertise])
+                        self.dislikes, self.values, self.style, self.expertise,
+                        self.remembered])
 
     def to_prompt(self) -> str:
         """Compile into a system-prompt block written in the twin's voice.
         With no persona defined she is still SOMEONE: the innate character
         is her floor, not a cage — setup overrides it field by field, and
         the evolving soul layers real life on top either way."""
+        # with nothing set BUT some remembered facts, keep her innate character AND
+        # add what she's been asked to remember — a fact shouldn't erase her self.
+        only_remembered = self.remembered and not any([
+            self.name, self.about, self.traits, self.likes, self.dislikes,
+            self.values, self.style, self.expertise])
+        if only_remembered:
+            return (_INNATE + "\n\n# THINGS THEY'VE ASKED YOU TO REMEMBER\n- "
+                    + "\n- ".join(self.remembered))
         if self.is_empty():
             return _INNATE
         lines: list[str] = ["# WHO YOU ARE (your persona)"]
@@ -105,6 +115,9 @@ class Persona:
             lines.append("Your areas of depth: " + ", ".join(self.expertise) + ".")
         if self.style:
             lines.append("Communication style: " + self.style)
+        if self.remembered:
+            lines.append("Things they've asked you to remember: "
+                         + "; ".join(self.remembered) + ".")
         lines.append("Stay in character. Reflect these preferences in what you "
                      "recommend and how you say it — never a generic assistant.")
         return "\n".join(lines)
@@ -139,6 +152,75 @@ def save(p: Persona) -> None:
 def to_prompt() -> str:
     """Convenience: the current persona compiled for the system prompt."""
     return load().to_prompt()
+
+
+# ── in-chat "remember this about me" ──────────────────────────────────────────
+import re as _re  # noqa: E402
+
+# phrasings that mean "store this": captures the FACT after the trigger. We EXCLUDE
+# reminiscing ("remember when…", "do you remember…", "remember how…") — that's a
+# question about the past, not an instruction to store a fact.
+_REMEMBER = _re.compile(
+    r"^\s*(?:please\s+)?(?:remember|note|keep in mind|don'?t forget|"
+    r"make a note|just so you know)\s+(?!when\b|how\b|that time\b|the time\b)"
+    r"(?:that\s+|:\s*)?(.+)$", _re.I)
+_NOT_COMMAND = _re.compile(r"^\s*(?:do you|can you)\s+remember\b", _re.I)
+_FORGET = _re.compile(
+    r"^\s*(?:please\s+)?(?:forget|drop|remove|un-?remember)\s*(?:that\s+|about\s+|:\s*)?(.+)$", _re.I)
+_MAX_REMEMBERED = 50
+
+
+def remember_fact(fact: str) -> str:
+    """Store a free-form fact the user taught in chat (deduped, sealed). Returns a
+    short warm confirmation. Stores exactly what they said — never invents."""
+    fact = (fact or "").strip().rstrip(".").strip()
+    if len(fact) < 2:
+        return ""
+    p = load()
+    low = fact.lower()
+    if any(low == r.lower() for r in p.remembered):
+        return "I've already got that — noted."
+    p.remembered = (p.remembered + [fact])[-_MAX_REMEMBERED:]
+    save(p)
+    return f"Got it — I'll remember that {fact}."
+
+
+def forget_fact(hint: str) -> str:
+    """Drop a remembered fact matching `hint` (substring, case-insensitive)."""
+    hint = (hint or "").strip().rstrip(".").lower()
+    if not hint:
+        return ""
+    p = load()
+    before = len(p.remembered)
+    p.remembered = [r for r in p.remembered if hint not in r.lower()]
+    if len(p.remembered) == before:
+        return "I don't have anything like that remembered."
+    save(p)
+    return "Done — I've let that go."
+
+
+def handle_memory_command(text: str) -> str | None:
+    """If a turn is a 'remember/forget this' instruction, act on it and return a
+    confirmation to say back. Returns None if the turn isn't such a command, so the
+    normal reply path runs. Kept simple: a couple of clear triggers, the rest is a
+    normal conversation."""
+    t = (text or "").strip()
+    if not t:
+        return None
+    # "do you remember…" is a question, not an instruction to store
+    if _NOT_COMMAND.match(t):
+        return None
+    mf = _FORGET.match(t)
+    if mf:
+        return forget_fact(mf.group(1))
+    mr = _REMEMBER.match(t)
+    if mr:
+        fact = mr.group(1).strip()
+        # a question ("…went to the beach?") is reminiscing, not a fact to store
+        if fact.endswith("?"):
+            return None
+        return remember_fact(fact)
+    return None
 
 
 def clear() -> bool:
