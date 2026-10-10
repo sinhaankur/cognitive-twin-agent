@@ -14,6 +14,9 @@ targets:
     platform: iOS
     sources:
       - path: Vera/Sources
+      # the app icon (the Vera orb, matching the Mac app) — regenerate with
+      # `python3 make-appicon.py`.
+      - path: Vera/Assets.xcassets
     # Link the portable Rust core (built into an xcframework).
     dependencies:
       - framework: ../core/CognitiveTwinCore.xcframework
@@ -70,6 +73,8 @@ targets:
           - iCloud.com.sinhaankur.vera
     settings:
       base:
+        # use the AppIcon set from Assets.xcassets (the Vera orb)
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_BUNDLE_IDENTIFIER: com.sinhaankur.anita
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
