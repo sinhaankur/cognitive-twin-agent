@@ -297,6 +297,14 @@ class Agent:
                     _mirror.observe(user_input)
                 except Exception:
                     pass
+                # learned proactivity: if this turn is a response to a check-in she
+                # just made, learn how welcome her reaching out was in this context
+                # (warm reply → more; ignored/curt → ease off). No-op otherwise.
+                try:
+                    from .. import proactive as _proactive
+                    _proactive.note_response(user_input)
+                except Exception:
+                    pass
             # THE BRAIN FLOW (Companion Charter §6) — one ordered pass through the
             # organs, composed in charter order so behaviour comes from the anatomy,
             # not a persona string: limbic (feel) → hippocampus (recall = memory +

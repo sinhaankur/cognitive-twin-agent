@@ -1096,6 +1096,12 @@ def _start_companion_loop() -> None:
         time.sleep(120)
         while True:
             try:
+                # if a previous check-in went unanswered, learn a gentle "not now"
+                # for that context BEFORE maybe reaching out again.
+                proactive.note_ignored()
+            except Exception:
+                pass
+            try:
                 proactive.companion_checkin(speak=True)  # no-op unless due + enabled
             except Exception:
                 pass

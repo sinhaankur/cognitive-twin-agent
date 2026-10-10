@@ -133,9 +133,14 @@ def _opportunity_nudges() -> list[Nudge]:
 # hearing her voice feels good. These are warm, short, in HER voice — companionship,
 # not logistics. Honest: she never invents facts about the person; a check-in is her
 # own warmth, the same promise as the rest of the twin.
-_COMPANION_FILE = "proactive_companion.json"   # just the last-spoken timestamp
+_COMPANION_FILE = "proactive_companion.json"   # last-spoken + learned timing state
 _COMPANION_ENABLED_FLAG = "companion.enabled"  # opt-in, separate switch
-_COMPANION_EVERY_MIN = 12                       # ~every 10-15 min when you're around
+_COMPANION_EVERY_MIN = 12                       # base cadence (adapts, see below)
+# the cadence flexes between these when she's learned a context (minutes). A warm
+# welcome shortens it (she's wanted → reach out more); being ignored lengthens it
+# (back off gracefully). She never goes faster than MIN or naggier than that.
+_CADENCE_MIN_MIN = 8
+_CADENCE_MAX_MIN = 45
 
 # She's a real companion, so she talks about MORE than "I'm here" (Ankur: more
 # personality — emotions, jokes, ideas / current affairs, everyday things people
@@ -221,16 +226,57 @@ def _companion_state() -> dict[str, Any]:
     return d if isinstance(d, dict) else {}
 
 
+def _context_key() -> str:
+    """The context she learns timing FOR — the part of day. Coarse on purpose, so
+    there's enough signal to learn from (not one bucket per minute)."""
+    try:
+        from . import rhythms
+        return rhythms.part_of_day()
+    except Exception:
+        h = _now().hour
+        return "morning" if h < 12 else "afternoon" if h < 18 else "evening"
+
+
+def _welcome(ctx: str) -> float:
+    """How welcome her reaching out is in THIS context, learned 0..1 (0.5 = unknown/
+    neutral). Rises when a check-in lands warmly, falls when it's ignored."""
+    scores = _companion_state().get("welcome", {})
+    try:
+        return float(scores.get(ctx, 0.5))
+    except (TypeError, ValueError):
+        return 0.5
+
+
+def _cadence_min(ctx: str) -> float:
+    """The learned interval for this context, in minutes. A high welcome score
+    shortens it (she's wanted); a low one lengthens it (back off). Between the
+    MIN/MAX bounds so she's never naggy and never disappears entirely."""
+    w = _welcome(ctx)                       # 0..1
+    # w=1 → MIN, w=0 → MAX, w=0.5 → base-ish (linear)
+    span = _CADENCE_MAX_MIN - _CADENCE_MIN_MIN
+    return _CADENCE_MAX_MIN - w * span
+
+
 def _companion_due() -> bool:
-    """Time for a warm check-in? Respects quiet hours, the cadence, and being
-    paused — and never fires if nothing has reset the 'around' signal recently."""
+    """Time for a warm check-in? Respects quiet hours, a LEARNED per-context cadence,
+    the current activity (don't reach out mid-meeting), being paused, and the
+    'around' signal — so she reaches out when it's welcome, not on a blind timer."""
     if not companion_enabled():
         return False
     n = _now()
     if _in_quiet_hours(n.hour):
         return False
+    # don't reach out when the device sense says to hold back (a call/meeting)
+    try:
+        from . import presence
+        d = presence.device_now()
+        if not d.get("should_interject", True) and d.get("confidence", 0) >= 0.55:
+            return False
+    except Exception:
+        pass
     last = float(_companion_state().get("last_spoken", 0))
-    return (time.time() - last) >= _COMPANION_EVERY_MIN * 60
+    due_after = _cadence_min(_context_key()) * 60
+    return (time.time() - last) >= due_after
 
 
 def _current_mood() -> str:
@@ -317,11 +363,16 @@ def companion_checkin(speak: bool = True) -> str | None:
     line = _pick_companion_line()
     if speak:
         _speak_aloud(line)
-    # record: last-spoken + a small recent-line memory so she rotates
+    # record: last-spoken + rotation memory + the CONTEXT she reached out in and
+    # that we're now awaiting a response for (so feedback credits the right bucket).
     st = _companion_state()
     recent = ([line] + st.get("recent", []))[:5]
-    security.write_state(security.path(_COMPANION_FILE),
-                         {"last_spoken": time.time(), "recent": recent})
+    st.update({
+        "last_spoken": time.time(),
+        "recent": recent,
+        "pending": {"ctx": _context_key(), "at": time.time()},
+    })
+    security.write_state(security.path(_COMPANION_FILE), st)
     # also drop it into reflections so the app shows it, not just speaks it
     try:
         from . import soul
@@ -329,6 +380,87 @@ def companion_checkin(speak: bool = True) -> str | None:
     except Exception:
         pass
     return line
+
+
+# how long after a check-in a user message still counts as "a response to it"
+_RESPONSE_WINDOW_S = 180.0
+# learning rate — gentle, so one odd turn doesn't swing her behaviour
+_WELCOME_LR = 0.2
+
+
+def note_response(text: str = "") -> None:
+    """Called when the user speaks — if it lands soon after a check-in, learn how
+    WELCOME that moment's outreach was: a reply at all is a small yes; a warm reply
+    a bigger yes; a curt/annoyed reply a no. Updates the context's welcome score so
+    her timing adapts. No pending check-in → does nothing. Never persists the text."""
+    if not companion_enabled():
+        return
+    st = _companion_state()
+    pending = st.get("pending")
+    if not isinstance(pending, dict):
+        return
+    if time.time() - float(pending.get("at", 0)) > _RESPONSE_WINDOW_S:
+        # too late to be a response to the check-in — clear it, learn a soft "ignored"
+        ctx = pending.get("ctx") or _context_key()
+        _learn_welcome(st, ctx, target=0.25)   # it went unanswered → back off a bit
+        st.pop("pending", None)
+        security.write_state(security.path(_COMPANION_FILE), st)
+        return
+    ctx = pending.get("ctx") or _context_key()
+    # how warm was the reply? sentiment → a welcome target
+    target = 0.7                               # any timely reply = a yes
+    low = (text or "").lower().strip()
+    # explicit dismissals read as neutral sentiment but clearly mean "not now" —
+    # catch them so a brush-off eases her off rather than counting as a yes.
+    if any(p in low for p in ("not now", "leave me alone", "go away", "stop it",
+                              "busy", "later", "not a good time", "shush", "quiet",
+                              "be quiet", "in a meeting", "on a call")):
+        target = 0.15
+    else:
+        try:
+            from . import sentiment
+            # _lexicon is the fast, on-device, LLM-free read (Sentiment.score -1..1).
+            s = sentiment._lexicon(text or "")
+            score = float(getattr(s, "score", 0.0))
+            if score > 0.15:
+                target = 0.9                   # warm → very welcome
+            elif score < -0.15:
+                target = 0.3                   # curt/annoyed → ease off
+        except Exception:
+            pass
+    _learn_welcome(st, ctx, target=target)
+    st.pop("pending", None)
+    security.write_state(security.path(_COMPANION_FILE), st)
+
+
+def note_ignored() -> None:
+    """A check-in went unanswered past the window — learn a gentle 'not now' for that
+    context so she reaches out less there. Safe to call on a timer."""
+    st = _companion_state()
+    pending = st.get("pending")
+    if not isinstance(pending, dict):
+        return
+    if time.time() - float(pending.get("at", 0)) <= _RESPONSE_WINDOW_S:
+        return                                  # still within the window; not ignored yet
+    ctx = pending.get("ctx") or _context_key()
+    _learn_welcome(st, ctx, target=0.25)
+    st.pop("pending", None)
+    security.write_state(security.path(_COMPANION_FILE), st)
+
+
+def _learn_welcome(st: dict, ctx: str, target: float) -> None:
+    """Move this context's welcome score toward `target` by the learning rate — a
+    slow rolling update, so timing drifts with real feedback, not one-off turns."""
+    scores = st.get("welcome")
+    if not isinstance(scores, dict):
+        scores = {}
+    cur = scores.get(ctx, 0.5)
+    try:
+        cur = float(cur)
+    except (TypeError, ValueError):
+        cur = 0.5
+    scores[ctx] = max(0.0, min(1.0, cur + _WELCOME_LR * (target - cur)))
+    st["welcome"] = scores
 
 
 def _speak_aloud(text: str) -> bool:
