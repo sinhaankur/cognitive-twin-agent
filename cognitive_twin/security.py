@@ -386,6 +386,11 @@ def _check_egress() -> tuple[bool, str, str]:
         # (Ollama at localhost). The only egress is to that local model — the same
         # on-device door the LLM clients use; nothing goes to a cloud. See rag.py.
         "rag.py",
+        # proactive companion check-ins: when she reaches out on her own, she speaks
+        # the line through the LOCAL voice server's /api/speak — a 127.0.0.1 loopback
+        # call only, never off the machine. (Any real-news line goes through net.py,
+        # the fenced doorway above, and only when web research is opted in.)
+        "proactive.py",
         # opt-in ad-blocker control: talks to a self-hosted AdGuard Home you run on
         # an always-on box you own (never this machine). Off by default; loopback
         # for the read API by default; container control requires an explicit

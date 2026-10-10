@@ -156,26 +156,45 @@ def _cosine(a: list[float], c: list[float]) -> float:
 
 
 def retrieve(query: str, k: int = 2, alpha: float = 0.6) -> list[Belief]:
-    """The convictions most relevant to THIS moment. Hybrid semantic+keyword when
-    embeddings exist, keyword-only otherwise. Empty when she holds no belief that
-    fits — she never reaches for wisdom that isn't hers."""
+    """The convictions most relevant to THIS moment. Scored by the TRAINED reranker
+    when its weights are present + embeddings exist (learned fusion over semantic,
+    keyword, topic-tag + exact overlap); otherwise the hand-tuned semantic+keyword
+    blend; keyword-only when there's no embedder. Empty when she holds no belief
+    that fits — she never reaches for wisdom that isn't hers."""
     w = load()
     if not w.beliefs:
         return []
     kw = [_keyword_score(b, query) for b in w.beliefs]
     scores = list(kw)
+    floor = 0.08
     try:
         from . import rag
         if rag.embeddings_available() and any(b.vector for b in w.beliefs):
             qv = rag.embed_one(query)
             if qv:
                 sem = [_cosine(qv, b.vector) if b.vector else 0.0 for b in w.beliefs]
-                scores = [alpha * s + (1 - alpha) * kwi for s, kwi in zip(sem, kw)]
+                try:
+                    # learned fusion — ONLY when the reranker is trained AND opted
+                    # in (CTWIN_RERANK=1). It reads the topic tags the blend can't
+                    # and beats it on the eval set, but isn't yet proven to
+                    # generalise, so the blend stays the default.
+                    from . import rerank as _rr
+                    if _rr.active():
+                        rr = _rr.get()
+                        scores = [rr.score(_rr.features(
+                            query, semantic=sem[i], keyword=kw[i],
+                            cand_text=b.text, cand_about=getattr(b, "about", "")))
+                            for i, b in enumerate(w.beliefs)]
+                        floor = 0.35   # reranker scores are calibrated 0..1 relevance
+                    else:
+                        scores = [alpha * s + (1 - alpha) * kwi for s, kwi in zip(sem, kw)]
+                except Exception:
+                    scores = [alpha * s + (1 - alpha) * kwi for s, kwi in zip(sem, kw)]
     except Exception:
         pass
     ranked = sorted(zip(scores, w.beliefs), key=lambda p: p[0], reverse=True)
     # a relevance floor so she doesn't force an unrelated maxim into the moment
-    return [b for s, b in ranked[:k] if s > 0.08]
+    return [b for s, b in ranked[:k] if s > floor]
 
 
 def retrieve_scored(query: str, k: int = 4, alpha: float = 0.6) -> dict:
@@ -198,9 +217,25 @@ def retrieve_scored(query: str, k: int = 4, alpha: float = 0.6) -> dict:
             qv = rag.embed_one(query)
             if qv:
                 sem = [_cosine(qv, b.vector) if b.vector else 0.0 for b in w.beliefs]
-                scores = [alpha * s + (1 - alpha) * kwi for s, kwi in zip(sem, kw)]
-                out["method"] = "semantic+keyword"
-                out["alpha"] = alpha
+                try:
+                    from . import rerank as _rr
+                    if _rr.active():
+                        rr = _rr.get()
+                        scores = [rr.score(_rr.features(
+                            query, semantic=sem[i], keyword=kw[i],
+                            cand_text=b.text, cand_about=getattr(b, "about", "")))
+                            for i, b in enumerate(w.beliefs)]
+                        out["method"] = "trained reranker"
+                        floor = 0.35
+                        out["floor"] = floor
+                    else:
+                        scores = [alpha * s + (1 - alpha) * kwi for s, kwi in zip(sem, kw)]
+                        out["method"] = "semantic+keyword"
+                        out["alpha"] = alpha
+                except Exception:
+                    scores = [alpha * s + (1 - alpha) * kwi for s, kwi in zip(sem, kw)]
+                    out["method"] = "semantic+keyword"
+                    out["alpha"] = alpha
     except Exception:
         pass
     rows = []
