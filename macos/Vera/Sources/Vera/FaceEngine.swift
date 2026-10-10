@@ -103,15 +103,23 @@ final class FaceEngine: NSObject, ObservableObject {
         case .authorized:
             self.queue.async { self.configure() }
         case .notDetermined:
-            // first time — ask once. One user action (Allow) turns it on.
+            // first time — ask once. One user action (Allow) turns it on. If the
+            // prompt is dismissed WITHOUT allowing, macOS marks it denied and won't
+            // show the prompt again — so send the user to Settings rather than
+            // leaving a dead "tap to allow" that does nothing.
             AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
                 guard let self else { return }
                 if granted { self.queue.async { self.configure() } }
-                else { self.publish(status: "Tap to allow the camera") }
+                else {
+                    self.publish(status: "Camera needs you — opening System Settings ▸ Privacy ▸ Camera")
+                    self.openCameraSettings()
+                }
             }
         case .denied, .restricted:
-            // already denied — don't silently fail; tell the user how to turn it on.
-            self.publish(status: "Camera is off — allow it in System Settings ▸ Privacy ▸ Camera")
+            // already denied — macOS won't re-prompt, so OPEN Settings for them
+            // (a tap should DO something, not just show a message).
+            self.publish(status: "Turn the camera on in System Settings ▸ Privacy ▸ Camera")
+            self.openCameraSettings()
         @unknown default:
             self.publish(status: "camera unavailable")
         }
@@ -135,20 +143,46 @@ final class FaceEngine: NSObject, ObservableObject {
     }
 
     private func configure() {
-        guard let cam = AVCaptureDevice.default(for: .video),
-              let input = try? AVCaptureDeviceInput(device: cam) else {
-            publish(status: "camera unavailable"); return
+        // pick a REAL camera. AVCaptureDevice.default(for:.video) can hand back a
+        // Continuity Camera (your iPhone) that isn't actually present/ready, so the
+        // session "configures" but no frames ever arrive — looks like the camera
+        // just won't turn on. Prefer the built-in Mac camera; fall back sensibly.
+        let cam = Self.bestCamera()
+        guard let cam, let input = try? AVCaptureDeviceInput(device: cam) else {
+            publish(status: "no camera found — is one connected / not in use elsewhere?")
+            return
         }
         session.beginConfiguration()
         session.sessionPreset = .vga640x480
+        // clear any stale inputs/outputs from a previous attempt
+        session.inputs.forEach { session.removeInput($0) }
+        session.outputs.forEach { session.removeOutput($0) }
         if session.canAddInput(input) { session.addInput(input) }
+        else { session.commitConfiguration(); publish(status: "couldn't open \(cam.localizedName)"); return }
         let out = AVCaptureVideoDataOutput()
         out.alwaysDiscardsLateVideoFrames = true
         out.setSampleBufferDelegate(self, queue: queue)
         if session.canAddOutput(out) { session.addOutput(out) }
         session.commitConfiguration()
         session.startRunning()
-        publish(status: "face landmarks · on-device · close to stop")
+        publish(status: session.isRunning
+                ? "seeing you · \(cam.localizedName) · on-device · close to stop"
+                : "camera didn't start — try closing other apps using it")
+    }
+
+    /// The best camera to use: the built-in Mac camera first (reliable), then any
+    /// non-Continuity external, then whatever's available. Avoids silently picking
+    /// an iPhone Continuity Camera that isn't ready.
+    private static func bestCamera() -> AVCaptureDevice? {
+        // discover just the built-in camera type (Continuity/externals are found by
+        // the default fallback). Built-in is the reliable one and avoids silently
+        // grabbing an iPhone Continuity Camera that isn't ready.
+        let builtin = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInWideAngleCamera],
+            mediaType: .video, position: .unspecified).devices.first
+        if let builtin { return builtin }
+        // no built-in → whatever the system offers (external webcam / Continuity)
+        return AVCaptureDevice.default(for: .video)
     }
 
     private func publish(status s: String) {

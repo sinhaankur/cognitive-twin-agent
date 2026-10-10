@@ -121,9 +121,25 @@ rm -f "$ENT"
 # ONE install per device: the app lives in /Applications and nowhere else.
 # The staging bundle is removed so Spotlight/Launchpad never see two copies.
 echo "[5/5] Installing to /Applications..."
+# Quit any running copy FIRST — otherwise you keep using the OLD build after a
+# rebuild (which looks like "my fix didn't take" + permissions seem reset). We
+# relaunch the fresh build below so you're always on the latest.
+WAS_RUNNING=0
+if pgrep -f "/Applications/$APP/Contents/MacOS/$BIN_NAME" >/dev/null 2>&1; then
+  WAS_RUNNING=1
+  osascript -e "quit app \"$BIN_NAME\"" 2>/dev/null || true
+  sleep 1
+  pkill -f "/Applications/$APP/Contents/MacOS/$BIN_NAME" 2>/dev/null || true
+  sleep 1
+fi
 rm -rf "/Applications/$APP"
 cp -R "$APP" "/Applications/$APP"
 rm -rf "$APP"
+# relaunch the fresh build if one was running (so you never stay on a stale copy)
+if [ "$WAS_RUNNING" = "1" ]; then
+  echo "  relaunching the fresh build…"
+  open "/Applications/$APP" 2>/dev/null || true
+fi
 
 # ---- activate the brain: make sure the LLM is actually there ----------------
 # A good install leaves Vera ready to think, not just installed. Check Ollama is
