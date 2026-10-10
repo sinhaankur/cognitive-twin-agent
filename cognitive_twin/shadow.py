@@ -129,8 +129,14 @@ def extract_task(text: str) -> str:
         m = pat.search(t)
         if m:
             clause = _clean_clause(m.group(1))
-            first = clause.split()[0].lower().strip("'") if clause.split() else ""
-            if len(clause) >= 3 and first not in _NOT_A_TASK:
+            words = clause.split()
+            first = words[0].lower().strip("'") if words else ""
+            # a REAL task is more than a bare word — it needs an object ("call mom",
+            # "finish the deck"), not a lone verb. This stops mic mishearings
+            # (e.g. a stray "die"/"buy"/"go") from being saved as a to-do. Require
+            # at least two words, OR a single meaty word (6+ chars, clearly a thing).
+            is_real = (len(words) >= 2) or (len(words) == 1 and len(first) >= 6)
+            if len(clause) >= 3 and first not in _NOT_A_TASK and is_real:
                 return clause
     return ""
 
