@@ -475,7 +475,31 @@ class _Handler(BaseHTTPRequestHandler):
             _noise = {"", "you", "thank you", "thanks", "bye", "bye.", "okay", "ok",
                       "uh", "um", "hmm", "mm", "yeah", ".", "the", "so"}
             heard = bool(text) and _low not in _noise and len(_low) >= 2
-            self._json(200, {"text": text if heard else "", "heard": heard})
+            # VOICE IDENTITY: if a voiceprint is enrolled, is this clip YOU or someone
+            # else (the TV, another person)? When it's clearly not you, she HEARD it
+            # but shouldn't act on it as a command. `is_you` is None when not enrolled
+            # (she behaves exactly as before — opt-in).
+            is_you = None
+            try:
+                from .. import voice_id
+                if voice_id.is_enrolled():
+                    is_you = voice_id.is_you(raw)
+            except Exception:
+                is_you = None
+            self._json(200, {"text": text if heard else "", "heard": heard,
+                             "is_you": is_you})
+            return
+        if self.path == "/api/voice/enroll":
+            # teach her YOUR voice: POST a WAV of your speech; it folds into your
+            # sealed voiceprint. A few short clips make her sure it's you.
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(length) if length > 0 else b""
+            try:
+                from .. import voice_id
+                msg = voice_id.enroll(raw)
+                self._json(200, {"ok": True, "detail": msg, "enrolled": voice_id.is_enrolled()})
+            except Exception as e:
+                self._json(200, {"ok": False, "detail": str(e)})
             return
         if self.path == "/api/health/import":
             # Import an Apple Health export (parsed locally). Body: {"path": "..."}.
