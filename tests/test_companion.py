@@ -55,6 +55,24 @@ def test_no_jokes_when_heavy(monkeypatch):
         assert line not in everyday
 
 
+def test_story_flavours_only_when_light(monkeypatch):
+    """The lean-in story/dilemma/curio lines are engaging, but would feel flippant
+    in a hard moment — so they're light-mood only."""
+    _fresh(monkeypatch)
+    proactive.enable_companion(True)
+    story = (set(proactive._COMPANION_BANK["story"])
+             | set(proactive._COMPANION_BANK["dilemma"])
+             | set(proactive._COMPANION_BANK["curio"]))
+    # heavy: never a story
+    monkeypatch.setattr(proactive, "_current_mood", lambda: "heavy")
+    for _ in range(50):
+        assert proactive._pick_companion_line() not in story
+    # light: they DO show up across many picks
+    monkeypatch.setattr(proactive, "_current_mood", lambda: "light")
+    seen_story = any(proactive._pick_companion_line() in story for _ in range(80))
+    assert seen_story
+
+
 def test_light_mood_has_range(monkeypatch):
     _fresh(monkeypatch)
     proactive.enable_companion(True)

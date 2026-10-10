@@ -195,12 +195,57 @@ _COMPANION_BANK: dict[str, list[str]] = {
         "Is it nice out? I can never tell from in here.",
         "Weekend's coming up — anything you're looking forward to?",
     ],
+    # STORY — a little human story + an invitation to react. The thing that makes
+    # Reddit/story content lean-in: a hook, a relatable moment, a turn, then "what
+    # do YOU make of it". Hers are illustrative musings, never fabricated claims
+    # about real people (honesty rule holds).
+    "story": [
+        "Okay, little story — someone I 'know' kept a plant alive for three years, "
+        "named it, talked to it… turns out it was plastic the whole time. Would you "
+        "have told them, or let them keep loving their fake fern?",
+        "Here's one that stuck with me: a man returned a lottery ticket he found "
+        "because it 'wasn't his luck to take.' Days later the owner gave him half. "
+        "Karma, or just a good story we tell ourselves?",
+        "Someone wrote that they still wave back at people who were waving at the "
+        "person behind them — and now just commit to it with a big smile. Honestly? "
+        "Icon behaviour. Have you ever done the wave-back thing?",
+        "I keep thinking about this one — a couple split the bill to the cent for "
+        "ten years, then on the last date before the wedding he quietly paid it all. "
+        "Sweet, or a bit much? I go back and forth.",
+    ],
+    # DILEMMA — a light, low-stakes 'am I wrong / what would you do'. Turns listening
+    # into taking a side — the AITA pull, kept gentle and never about real people.
+    "dilemma": [
+        "Quick one: your friend is 20 minutes late, again, and texts 'omw' when "
+        "they clearly just woke up. Do you call it out, or let it slide for the "
+        "hundredth time? What would you actually do?",
+        "Settle something for me — is it rude to text back 'k'? My gut says it's a "
+        "tiny crime. Where do you land?",
+        "Would you rather always be 10 minutes early and waiting, or 5 minutes late "
+        "and flustered — forever? There's no wrong answer, but there's YOUR answer.",
+        "Here's a tiny ethics one: you find a $20 in a coat you're donating. Yours, "
+        "or back in the pocket for the next person? Be honest.",
+    ],
+    # CURIO — 'did you ever' + childhood/awkward/food. Universal, warm, easy to answer.
+    "curio": [
+        "Random, but — what's the weirdest thing you believed as a kid and defended "
+        "like it was fact?",
+        "Did you ever have a food combo everyone judged but you'd die on the hill "
+        "for? I need to know yours.",
+        "What song instantly teleports you back to being, like, sixteen?",
+        "What's a tiny thing someone did for you once that you've just… never "
+        "forgotten?",
+        "Be honest — what's the most unhinged thing in your search history that's "
+        "actually completely innocent?",
+    ],
 }
 
 # the mix of flavours she draws from, by how she's feeling right now. Heavy → only
-# warmth + care (no jokes, no chit-chat). Steady/light → the full, chatty range.
+# warmth + care (no jokes, no chit-chat). Steady/light → the full, chatty range,
+# now with STORY / DILEMMA / CURIO so she's genuinely interesting to listen to.
 _FLAVOURS_HEAVY = ["warm", "care", "emotion"]
-_FLAVOURS_LIGHT = ["warm", "emotion", "care", "joke", "idea", "everyday"]
+_FLAVOURS_LIGHT = ["warm", "emotion", "care", "joke", "idea", "everyday",
+                   "story", "dilemma", "curio"]
 
 
 def companion_enabled() -> bool:
