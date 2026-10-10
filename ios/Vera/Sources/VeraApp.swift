@@ -63,8 +63,12 @@ final class TwinModel: ObservableObject {
     /// watchdog; called on appear and after a host change. Never blocks the UI.
     func refreshReachability() {
         let raw = modelHost.trimmingCharacters(in: .whitespaces)
-        // No host set → unknown, not "down" (don't nag before setup).
-        guard !raw.isEmpty else { reachable = nil; return }
+        // No host set → try to AUTO-DETECT over Tailscale before giving up.
+        guard !raw.isEmpty else {
+            reachable = nil
+            autoDetect()
+            return
+        }
         let hostPort = raw.contains(":") ? raw : "\(raw):11434"
         guard let url = URL(string: "http://\(hostPort)/") else { reachable = false; return }
         var req = URLRequest(url: url)
@@ -73,8 +77,63 @@ final class TwinModel: ObservableObject {
             let ok = err == nil &&
                 ((resp as? HTTPURLResponse)?.statusCode == 200 ||
                  (String(data: data ?? Data(), encoding: .utf8) ?? "").lowercased().contains("ollama"))
-            DispatchQueue.main.async { self.reachable = ok }
+            DispatchQueue.main.async {
+                self.reachable = ok
+                // if the saved host stopped answering, try to re-discover it
+                if !ok { self.autoDetect() }
+            }
         }.resume()
+    }
+
+    @Published var autoDetecting = false
+
+    /// SEAMLESS CONNECT: find the Mac's Ollama on your Tailscale automatically, so
+    /// you never type an IP. Probes a few likely candidates in parallel — the Mac's
+    /// MagicDNS name and the Tailscale 100.x host range — and the first that answers
+    /// "Ollama is running" becomes the model host. Entirely private (your own
+    /// tailnet); a no-op if nothing answers (you can still type it in Settings).
+    func autoDetect() {
+        guard !autoDetecting else { return }
+        // only auto-detect when there's no working host yet
+        if !modelHost.trimmingCharacters(in: .whitespaces).isEmpty && reachable == true { return }
+        autoDetecting = true
+
+        // candidates, most-likely first: hosts you've reached before (remembered via
+        // MagicDNS or IP), then the Mac's Tailscale MagicDNS name. MagicDNS resolves
+        // on-device when Tailscale is up, so a hostname is the reliable, IP-free path.
+        var candidates: [String] = []
+        if let saved = UserDefaults.standard.stringArray(forKey: "knownHosts") { candidates += saved }
+        // the Mac's MagicDNS name (works across IP changes). The user can override the
+        // hostname via "veraMacHost"; default to the known machine name.
+        let macName = UserDefaults.standard.string(forKey: "veraMacHost")
+            ?? "ankursinhas-macbook-pro-1.tail2d11a0.ts.net"
+        candidates.append(macName)
+        candidates.append("100.91.27.70")           // last-known Mac Tailscale IP
+        let unique = Array(NSOrderedSet(array: candidates).array as? [String] ?? candidates).prefix(10)
+
+        let group = DispatchGroup()
+        var found: String?
+        let lock = NSLock()
+        for host in unique {
+            guard let url = URL(string: "http://\(host):11434/") else { continue }
+            group.enter()
+            var req = URLRequest(url: url); req.timeoutInterval = 2
+            URLSession.shared.dataTask(with: req) { data, resp, err in
+                defer { group.leave() }
+                let ok = err == nil &&
+                    ((String(data: data ?? Data(), encoding: .utf8) ?? "").lowercased().contains("ollama"))
+                if ok { lock.lock(); if found == nil { found = host }; lock.unlock() }
+            }.resume()
+        }
+        group.notify(queue: .main) {
+            self.autoDetecting = false
+            if let h = found {
+                self.modelHost = h
+                self.reachable = true
+                var known = UserDefaults.standard.stringArray(forKey: "knownHosts") ?? []
+                if !known.contains(h) { known.insert(h, at: 0); UserDefaults.standard.set(Array(known.prefix(5)), forKey: "knownHosts") }
+            }
+        }
     }
 
     // "See a loved one in 3D" — opt-in, persisted. On a phone there's no local
