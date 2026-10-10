@@ -82,6 +82,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 PhotosReader.scanAndSend { note in NSLog("photos: \(note)") }
             }
         }
+        enableDefaultSensesOnce()
+    }
+
+    /// Senses ON by default — her full presence from the first launch (voice is
+    /// already on by default; this adds the eye + the room). Done ONCE via a
+    /// flag, so after the first run the user's own choices stick: if they turn
+    /// the eye or ear off, it stays off. macOS still asks its own camera/mic
+    /// permission on top — this only opens the switches, never bypasses TCC.
+    private func enableDefaultSensesOnce() {
+        let key = "vera.sensesDefaultedOn.v1"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        // give the brain/server a moment to come up, then open eye + ear.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self else { return }
+            if self.eyeWindow == nil { self.toggleEye() }      // camera on (opens the visible preview)
+            if !self.model.ear.on { self.model.ear.toggle() }  // room on (ambient sound types)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.syncMenuChecks() }
+        }
     }
 
     /// A menu-bar status icon (top-right) so you know Anita is running, with
@@ -545,6 +564,45 @@ final class AppModel: ObservableObject {
         }
         voice.startListening()
     }
+
+    // ── Adaptive re-arm backoff ──────────────────────────────────────────────
+    // The tight re-arm (0.4s after every empty/background turn) is what makes the
+    // mic "keep looping" in a room with any ambient talk/TV. We back off as empty
+    // turns pile up — 0.4s → up to ~5s — and reset to instant the moment a real,
+    // addressed turn lands. She never goes deaf; she just stops spinning when the
+    // room isn't talking to her.
+    private var emptyTurnStreak = 0
+    private static let maxRearmDelay: TimeInterval = 5.0
+    private func rearmDelay() -> TimeInterval {
+        // 0.4, 0.8, 1.6, 3.2, capped at 5.0
+        let d = 0.4 * pow(2.0, Double(min(emptyTurnStreak, 4)))
+        return min(Self.maxRearmDelay, d)
+    }
+    /// Re-arm the mic after a turn, with adaptive backoff. Call this instead of a
+    /// bare `armVoiceLoop()` from the empty/ended-with-no-words paths.
+    func rearmVoiceLoopWithBackoff() {
+        let delay = rearmDelay()
+        emptyTurnStreak += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.armVoiceLoop()
+        }
+    }
+    /// A real, addressed turn landed — resume instant listening.
+    func resetVoiceBackoff() { emptyTurnStreak = 0 }
+
+    // ── Addressee gate: "is this meant for me, or background?" ───────────────
+    // The camera already reads the room (FaceEngine.likelyAddressingHer: a face
+    // present and turned toward her). When the eye is open, we use it to DROP a
+    // transcribed turn that clearly isn't addressed to her — so background speech
+    // / a TV / someone else in the room doesn't become a turn she answers. When
+    // the camera is off, we can't tell, so we never block on it (fail open).
+    @MainActor
+    func turnIsAddressedToHer() -> Bool {
+        let eye = FaceEngine.shared
+        // camera not actually seeing anyone → no basis to gate; let it through.
+        guard eye.facePresent else { return true }
+        return eye.likelyAddressingHer
+    }
     @Published var turns: [ChatTurn] = []     // the chat conversation
     // A file you've attached to send with your next message (name + extracted
     // text). On-device: the text is read locally and included as context; nothing
@@ -747,7 +805,7 @@ final class AppModel: ObservableObject {
     // (POST /api/voice/set). Default is af_heart — warm, natural, clear.
     @Published var neuralVoices: [NeuralVoiceOption] = []
     @Published var neuralVoiceID: String =
-        UserDefaults.standard.string(forKey: "vera.neuralVoiceID") ?? "af_heart"
+        UserDefaults.standard.string(forKey: "vera.neuralVoiceID") ?? AppModel.defaultNeuralVoice
 
     struct NeuralVoiceOption: Identifiable, Hashable {
         let id: String          // kokoro id, e.g. "af_heart"
@@ -767,20 +825,27 @@ final class AppModel: ObservableObject {
         return bare.isEmpty ? "neural" : bare.prefix(1).uppercased() + bare.dropFirst()
     }
 
+    /// af_heart is THE voice — the only one that gives a good experience. It's the
+    /// guaranteed default and floor everywhere; the picker can still switch
+    /// deliberately, but we never silently drift off it.
+    static let defaultNeuralVoice = "af_heart"
+
     /// Load her neural voices from the server and reflect the current selection.
     func refreshNeuralVoices() {
         Task {
-            let (voices, current) = await agent.neuralVoices()
+            let (voices, _current) = await agent.neuralVoices()
             await MainActor.run {
                 self.neuralVoices = voices.map { NeuralVoiceOption(id: $0.id, label: $0.label) }
-                // honor a saved choice; else adopt the server's current.
+                // Honor ONLY a deliberate saved choice. Otherwise snap to af_heart —
+                // we never auto-adopt the server's "current", which on a fresh state
+                // can be empty or some other voice and would quietly cost the one
+                // good experience. The user can still pick another voice by hand
+                // (that gets saved and honored below).
                 let saved = UserDefaults.standard.string(forKey: "vera.neuralVoiceID")
-                if let saved, voices.contains(where: { $0.id == saved }) {
-                    self.neuralVoiceID = saved
-                    Task { await self.agent.setNeuralVoice(saved) }   // re-assert on launch
-                } else if !current.isEmpty {
-                    self.neuralVoiceID = current
-                }
+                let pick = (saved.flatMap { s in voices.contains(where: { $0.id == s }) ? s : nil })
+                    ?? Self.defaultNeuralVoice
+                self.neuralVoiceID = pick
+                Task { await self.agent.setNeuralVoice(pick) }   // assert it on the server
             }
         }
     }
@@ -887,9 +952,10 @@ final class AppModel: ObservableObject {
         }
     }
 
-    // The twin's name — the user's to choose. Defaults to Anita.
+    // The twin's name — the user's to choose. Defaults to Emma, the companion
+    // as she is today (change it in Settings any time).
     @Published var assistantName: String =
-        UserDefaults.standard.string(forKey: "assistantName") ?? "Anita Sinha" {
+        UserDefaults.standard.string(forKey: "assistantName") ?? "Emma" {
         didSet { UserDefaults.standard.set(assistantName, forKey: "assistantName") }
     }
     // Orb size — adapts to screen, user-adjustable (persisted).
@@ -939,12 +1005,12 @@ final class AppModel: ObservableObject {
                 self?.armVoiceLoop()
             }
         }
-        // Always-on: a listen turn that ended with no words → re-open the mic after
-        // a short beat, so she keeps listening until voice-mode is turned off.
+        // Always-on: a listen turn that ended with no words → re-open the mic, but
+        // with ADAPTIVE BACKOFF so a room with background talk/TV doesn't spin the
+        // mic. The delay grows as empty turns pile up and snaps back to instant the
+        // moment a real, addressed turn lands (see handle()).
         voice.onListenEndedEmpty = { [weak self] in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                self?.armVoiceLoop()
-            }
+            self?.rearmVoiceLoopWithBackoff()
         }
         // the ear tells the voice when the room needs isolation ("if needed")
         ear.onNoise = { [weak self] noisy in self?.voice.isolateVoice = noisy }
@@ -1423,6 +1489,20 @@ final class AppModel: ObservableObject {
     }
 
     private func handle(_ text: String, spoken: Bool = false) {
+        // ADDRESSEE GATE (spoken turns only): if the camera is open and can see
+        // you're NOT turned toward her (background speech, a TV, someone else in
+        // the room), DROP this turn instead of answering chatter that wasn't meant
+        // for her — and re-arm with backoff so she doesn't spin. A typed turn is
+        // obviously for her, so it's never gated. Camera off → fail open (we can't
+        // tell, so we always answer).
+        if spoken && !turnIsAddressedToHer() {
+            NSLog("[Vera] dropped a spoken turn not addressed to her (room/background)")
+            rearmVoiceLoopWithBackoff()
+            return
+        }
+        // A real, addressed turn — resume instant listening after it.
+        if spoken { resetVoiceBackoff() }
+
         // A new request cancels whatever it was saying (no pile-ups).
         voice.stopSpeaking()
         // Remember whether THIS turn should be spoken (voice input → yes), so the

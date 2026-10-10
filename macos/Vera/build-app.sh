@@ -95,26 +95,48 @@ cat > "$ENT" <<'ENTITLEMENTS'
 <dict>
   <key>com.apple.security.device.audio-input</key><true/>
   <key>com.apple.security.device.microphone</key><true/>
+  <!-- camera: REQUIRED under the hardened runtime, or AVCaptureSession is blocked
+       at the entitlement layer even after the user grants Camera in System
+       Settings (the "I allowed it, camera still won't turn on" bug). -->
+  <key>com.apple.security.device.camera</key><true/>
   <key>com.apple.security.personal-information.speech-recognition</key><true/>
 </dict>
 </plist>
 ENTITLEMENTS
+# Stable ad-hoc signing (no paid cert needed). The loop-after-grant bug comes
+# from the signature CHANGING every rebuild so TCC treats each build as a brand
+# new app and revokes the mic/camera grant. Two things keep an ad-hoc signature
+# stable enough for TCC to remember the grant:
+#   1. a FIXED --identifier (the bundle ID TCC keys on) — never let it drift, and
+#   2. DO NOT use --options runtime on the ad-hoc path. The hardened runtime makes
+#      an ad-hoc cdhash churn per build; plain ad-hoc + a fixed identifier is what
+#      lets the grant persist across rebuilds without a developer certificate.
+# keep in lock-step with CFBundleIdentifier in the Info.plist above.
+BUNDLE_ID="com.sinhaankur.anita"
+adhoc_sign() {
+  codesign --force --deep --sign - \
+    --identifier "$BUNDLE_ID" \
+    --entitlements "$ENT" "$APP" 2>/dev/null \
+    && echo "  stable ad-hoc signature (fixed identifier $BUNDLE_ID — grants persist across rebuilds)" \
+    || echo "  (codesign skipped -- app still runs locally)"
+}
+
 # Prefer a real "Apple Development" identity (stable, trusted by TCC). Fall back
-# to ad-hoc only if none is installed.
+# to stable ad-hoc only if none is installed.
 SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
   | grep -E 'Apple Development|Developer ID Application' | head -1 \
   | sed -E 's/.*\) ([A-F0-9]{40}) .*/\1/')"
 if [ -n "$SIGN_ID" ]; then
   echo "  using identity: $SIGN_ID"
   codesign --force --deep --options runtime --sign "$SIGN_ID" \
+    --identifier "$BUNDLE_ID" \
     --entitlements "$ENT" "$APP" \
     && echo "  signed with your Apple Development identity (mic/speech grants persist)" \
-    || { echo "  (identity sign failed — falling back to ad-hoc)"; \
-         codesign --force --deep --sign - --entitlements "$ENT" "$APP" 2>/dev/null; }
+    || { echo "  (identity sign failed — falling back to stable ad-hoc)"; \
+         adhoc_sign; }
 else
-  echo "  no Apple Development identity found — ad-hoc (mic may need re-granting each build)"
-  codesign --force --deep --sign - --entitlements "$ENT" "$APP" 2>/dev/null \
-    || echo "  (codesign skipped -- app still runs locally)"
+  echo "  no Apple Development identity found — using STABLE ad-hoc"
+  adhoc_sign
 fi
 rm -f "$ENT"
 

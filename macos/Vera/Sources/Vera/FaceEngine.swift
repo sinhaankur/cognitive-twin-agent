@@ -18,6 +18,12 @@ import Vision
 /// Threading: all vision + signal state lives on `queue`; only the published
 /// draw-ready values hop to the main thread.
 final class FaceEngine: NSObject, ObservableObject {
+    /// One shared eye for the whole app. The EyeView preview drives it (start/stop
+    /// with the window), and the voice loop READS its room/addressee signal
+    /// (`likelyAddressingHer`, `facePresent`) to tell "you talking to me" from
+    /// "background / someone else" — without opening a second camera session.
+    @MainActor static let shared = FaceEngine()
+
     struct Dot: Identifiable {
         let id: Int
         let x: CGFloat, y: CGFloat        // normalized view coords (mirrored, y down)

@@ -13,7 +13,9 @@ import SwiftUI
 /// Same opt-in contract: camera only while this window exists; closing stops
 /// and forgets (FaceEngine.stop + the native /api/presence/stop in VeraApp).
 struct EyeView: View {
-    @StateObject private var engine = FaceEngine()
+    // the ONE shared eye (so the voice loop can read the same room/addressee
+    // signal this preview shows). Still starts/stops with this window.
+    @StateObject private var engine = FaceEngine.shared
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
