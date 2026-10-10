@@ -179,6 +179,18 @@ class Agent:
             # fall through to the normal reply path.
             pass
 
+        # "she always said…" / "she loved…" / "she grew up in…" — teach her who the
+        # loved one WAS, by just talking. Captures sayings/loves/places into her life
+        # story so she sounds more like them over time. The "it's really her" signal.
+        try:
+            from .. import life_story as _life
+            if record:
+                _ack = _life.handle_life_note(user_input)
+                if _ack:
+                    return AgentResult(answer=_ack, steps=0, tool_calls=[], route=None)
+        except Exception:
+            pass
+
         decision: RouteDecision | None = None
         if self.router is not None:
             decision = self.router.route(user_input)

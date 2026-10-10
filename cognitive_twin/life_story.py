@@ -283,3 +283,47 @@ def add_date(anchor: str) -> None:
     if a not in ls.dates:
         ls.dates.append(a)
         save(ls)
+
+
+# ── in-chat: teach her who she was, by just saying it ─────────────────────────
+import re as _re  # noqa: E402
+
+# a SAYING — the "it's really them" signal. "she always said X", "she used to say X".
+_SAYING = _re.compile(
+    r"\b(?:she|he|mom|mum|dad|they)\s+(?:always|often|used to|would)\s+(?:say|says|said)"
+    r"[,:]?\s*[\"“']?(.+?)[\"”']?\s*$", _re.I)
+# a LOVED thing — "she loved X", "her favourite X was Y"
+_LOVE = _re.compile(r"\b(?:she|he|they)\s+(?:loved|adored|cherished)\s+(.+?)\s*$", _re.I)
+# a PLACE — "she grew up in X", "she was from X", "home was X"
+_PLACE = _re.compile(
+    r"\b(?:she|he|they)\s+(?:grew up in|was from|was born in|lived in)\s+(.+?)\s*$", _re.I)
+
+
+def handle_life_note(text: str) -> str | None:
+    """If a turn is the user TELLING her about the loved one ("she always said…",
+    "she loved…", "she grew up in…"), capture it into her life story and confirm
+    softly. Returns None when it isn't such a turn, so the normal reply runs. Stores
+    exactly what was said — never invents. This is how you build her character by
+    just talking, without a formal interview."""
+    t = (text or "").strip()
+    if not t or t.endswith("?"):
+        return None
+    m = _SAYING.search(t)
+    if m:
+        s = m.group(1).strip().strip("\"'“”")
+        if len(s) >= 2:
+            add_saying(s)
+            return f"I'll hold onto that — “{s}”. It helps me sound like her."
+    m = _LOVE.search(t)
+    if m:
+        v = m.group(1).strip().rstrip(".")
+        if len(v) >= 2:
+            add_love(v)
+            return f"Noted — she loved {v}. That's good to know."
+    m = _PLACE.search(t)
+    if m:
+        p = m.group(1).strip().rstrip(".")
+        if len(p) >= 2:
+            add_place(p)
+            return f"Got it — {p}. A place that was hers."
+    return None
