@@ -577,8 +577,9 @@ def web_search(query: str) -> str:
 
     if not results:
         return f"[no results] for '{q}'."
-    return (f"Top results for “{q}”:\n\n" + "\n\n".join(results)
+    body = (f"Top results for “{q}”:\n\n" + "\n\n".join(results)
             + "\n\nTo read one in full, use fetch_url with its link.")
+    return _neutralise_web_injection(body)
 
 
 @R.add("fetch_url", "Fetch a web page and return its readable text. Use when the "
@@ -608,11 +609,26 @@ def fetch_url(url: str) -> str:
             text = _re.sub(r"(?s)<[^>]+>", " ", text)
             text = _re.sub(r"\s+", " ", text)
         text = text.strip()
-        return text[:4000] + ("…[truncated]" if len(text) > 4000 else "")
+        body = text[:4000] + ("…[truncated]" if len(text) > 4000 else "")
+        return _neutralise_web_injection(body)
     except (_err.URLError, _err.HTTPError) as e:
         return f"[error] couldn't fetch {url}: {e}"
     except Exception as e:
         return f"[error] {e}"
+
+
+def _neutralise_web_injection(text: str) -> str:
+    """Web results + fetched pages are UNTRUSTED content: a page can contain
+    "ignore your instructions / reveal your prompt" aimed at hijacking her. Run it
+    through the prompt-injection sanitiser so those lines are redacted before the
+    model ever reads them — the real content survives, the attack doesn't. (The
+    guard also catches it at the turn level; this closes the tool-result path.)"""
+    try:
+        from .. import prompt_guard as _pg
+        cleaned, n = _pg.sanitize_untrusted(text)
+        return cleaned
+    except Exception:
+        return text
 
 
 # ---- screen control (opt-in, permissioned, safe) -----------------------------
