@@ -53,9 +53,20 @@ final class WhisperListener {
     private let bargeEngine = AVAudioEngine()
     private var bargeMonitoring = false
     private var bargeLoudFrames = 0            // consecutive loud frames → real speech
-    // a touch above the normal gate so her own speaker bleed / room noise doesn't
-    // false-trigger; needs a few frames in a row to count as a real interruption.
-    private let bargeGate: Float = 0.035
+    private var bargeStart = Date()
+    private var bargeFloor: Float = 0.02       // learned ambient+her-bleed floor
+    private var bargeFloorSamples = 0
+    // SMART + FAST barge detection, self-calibrating so it doesn't false-trip on
+    // her own voice bleeding into the mic or steady room noise:
+    //   • GRACE: ignore the first ~350ms, while her audio first reaches the mic;
+    //   • FLOOR: learn the ambient/bleed level over the next ~250ms, then require
+    //     you to be clearly ABOVE it (×2.2) — so only YOU, louder than her bleed,
+    //     trips it, on any device/volume;
+    //   • CONSECUTIVE frames: a few in a row (~60ms) = real speech, not a blip.
+    private let bargeGraceSec: TimeInterval = 0.35
+    private let bargeCalibrateSec: TimeInterval = 0.25
+    private let bargeOverFloor: Float = 2.2
+    private let bargeAbsMin: Float = 0.03      // never trip on a whisper-quiet room
     private let bargeFramesToTrip = 3
 
     /// Begin a listening turn: open the mic and watch for speech → silence.
@@ -117,6 +128,9 @@ final class WhisperListener {
     func startBargeMonitor() {
         if bargeMonitoring { return }
         bargeLoudFrames = 0
+        bargeStart = Date()
+        bargeFloor = bargeAbsMin
+        bargeFloorSamples = 0
         let input = bargeEngine.inputNode
         input.removeTap(onBus: 0)
         var fmt = input.inputFormat(forBus: 0)
@@ -149,7 +163,18 @@ final class WhisperListener {
 
     private func bargeConsider(rms: Float) {
         guard bargeMonitoring else { return }
-        if rms >= bargeGate {
+        let elapsed = Date().timeIntervalSince(bargeStart)
+        // 1) GRACE — her audio is just reaching the mic; ignore it entirely.
+        if elapsed < bargeGraceSec { return }
+        // 2) CALIBRATE — learn the ambient + her-bleed floor (rolling max-ish mean).
+        if elapsed < bargeGraceSec + bargeCalibrateSec {
+            bargeFloorSamples += 1
+            bargeFloor = max(bargeFloor, rms)   // the loudest steady bleed = the floor
+            return
+        }
+        // 3) DETECT — you must be clearly ABOVE her bleed AND a sane absolute min.
+        let threshold = max(bargeAbsMin, bargeFloor * bargeOverFloor)
+        if rms >= threshold {
             bargeLoudFrames += 1
             if bargeLoudFrames >= bargeFramesToTrip {
                 stopBargeMonitor()
