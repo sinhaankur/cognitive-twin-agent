@@ -225,6 +225,21 @@ class Agent:
         # editable persona profile (who they are) + a private summary of how they
         # actually behave. Together: the twin reasons + speaks as this person.
         parts = [self.persona]
+        # ALWAYS know the date + time. This is a universal fact, not private data,
+        # so it's unconditional (not gated behind the opt-in rhythms sense). Without
+        # it the model guesses — it left a literal "[the actual date]" placeholder,
+        # or invented "2023". A companion should simply know what day it is.
+        try:
+            import datetime as _dt
+            _now = _dt.datetime.now().astimezone()
+            parts.append(
+                "# RIGHT NOW\n"
+                f"The current date and time is {_now.strftime('%A, %B %d, %Y, %H:%M')} "
+                f"{_now.tzname() or ''}. Use this for anything time-related; never "
+                "guess the date or leave a placeholder."
+            )
+        except Exception:
+            pass
         if self.use_memory:
             # Tool-use directive — small models otherwise answer facts from thin
             # air (e.g. "you have no projects" when list_projects would return 15).

@@ -10,7 +10,21 @@ import AVFoundation
 @main
 struct VeraApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    var body: some Scene { Settings { EmptyView() } }
+    // ONE settings surface. The old `Settings { EmptyView() }` scene registered a
+    // SECOND, BLANK settings window (opened by ⌘, / the app menu) alongside the
+    // real in-app settings window — "two different things open up, one is empty".
+    // Routing the system Settings command to the real window (AppDelegate.
+    // showSettings) means ⌘,, the menu, and the in-app gear ALL open the same,
+    // working settings. No empty twin.
+    var body: some Scene {
+        Settings { EmptyView() }
+            .commands {
+                CommandGroup(replacing: .appSettings) {
+                    Button("Settings…") { AppDelegate.shared?.openSettingsFromMenu() }
+                        .keyboardShortcut(",", modifiers: .command)
+                }
+            }
+    }
 }
 
 /// The app is exactly two things:
@@ -19,6 +33,13 @@ struct VeraApp: App {
 /// No Dock icon, no normal window — it runs independently in the background.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// So the SwiftUI `Settings` command (⌘, / app menu) can open the ONE real
+    /// settings window instead of the empty placeholder scene.
+    static weak var shared: AppDelegate?
+    /// Open the real settings window from the system menu / ⌘, — same window the
+    /// in-app gear opens, so there's never a blank second "Settings".
+    func openSettingsFromMenu() { showSettings() }
+
     private let model = AppModel()
     private var orbWindow: NSWindow!     // the always-on-screen circle
     private var chatWindow: NSWindow!    // the chat panel (toggled)
@@ -38,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var musicItem: NSMenuItem?   // the Hear-my-music switch (opt-in)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppDelegate.shared = self   // so ⌘, / the menu open the real settings window
         // one of her per device: if another copy is already running (e.g. a
         // second install), hand over to it and bow out — two Veras would fight
         // over the mic, the servers, and the orb
