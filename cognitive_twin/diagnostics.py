@@ -101,15 +101,20 @@ def check_core() -> list[Check]:
         return (ok, "LLM answers", (f'said: "{ans[:60]}"' if ans else "empty answer — model not really responding"))
     out.append(_guard(llm))
 
-    # voice ready + the ONE locked voice (af_heart)
+    # voice ready + the ONE locked voice (af_heart). "warming" is NOT a failure —
+    # Kokoro cold-loads in ~80-112s on first use, then stays ready; flagging that
+    # as ✗ made the trend read "voice DOWN" when it was simply starting up. Only a
+    # genuinely broken/absent voice is a ✗; warming is an honest amber (ok=True).
     def voice() -> Check:
         from .voice import kokoro_tts
         vs = kokoro_tts.voice_state()
         state = vs.get("state", "?")
         voice_name = vs.get("voice", "?")
-        ok = state == "ready"
+        ok = state in ("ready", "warming", "loading")   # warming = still fine
         detail = f"{state} · voice={voice_name}"
-        if ok and voice_name not in ("", "af_heart", "kokoro"):
+        if state != "ready":
+            detail += " (still coming up — not an error)"
+        elif voice_name not in ("", "af_heart", "kokoro"):
             detail += " (NOTE: not af_heart — the locked default)"
         return (ok, "voice (Kokoro)", detail)
     out.append(_guard(voice))

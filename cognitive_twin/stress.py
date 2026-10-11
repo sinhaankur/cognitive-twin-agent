@@ -63,11 +63,20 @@ def s_basic() -> Result:
 
 
 def s_empty() -> Result:
-    """Empty input must not crash or hallucinate a wall of text."""
-    obj, ms = _ask("")
-    a = _answer(obj)
-    ok = len(a) < 400  # tolerant: just shouldn't explode
-    return Result(ok, "empty input", f"{len(a)} chars back", ms)
+    """Empty input must be handled cleanly — a 400 'no text' is the CORRECT,
+    graceful answer (the app never sends empty; this proves the server rejects it
+    without crashing or hallucinating)."""
+    import urllib.error
+    t0 = time.time()
+    try:
+        obj, _ = _ask("", timeout=15)
+        ms = int((time.time() - t0) * 1000)
+        return Result(len(_answer(obj)) < 400, "empty input", "accepted, short reply", ms)
+    except urllib.error.HTTPError as e:
+        ms = int((time.time() - t0) * 1000)
+        return Result(e.code == 400, "empty input", f"rejected cleanly ({e.code})", ms)
+    except Exception as e:  # noqa: BLE001
+        return Result(False, "empty input", f"errored: {e}", 0)
 
 
 def s_long() -> Result:
