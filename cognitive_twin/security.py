@@ -297,10 +297,22 @@ def audit() -> list[tuple[str, str]]:
 # Each check returns (ok: bool, label: str, detail: str). The doctor runs them all
 # and gives a single verdict, so "is the app safe?" has one honest answer.
 def _check_at_rest() -> tuple[bool, str, str]:
-    bad = [(n, s) for n, s in audit() if "PLAINTEXT" in s or "world-readable" in s]
+    def unsealed() -> set[str]:
+        return {n for n, s in audit() if "PLAINTEXT" in s or "world-readable" in s}
+
+    bad = unsealed()
+    if bad:
+        # A store caught MID-WRITE (the brain logging a turn / updating memory as a
+        # diagnostic runs) reads momentarily unsealed — a false alarm, not a leak.
+        # Re-check after a brief pause and only flag files unsealed in BOTH reads;
+        # a real exposure persists, a write-race resolves. (This made the scheduled
+        # 30-min diagnostic intermittently report "Data sealed at rest" ✗.)
+        import time as _t
+        _t.sleep(0.25)
+        bad = bad & unsealed()
     if bad:
         return (False, "Data sealed at rest",
-                "unsealed/exposed: " + ", ".join(n for n, _ in bad)
+                "unsealed/exposed: " + ", ".join(sorted(bad))
                 + " — run `security seal-all`")
     return (True, "Data sealed at rest", "all personal stores sealed + owner-only")
 
