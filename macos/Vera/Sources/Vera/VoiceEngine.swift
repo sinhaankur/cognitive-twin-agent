@@ -223,6 +223,14 @@ final class VoiceEngine: ObservableObject {
         }
         w.onPartial = { [weak self] text in self?.transcript = text }
         w.onFinal = { [weak self] text in self?.whisperFinal(text) }
+        // BARGE-IN: you spoke over her → stop at once and listen. Super fast
+        // (RMS trip in ~60ms), intuitive: just start talking and she yields, like
+        // a person who gets interrupted. useLocalWhisper only (no Apple Speech).
+        w.onBarge = { [weak self] in
+            guard let self else { return }
+            self.stopSpeaking()        // she yields immediately
+            self.startListening()      // open a real turn so your words are caught
+        }
         return w
     }()
 
@@ -986,6 +994,17 @@ final class VoiceEngine: ObservableObject {
         let was = isSpeaking
         isSpeaking = speaking || externalSpeech
         if !speaking && muted { tearDownSession() }   // she finished; hunt over
+        // BARGE-IN monitor: while she's actually speaking, listen (RMS only) for
+        // you to talk over her so she can yield instantly. Start on the rising
+        // edge, stop the moment she's done. Local-Whisper only (crash-safe; no
+        // Apple Speech). Not during a muted/external pass.
+        if useLocalWhisper && !muted {
+            if isSpeaking && !was {
+                whisper.startBargeMonitor()
+            } else if !isSpeaking && was {
+                whisper.stopBargeMonitor()
+            }
+        }
         // true speaking → not-speaking edge (and not just a barge mid-hunt): she's
         // done talking. Let the app decide whether to re-arm the mic (hands-free).
         if was && !isSpeaking { onSpeechEnded?() }

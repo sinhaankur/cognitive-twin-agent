@@ -35,12 +35,28 @@ final class WhisperListener {
     private var lastLoudAt = Date()          // last time level crossed the speech gate
     private var turnStart = Date()
     private let speechGate: Float = 0.02     // RMS above this = voice present
-    private let endSilence: TimeInterval = 0.9   // trailing silence that ends a turn
-    private let maxTurn: TimeInterval = 20.0     // hard cap so it can't run forever
+    private let endSilence: TimeInterval = 0.9   // trailing silence that ends a turn (snappy)
+    // LET YOU FINISH: the turn ends when you actually PAUSE (endSilence), not on a
+    // clock. The cap is only a safety net for a stuck-open mic, so it's generous —
+    // a long continuous thought survives whole instead of being chopped at 20s.
+    private let maxTurn: TimeInterval = 90.0
     private let preSpeechTimeout: TimeInterval = 12.0  // give up if nothing is ever said
     private var endpointTimer: Timer?
 
     private let baseURL = URL(string: "http://127.0.0.1:7878")!
+
+    // ---- barge-in monitor (listen UNDER her voice, no Apple Speech) ----
+    /// Fires the instant the user speaks OVER her — so she can stop at once and
+    /// listen. A separate, tiny RMS-only tap (no transcription, no Apple Speech,
+    /// so it's crash-safe on free-team builds, unlike the old SFSpeech hunt).
+    var onBarge: (() -> Void)?
+    private let bargeEngine = AVAudioEngine()
+    private var bargeMonitoring = false
+    private var bargeLoudFrames = 0            // consecutive loud frames → real speech
+    // a touch above the normal gate so her own speaker bleed / room noise doesn't
+    // false-trigger; needs a few frames in a row to count as a real interruption.
+    private let bargeGate: Float = 0.035
+    private let bargeFramesToTrip = 3
 
     /// Begin a listening turn: open the mic and watch for speech → silence.
     func start() {
@@ -90,6 +106,57 @@ final class WhisperListener {
         endpointTimer?.invalidate()
         endpointTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
+        }
+    }
+
+    /// Start watching for the user to speak OVER her, while she's talking. RMS only
+    /// — no transcription, no Apple Speech — so it's crash-safe and SUPER FAST: a
+    /// few loud frames (~60ms) trips `onBarge`, which the voice engine uses to stop
+    /// her at once and open a real listening turn. Call when she begins speaking;
+    /// `stopBargeMonitor()` when she stops.
+    func startBargeMonitor() {
+        if bargeMonitoring { return }
+        bargeLoudFrames = 0
+        let input = bargeEngine.inputNode
+        input.removeTap(onBus: 0)
+        var fmt = input.inputFormat(forBus: 0)
+        if fmt.channelCount == 0 || fmt.sampleRate == 0 { bargeEngine.prepare(); fmt = input.inputFormat(forBus: 0) }
+        guard fmt.channelCount > 0, fmt.sampleRate > 0 else { return }
+        input.installTap(onBus: 0, bufferSize: 1024, format: fmt) { [weak self] buffer, _ in
+            self?.bargeInspect(buffer)
+        }
+        bargeEngine.prepare()
+        do { try bargeEngine.start() } catch { return }
+        bargeMonitoring = true
+    }
+
+    func stopBargeMonitor() {
+        guard bargeMonitoring else { return }
+        bargeEngine.inputNode.removeTap(onBus: 0)
+        bargeEngine.stop()
+        bargeMonitoring = false
+        bargeLoudFrames = 0
+    }
+
+    private nonisolated func bargeInspect(_ buffer: AVAudioPCMBuffer) {
+        guard let ch = buffer.floatChannelData?[0] else { return }
+        let n = Int(buffer.frameLength); if n == 0 { return }
+        var sum: Float = 0
+        for i in 0..<n { let s = ch[i]; sum += s * s }
+        let rms = sqrt(sum / Float(n))
+        Task { @MainActor [weak self] in self?.bargeConsider(rms: rms) }
+    }
+
+    private func bargeConsider(rms: Float) {
+        guard bargeMonitoring else { return }
+        if rms >= bargeGate {
+            bargeLoudFrames += 1
+            if bargeLoudFrames >= bargeFramesToTrip {
+                stopBargeMonitor()
+                onBarge?()          // → voice engine: stop speaking, listen NOW
+            }
+        } else {
+            bargeLoudFrames = 0     // require CONSECUTIVE loud frames (real speech, not a blip)
         }
     }
 

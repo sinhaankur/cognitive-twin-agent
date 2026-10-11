@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Scheduled Vera diagnostics. Hits the LIVE brain's /api/diagnose every 30 min,
+     which runs every check and appends one line to the day-to-day trend log
+     (~/Library/Logs/Vera/diagnostics.jsonl). Loopback only — it just pings the
+     brain already running on this Mac; nothing leaves the machine. So the trend
+     history builds itself from real usage, no action needed. Read it with:
+         python3 -m cognitive_twin.cli diagnose --trends
+     Paths (__VERA_HOME__ / __LOGDIR__) are filled in by install-diagnostics.sh. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sinhaankur.vera.diagnostics</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <!-- curl the local diagnose endpoint; it runs + logs inside the brain. A
+         short timeout + silent failure means a cold model never blocks the agent
+         (the run just records what it could reach). -->
+    <string>/usr/bin/curl -s -m 90 http://127.0.0.1:7878/api/diagnose >/dev/null 2>&1 || true</string>
+  </array>
+  <!-- every 30 minutes -->
+  <key>StartInterval</key>
+  <integer>1800</integer>
+  <!-- run once shortly after login too, for a fresh baseline -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Nice</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>__LOGDIR__/diagnostics.agent.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOGDIR__/diagnostics.agent.err.log</string>
+</dict>
+</plist>
