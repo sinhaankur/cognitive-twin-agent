@@ -39,10 +39,19 @@ default**. Nothing leaves your device unless you explicitly turn it on.
 ## 🗣️ Natural to talk to
 
 - **Voice in, voice out, the finished way** — your words appear live as you
-  speak; pause and the turn submits itself (endpointing); **speak over her and
-  she stops mid-word** (echo-safe barge-in — your interruption becomes your
-  next turn). Soft synthesized chimes mark listening start and end; the orb
-  punches on word onsets and sparkles with your sibilants.
+  speak; pause and the turn submits itself (snappy ~0.9s endpointing); a long,
+  continuous thought is **let to finish** (the turn ends when you actually pause,
+  not on a clock) instead of being chopped mid-sentence. Soft synthesized chimes
+  mark listening start and end; the orb punches on word onsets and sparkles with
+  your sibilants. If she doesn't catch something she says so ("didn't catch that
+  — still listening") rather than going silent.
+- **Interrupt her by just talking** — a fast, **self-calibrating barge-in**: while
+  she speaks, a tiny RMS-only monitor (no cloud, no Apple Speech — crash-safe)
+  listens *under* her voice. It ignores the first moment as her audio reaches the
+  mic, learns the ambient + her-own-bleed level, then yields the instant **you**
+  rise clearly above it — she stops mid-word and your interruption becomes your
+  next turn. Quick, smart, and it won't cut herself off on her own voice or room
+  noise.
 - **Or just type** — a clean chat panel; the keyboard always wins over the mic.
 - **She can see you — only if you ask** — a "See me" toggle. In the app it's
   Apple's Vision face landmarks, fully on-device: the preview shows only the
