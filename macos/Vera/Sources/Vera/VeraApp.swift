@@ -10,13 +10,19 @@ import AVFoundation
 @main
 struct VeraApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    // ONE settings surface. The old `Settings { EmptyView() }` scene registered a
-    // SECOND, BLANK settings window (opened by ⌘, / the app menu) alongside the
-    // real in-app settings window — "two different things open up, one is empty".
-    // Routing the system Settings command to the real window (AppDelegate.
-    // showSettings) means ⌘,, the menu, and the in-app gear ALL open the same,
-    // working settings. No empty twin.
+    // THERE IS EXACTLY ONE SETTINGS WINDOW — the real in-app one, owned by the
+    // AppDelegate. The old `Settings { EmptyView() }` scene registered a SECOND,
+    // BLANK settings window (opened by ⌘, / the app menu) — "two different things
+    // open up, one is empty." We do NOT declare a SwiftUI `Settings` scene at all,
+    // so SwiftUI can never spawn that empty twin. The App needs *a* scene, so we
+    // give it an empty, zero-window group; all real UI (orb, chat, settings) is
+    // AppKit windows the delegate manages. The ⌘, shortcut is handled in the
+    // delegate's own menu (see makeStatusItem), opening the one real window.
     var body: some Scene {
+        // Satisfy `App`'s scene requirement WITHOUT a settings window: the Settings
+        // scene is kept empty, but we REPLACE the system Settings command so ⌘, and
+        // the app menu open the ONE real window (AppDelegate.showSettings) instead
+        // of this empty scene. The empty scene itself is never opened by any command.
         Settings { EmptyView() }
             .commands {
                 CommandGroup(replacing: .appSettings) {
@@ -60,6 +66,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self   // so ⌘, / the menu open the real settings window
+        // KILL THE EMPTY TWIN AT THE SOURCE: SwiftUI's `Settings { EmptyView() }`
+        // scene can still spawn a blank "Vera Settings" window (⌘, reached it even
+        // after we replaced the command). Watch for ANY window becoming visible
+        // that is SwiftUI's settings window (blank, not ours) and close it the
+        // instant it appears, then open the real one. Guarantees exactly ONE.
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let w = note.object as? NSWindow else { return }
+                // our real window is titled "<name> — Settings"; the empty SwiftUI
+                // one is "Vera Settings" / "Settings". Close anything that's a
+                // settings window but NOT the one we manage.
+                if w !== self.settingsWindow {
+                    let t = w.title
+                    if t == "Vera Settings" || t == "Settings" || t.hasSuffix("Settings") && !t.contains("—") {
+                        w.close()
+                    }
+                }
+            }
+        }
         // one of her per device: if another copy is already running (e.g. a
         // second install), hand over to it and bow out — two Veras would fight
         // over the mic, the servers, and the orb
@@ -381,6 +408,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Open Settings as a real window (reliable from the borderless panel).
     private func showSettings() {
+        // BELT-AND-SUSPENDERS: close any stray settings window that isn't the one
+        // we manage (e.g. if SwiftUI ever spawned the empty scene window). Keeps
+        // the invariant "there is exactly ONE settings window, ours."
+        for win in NSApp.windows where win !== settingsWindow {
+            let t = win.title.lowercased()
+            if t.contains("settings") || t == "vera settings" {
+                win.close()
+            }
+        }
         if let w = settingsWindow {
             w.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
