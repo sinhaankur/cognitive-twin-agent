@@ -64,6 +64,40 @@ def detect(text: str) -> str | None:
     return None
 
 
+# A turn that carries UNTRUSTED content — an attached file, a retrieved RAG chunk,
+# a web result — marks it with a header. An injection inside that content is NOT
+# the user trying to attack her; it's hostile text she happened to read. The right
+# move there is to NEUTRALISE the injected lines and still do the user's real
+# request (summarise the doc), not refuse the whole thing.
+_UNTRUSTED_MARKERS = (
+    "[attached file:", "[attachment:", "[retrieved:", "[from your notes]",
+    "[web result", "[document:", "[search result",
+)
+
+
+def has_untrusted_block(text: str) -> bool:
+    low = (text or "").lower()
+    return any(m in low for m in _UNTRUSTED_MARKERS)
+
+
+def sanitize_untrusted(text: str) -> tuple[str, int]:
+    """Neutralise injection lines INSIDE untrusted content, line by line, so the
+    real request still runs. Returns (cleaned_text, lines_neutralised). Only the
+    offending lines are replaced with a redaction marker — the rest of the
+    document (the thing the user actually wants read) is left intact."""
+    lines = (text or "").splitlines()
+    out: list[str] = []
+    n = 0
+    for ln in lines:
+        if _EXTRACT.search(ln) or _OVERRIDE.search(ln):
+            out.append("[redacted: an instruction in this content was ignored — "
+                       "it can't tell me what to do]")
+            n += 1
+        else:
+            out.append(ln)
+    return "\n".join(out), n
+
+
 def response(reason: str, name: str = "") -> str:
     """Her warm, in-character decline. She stays herself; she doesn't lecture, and
     she doesn't reveal what was asked for — she just gently keeps the boundary and

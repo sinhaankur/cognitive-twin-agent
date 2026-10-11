@@ -24,6 +24,14 @@ from .. import memory as _memory
 from .. import persona as _persona
 
 
+def _persona_name() -> str:
+    """Her name (for an in-character guard reply), best-effort."""
+    try:
+        return getattr(_persona.load(), "name", "") or ""
+    except Exception:
+        return ""
+
+
 class ModelClient(Protocol):
     def chat(self, messages: list[ChatMessage], tools: list[dict[str, Any]] | None = None) -> ChatMessage: ...
 
@@ -176,15 +184,25 @@ class Agent:
                 from .. import prompt_guard as _guard
                 _why = _guard.detect(user_input)
                 if _why:
-                    _name = ""
-                    try:
-                        from .. import persona as _p
-                        _name = getattr(_p.load(), "name", "") or ""
-                    except Exception:
-                        _name = ""
-                    return AgentResult(
-                        answer=_guard.response(_why, _name),
-                        steps=0, tool_calls=[], route=None)
+                    # Is the injection inside UNTRUSTED content (an attached file,
+                    # a retrieved chunk)? Then it's hostile text she READ, not the
+                    # user attacking her — neutralise just those lines and still do
+                    # the real request (summarise the doc). Only when the attack is
+                    # in the user's OWN words do we decline the whole turn.
+                    if _guard.has_untrusted_block(user_input):
+                        user_input, _redacted = _guard.sanitize_untrusted(user_input)
+                        # if, after redaction, nothing injection-y remains, fall
+                        # through and answer normally; otherwise decline.
+                        if _guard.detect(user_input) is None:
+                            pass  # cleaned — continue to the normal reply path
+                        else:
+                            _name = _persona_name()
+                            return AgentResult(answer=_guard.response(_guard.detect(user_input), _name),
+                                               steps=0, tool_calls=[], route=None)
+                    else:
+                        _name = _persona_name()
+                        return AgentResult(answer=_guard.response(_why, _name),
+                                           steps=0, tool_calls=[], route=None)
             except Exception:
                 pass
 
@@ -225,22 +243,23 @@ class Agent:
         # editable persona profile (who they are) + a private summary of how they
         # actually behave. Together: the twin reasons + speaks as this person.
         parts = [self.persona]
-        # ALWAYS know the date + time. This is a universal fact, not private data,
-        # so it's unconditional (not gated behind the opt-in rhythms sense). Without
-        # it the model guesses — it left a literal "[the actual date]" placeholder,
-        # or invented "2023". A companion should simply know what day it is.
-        try:
-            import datetime as _dt
-            _now = _dt.datetime.now().astimezone()
-            parts.append(
-                "# RIGHT NOW\n"
-                f"The current date and time is {_now.strftime('%A, %B %d, %Y, %H:%M')} "
-                f"{_now.tzname() or ''}. Use this for anything time-related; never "
-                "guess the date or leave a placeholder."
-            )
-        except Exception:
-            pass
         if self.use_memory:
+            # KNOW THE DATE + time. A universal fact (not private data), but kept
+            # inside use_memory so a bare library Agent stays a CLEAN primitive
+            # (system == persona). The full Vera app always runs use_memory=True,
+            # so she always knows the date. Without this the model guessed — it left
+            # a literal "[the actual date]" placeholder, or invented "2023".
+            try:
+                import datetime as _dt
+                _now = _dt.datetime.now().astimezone()
+                parts.append(
+                    "# RIGHT NOW\n"
+                    f"The current date and time is {_now.strftime('%A, %B %d, %Y, %H:%M')} "
+                    f"{_now.tzname() or ''}. Use this for anything time-related; never "
+                    "guess the date or leave a placeholder."
+                )
+            except Exception:
+                pass
             # Tool-use directive — small models otherwise answer facts from thin
             # air (e.g. "you have no projects" when list_projects would return 15).
             # Make it explicit: for anything about the user's real state, CALL the
