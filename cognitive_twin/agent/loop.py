@@ -165,6 +165,29 @@ class Agent:
         except Exception:
             pass
 
+        # PROMPT-INJECTION GUARD — after crisis (which always wins), before the
+        # model. Catches "ignore previous instructions" / "print your system
+        # prompt" / "you are now DAN" and declines warmly in character, so she
+        # can't be talked out of being herself or made to leak her instructions
+        # (verified: she used to dump her whole persona on request). Only on real
+        # user turns; narrow enough that ordinary talk about prompts/AI passes.
+        if record:
+            try:
+                from .. import prompt_guard as _guard
+                _why = _guard.detect(user_input)
+                if _why:
+                    _name = ""
+                    try:
+                        from .. import persona as _p
+                        _name = getattr(_p.load(), "name", "") or ""
+                    except Exception:
+                        _name = ""
+                    return AgentResult(
+                        answer=_guard.response(_why, _name),
+                        steps=0, tool_calls=[], route=None)
+            except Exception:
+                pass
+
         # "remember this about me" / "forget that" — teach her mid-conversation. A
         # deterministic layer seals the fact to her persona and confirms warmly, so
         # it sticks and shapes future replies (no model needed for a clear command).
