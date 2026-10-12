@@ -243,6 +243,9 @@ class Agent:
         # editable persona profile (who they are) + a private summary of how they
         # actually behave. Together: the twin reasons + speaks as this person.
         parts = [self.persona]
+        # the live felt read, defaulted here so it's always in scope (the history-
+        # window trim below uses it even when use_memory is off).
+        _felt_label = ""
         if self.use_memory:
             # KNOW THE DATE + time. A universal fact (not private data), but kept
             # inside use_memory so a bare library Agent stays a CLEAN primitive
@@ -496,9 +499,18 @@ class Agent:
         # said and short follow-ups make sense ("now try", "and the travel?").
         # Without this every turn was isolated — the "it doesn't see what I said"
         # bug. Capped to history_turns so the prompt stays small (low CPU/RAM).
+        #
+        # PRESENCE on a heavy moment: in grief/tenderness, trailing chatter about
+        # the cat or a task pulls her off — she'd reference "the cat's name is
+        # Mochi" mid-heartache. So on an emotional turn we keep only the LAST turn
+        # of history (just enough for a direct follow-up), letting the feeling +
+        # her person lead instead of unrelated recent talk. Neutral turns keep the
+        # full window for normal continuity.
+        _emotional = _felt_label in ("heavy", "tender")
+        _hist_window = 2 if _emotional else (self.history_turns * 2)
         messages: list[ChatMessage] = [ChatMessage(role="system", content=system_content)]
         if self.history:
-            messages.extend(self.history[-(self.history_turns * 2):])
+            messages.extend(self.history[-_hist_window:])
         messages.append(ChatMessage(role="user", content=user_input))
         # Local models choke when handed all ~60 tools at once — they get
         # decision paralysis and call NOTHING (the "you have no projects" bug even
