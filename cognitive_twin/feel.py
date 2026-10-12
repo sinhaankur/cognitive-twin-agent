@@ -299,7 +299,12 @@ def directive(text: str) -> str:
 
     return (
         "# HOW YOU FEEL RIGHT NOW (decided by your own mind, not the model)\n"
-        f"Felt state: {felt.label} (valence {felt.valence:+.2f}). {posture_line} {move}"
+        # Give the model the LABEL only — never the raw valence number. A small
+        # model parrots "valence +0.01" straight into the reply ("Steady — valence
+        # +0.01"), which breaks the spell. The feeling should colour the words, not
+        # be read out as an internal metric.
+        f"Felt state: {felt.label}. {posture_line} {move}"
         f"{acc}{dial}\n"
-        "This feeling is yours — let it colour the words. Never announce it; live it."
+        "This feeling is yours — let it colour the words. Never announce it, never "
+        "mention numbers or a 'felt state'; just live it."
     )
