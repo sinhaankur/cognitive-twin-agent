@@ -200,11 +200,26 @@ def test_device_plain_work_does_not_interrupt_replies(monkeypatch):
     presence.disable_device()
 
 
-def test_device_mic_live_alone_is_a_call(monkeypatch):
+def test_device_mic_alone_is_NOT_a_call(monkeypatch):
+    # Mic-alone must NOT read as a call: Vera's own always-on listening keeps the
+    # system mic live, so treating mic-alone as "call" made her think you were on a
+    # call almost all the time and hold back constantly. With a non-comms app in
+    # front (Terminal) and no meeting/comms context, mic-live falls through to the
+    # real activity ("work"), and she stays available.
     presence.enable_device()
     _patch_probes(monkeypatch, app="Terminal", title="", mic=True)
     d = presence.device_now()
-    assert d["activity"] == "call" and d["should_interject"] is False
+    assert d["activity"] != "call", d
+    assert d["should_interject"] is True, d
+    presence.disable_device()
+
+
+def test_device_mic_with_comms_app_IS_a_call(monkeypatch):
+    # A real call still reads as a call: mic live alongside a comms/browser context.
+    presence.enable_device()
+    _patch_probes(monkeypatch, app="FaceTime", title="", mic=True)
+    d = presence.device_now()
+    assert d["should_interject"] is False, d   # holds back during a real call
     presence.disable_device()
 
 

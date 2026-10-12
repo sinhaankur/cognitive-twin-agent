@@ -292,9 +292,13 @@ def device_now() -> dict[str, Any]:
                 if mic else out("meeting", False, 0.7, f"{app} is in front — a call may be running"))
     if mic and (is_browser or app in _COMMS_APPS):
         return out("call", False, 0.75, "your mic is live — sounds like you're talking to someone")
-    if mic:
-        return out("call", False, 0.55, "your mic is live — I'll wait")
-    # 2) VIDEO — you're watching; keep it short (but don't go silent)
+    # NOTE: mic-alone is NOT treated as a call. Vera's own always-on listening
+    # keeps the system mic live, so "mic live" with no comms/browser context would
+    # make her think you're on a call almost all the time (false positive) and hold
+    # back constantly. A real call shows up via a comms app (above) or a meeting
+    # tab; mic-alone falls through to the real activity (video / work) below.
+    # 2) VIDEO — you're watching; keep it short (but don't go silent). Checked
+    # BEFORE the mic so a movie with her listening still reads as "video".
     if app in _VIDEO_APPS or (is_browser and _tab_hits(title, _VIDEO_TABS)):
         return out("video", True, 0.7, "you're watching something — I'll keep it brief")
     # 3) MUSIC — ambient; fine to talk
