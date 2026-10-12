@@ -47,6 +47,14 @@ control.set_confirm(_voice_confirm)
 _playback_lock = threading.Lock()
 _playback_proc: Any = None
 
+# Serialize LLM inference. The server is threaded (so health/voice/etc. stay
+# responsive), but there's ONE local model — firing several generations at it at
+# once (a burst of asks) stampedes Ollama and can drop the connection / take the
+# brain down under load. This lock makes concurrent /api/ask calls QUEUE: each
+# waits its turn, the model does one generation at a time (which is all it can
+# really do anyway), and a burst degrades to "a bit slower" instead of a crash.
+_llm_lock = threading.Lock()
+
 
 def _play_wav_bytes(wav: bytes) -> None:
     """Play WAV bytes on this machine via macOS `afplay`, fire-and-forget so the
@@ -749,7 +757,8 @@ class _Handler(BaseHTTPRequestHandler):
             not_you = data.get("is_you") is False
             record = (not internal) and (not not_you)
             try:
-                answer, route = _run_once_capture(agent, text, record=record)
+                with _llm_lock:   # one generation at a time — a burst queues, not crashes
+                    answer, route = _run_once_capture(agent, text, record=record)
             except Exception as e:  # never 500 the UI on an agent hiccup
                 self._json(200, {"answer": _llm_error_message(e), "route": None})
                 return
@@ -777,9 +786,10 @@ class _Handler(BaseHTTPRequestHandler):
                 except (BrokenPipeError, ConnectionResetError):
                     raise
             try:
-                answer, route = _run_once_capture(
-                    agent, text, record=not internal,
-                    on_delta=lambda d: _send({"delta": d}))
+                with _llm_lock:   # serialize generation (burst-safe)
+                    answer, route = _run_once_capture(
+                        agent, text, record=not internal,
+                        on_delta=lambda d: _send({"delta": d}))
                 _send({"done": True, "answer": answer, "route": route})
             except (BrokenPipeError, ConnectionResetError):
                 pass                        # client went away mid-stream
