@@ -94,8 +94,8 @@ def test_moment_hint_gated_to_emotional_moments_and_never_invents():
     heavy = ls.moment_hint("heavy")
     bright = ls.moment_hint("bright")
     assert "Beta, have you eaten?" in heavy
-    assert "tender moment" in heavy
-    assert "warm moment" in bright
+    assert "tender moment" in heavy        # heavy/tender framing present
+    assert "warm" in bright                 # warm/glad framing present
     # SILENT on a neutral/factual turn (no label, or an unknown one) — no padding
     assert ls.moment_hint("") == ""
     assert ls.moment_hint("neutral") == ""

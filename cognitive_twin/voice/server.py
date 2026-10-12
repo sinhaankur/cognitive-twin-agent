@@ -329,6 +329,24 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(200, {"enabled": _health.is_enabled(),
                              "summary": _health.load(),
                              "status": _health.status()})
+        elif self.path == "/api/lifestory":
+            # The loved one's life — people, places, the things they always said,
+            # stories, small loves — captured on-device (sealed). The in-app
+            # "Remember them…" interview reads this to show what's held + what's
+            # still blank, and the sayings/stories are what make her sound like
+            # THEM. Local only; nothing leaves the machine.
+            from .. import life_story as _ls
+            ls = _ls.load()
+            self._json(200, {
+                "people": [{"name": p.name, "relation": p.relation, "note": p.note} for p in ls.people],
+                "places": list(ls.places),
+                "sayings": list(ls.sayings),
+                "stories": [{"title": s.title, "text": s.text, "when": s.when} for s in ls.stories],
+                "loves": list(ls.loves),
+                "dates": list(ls.dates),
+                "empty": ls.is_empty(),
+                "status": _ls.status(),
+            })
         elif self.path == "/api/persona":
             # WHO she is right now — the editable persona name + a short bio. The
             # app's Settings reads this so the user can switch/rename her (Anita →
@@ -891,6 +909,46 @@ class _Handler(BaseHTTPRequestHandler):
             fact = (data.get("fact") or "").strip()
             n = vp.remember(fact) if fact else len(vp.custom_facts())
             self._json(200, {"ok": bool(fact), "count": n})
+        elif self.path == "/api/lifestory/add":
+            # The in-app "Remember them…" interview saves one piece of the loved
+            # one's life at a time: a person, a place, a saying, a love, or a story.
+            # Each is sealed on-device immediately (so a session can stop anywhere
+            # and nothing is lost), and we return the fresh status so the app can
+            # show the tally grow. `kind` dispatches to the right life_story.add_*.
+            from .. import life_story as _ls
+            data = self._read_json()
+            kind = (data.get("kind") or "").strip().lower()
+            ok = True
+            try:
+                if kind == "person":
+                    name = (data.get("name") or "").strip()
+                    if not name:
+                        ok = False
+                    else:
+                        _ls.add_person(name, (data.get("relation") or "").strip(),
+                                       (data.get("note") or "").strip())
+                elif kind == "place":
+                    t = (data.get("text") or "").strip()
+                    ok = len(t) >= 2 and (_ls.add_place(t) or True)
+                elif kind == "saying":
+                    t = (data.get("text") or "").strip()
+                    ok = len(t) >= 2 and (_ls.add_saying(t) or True)
+                elif kind == "love":
+                    t = (data.get("text") or "").strip()
+                    ok = len(t) >= 2 and (_ls.add_love(t) or True)
+                elif kind == "story":
+                    title = (data.get("title") or "").strip()
+                    text = (data.get("text") or "").strip()
+                    if not text:
+                        ok = False
+                    else:
+                        _ls.add_story(title, text, (data.get("when") or "").strip())
+                else:
+                    ok = False
+            except Exception as e:  # never 500 the interview — report + keep going
+                self._json(200, {"ok": False, "error": str(e), "status": _ls.status()})
+                return
+            self._json(200, {"ok": ok, "status": _ls.status()})
         elif self.path == "/api/activity":
             # control device-activity learning + privacy. action: enable|disable|
             # private|resume|snooze|sample|clear

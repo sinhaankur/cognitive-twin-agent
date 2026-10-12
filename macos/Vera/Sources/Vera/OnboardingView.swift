@@ -46,6 +46,16 @@ struct OnboardingView: View {
             .foregroundStyle(.secondary)
 
             HStack {
+                // The deepest first step, offered gently — jump straight into
+                // telling her who they were. Also finishes onboarding.
+                Button {
+                    let n = name.trimmingCharacters(in: .whitespaces)
+                    if !n.isEmpty { model.assistantName = n }
+                    done()
+                    model.openRemember?()
+                } label: {
+                    Label("Remember them now", systemImage: "heart.text.square")
+                }
                 Spacer()
                 Button("Start") {
                     let n = name.trimmingCharacters(in: .whitespaces)

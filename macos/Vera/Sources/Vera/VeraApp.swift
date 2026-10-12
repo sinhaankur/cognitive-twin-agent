@@ -53,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var voiceLearnWindow: NSWindow?
     private var brainWindow: NSWindow?
+    private var rememberWindow: NSWindow?   // "Remember them…" — the life-story interview
     private var eyeWindow: NSWindow?     // her opt-in eye (small, always visible while on)
     private var statusItem: NSStatusItem?
     private var privacyItem: NSMenuItem?
@@ -101,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)   // background app, NO Dock icon
         model.openSettings = { [weak self] in self?.showSettings() }
         model.openVoiceLearn = { [weak self] in self?.showVoiceLearn() }
+        model.openRemember = { [weak self] in self?.showRemember() }
         model.toggleEye = { [weak self] in self?.toggleEye() }
         makeStatusItem()                         // menu-bar icon (like battery) — shows she's active
         makeOrbWindow()
@@ -208,6 +210,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = NSMenuItem(title: "Settings…", action: #selector(menuSettings), keyEquivalent: ",")
         settings.image = symbol("gearshape")
         settings.target = self; menu.addItem(settings)
+        let remember = NSMenuItem(title: "Remember them…", action: #selector(menuRemember), keyEquivalent: "")
+        remember.image = symbol("heart.text.square")
+        remember.target = self; menu.addItem(remember)
         let voice = NSMenuItem(title: "Teach her a voice…", action: #selector(menuVoice), keyEquivalent: "")
         voice.image = symbol("waveform")
         voice.target = self; menu.addItem(voice)
@@ -246,6 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func menuChat() { toggleChat() }
     @objc private func menuSettings() { showSettings() }
     @objc private func menuVoice() { showVoiceLearn() }
+    @objc private func menuRemember() { showRemember() }
     @objc private func menuBrain() { showBrain() }
     @objc private func menuEye() { toggleEye() }
     @objc private func menuEar() {
@@ -406,6 +412,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         brainWindow = w
     }
 
+    /// Open "Remember them…" — the gentle in-app interview that teaches her who
+    /// the loved one was (their sayings, stories, the things that make her feel
+    /// like them). The deepest part of the app, now findable, not CLI-only.
+    private func showRemember() {
+        if let w = rememberWindow {
+            w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return
+        }
+        let host = NSHostingController(rootView: RememberView().environmentObject(model))
+        let w = NSWindow(contentViewController: host)
+        w.styleMask = [.titled, .closable]
+        w.title = "Remember them"
+        w.isReleasedWhenClosed = false
+        w.setContentSize(NSSize(width: 520, height: 560))
+        w.center(); w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        rememberWindow = w
+    }
+
     /// Open Settings as a real window (reliable from the borderless panel).
     private func showSettings() {
         // BELT-AND-SUSPENDERS: close any stray settings window that isn't the one
@@ -559,6 +582,18 @@ final class AppModel: ObservableObject {
     func addVoice(person: String, text: String) async -> Int {
         await agent.addVoice(person: person, text: text)
     }
+
+    /// Save one piece of the loved one's life (Remember them… interview). Returns
+    /// the fresh tally line, or nil. Sealed on-device.
+    func addLifeStory(_ payload: [String: String]) async -> String? {
+        await agent.addLifeStory(payload)
+    }
+    /// The loved one's life so far — the running tally for the interview.
+    func lifeStoryStatus() async -> String? {
+        await agent.lifeStoryStatus()
+    }
+    /// Opened from the menu / onboarding — the in-app bond-building interview.
+    var openRemember: (() -> Void)?
 
     /// The user renamed their twin — persist it into the persona so the agent
     /// also refers to itself by the new name. (assistantName already persists to

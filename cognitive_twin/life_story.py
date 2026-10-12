@@ -157,12 +157,21 @@ def moment_hint(label: str = "") -> str:
     if not ls.sayings or label not in _HINT_MOMENTS:
         return ""
     quoted = "; ".join(f"“{s}”" for s in ls.sayings[:8])
-    mood = (" A tender moment — if one of her gentler phrases fits, let it come through."
+    # This is the heart of the whole product — in a tender moment, HER actual words
+    # are what make a reply land as "that's exactly how she'd say it." A small model
+    # treats a soft "may fit" as optional and drops it, so we make it a clear, high-
+    # priority instruction: in THIS emotional moment, work ONE of her real phrases
+    # in, naturally. Still never invents, never more than one, never forces it onto
+    # a turn that truly can't hold it — but the default is to let her voice through.
+    mood = (" This is a heavy, tender moment — exactly when her own gentle words "
+            "comfort most."
             if label in ("heavy", "tender")
-            else " A warm moment — a familiar, glad phrase of hers may fit.")
+            else " This is a warm, glad moment — a familiar phrase of hers fits here.")
     return (
-        "HER real phrases (use at most one, only if it lands — never force it, "
-        "never invent one): " + quoted + "." + mood
+        "IMPORTANT — speak in HER voice now. Weave ONE of her real phrases into your "
+        "reply, naturally (not as a quote dump), because it's what makes this feel "
+        "like truly her. Use at most one; never invent a phrase; only skip it if it "
+        "genuinely cannot fit. Her phrases: " + quoted + "." + mood
     )
 
 

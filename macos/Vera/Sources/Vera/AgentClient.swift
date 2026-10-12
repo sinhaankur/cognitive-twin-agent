@@ -365,6 +365,34 @@ final class AgentClient {
         _ = try? await URLSession.shared.data(for: req)
     }
 
+    /// POST /api/lifestory/add — save one piece of the loved one's life (a person,
+    /// place, saying, love, or story). Returns the fresh status line (the tally),
+    /// or nil on failure. This is what the in-app "Remember them…" interview calls.
+    func addLifeStory(_ payload: [String: String]) async -> String? {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/lifestory/add"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        req.timeoutInterval = 8
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return obj["status"] as? String
+        } catch { return nil }
+    }
+
+    /// GET /api/lifestory — the loved one's life so far (used for the running tally
+    /// in the Remember interview). Returns the status summary, or nil.
+    func lifeStoryStatus() async -> String? {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/lifestory"))
+        req.timeoutInterval = 6
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return obj["status"] as? String
+        } catch { return nil }
+    }
+
     /// POST /api/voice/clone — set a recording as the cloned voice (by file path).
     func setVoiceClone(path: String, person: String) async -> Bool {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/voice/clone"))
