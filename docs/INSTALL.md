@@ -66,3 +66,42 @@ Developer account — see [ICLOUD-SYNC.md](./ICLOUD-SYNC.md).
 
 Everything is on-device and private by design. If you hit a snag, the
 [README](../README.md) has the deeper detail.
+
+## The dashboard — run it on any computer you own (macOS / Windows / Linux)
+
+Vera's settings & control panel is a small web app. The same page runs on every
+platform, and reads one shared design system (`cognitive_twin/design/tokens.json`)
+so it looks identical everywhere. It's **private by default** (binds `127.0.0.1`).
+
+Launch it directly (no install needed):
+
+```
+python3 -m cognitive_twin.dashboard            # → http://127.0.0.1:8677/settings
+python3 -m cognitive_twin.dashboard --port 9000
+python3 -m cognitive_twin.dashboard --host 0.0.0.0   # reach it over your tailnet
+```
+
+Or, once the package is installed (`pip install -e .`), as a registered command:
+`vera-dashboard`.
+
+### Keep it running — register it as a service (WatchTower-style)
+
+`vera-service` installs the right native, **rootless** service for your OS so the
+dashboard auto-starts and relaunches if it dies:
+
+| OS | What it registers |
+|----|-------------------|
+| macOS | launchd LaunchAgent (`KeepAlive`) |
+| Linux | systemd `--user` unit (`Restart=always`) |
+| Windows | Scheduled Task at logon |
+
+```
+vera-service install                 # localhost only
+vera-service install --host 0.0.0.0  # also reachable over Tailscale
+vera-service status
+vera-service uninstall
+```
+
+On the Linux home server, run `loginctl enable-linger $USER` so it survives logout.
+To reach it from your phone over Tailscale, use the machine's **tailnet name**
+(ends in `.ts.net`) — iOS blocks raw `100.x` addresses.

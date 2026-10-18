@@ -425,10 +425,15 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
 
-def serve(port: int = DEFAULT_PORT, *, open_browser: bool = True) -> None:
-    httpd = ThreadingHTTPServer((HOST, port), _Handler)
-    url = f"http://{HOST}:{port}"
+def serve(port: int = DEFAULT_PORT, *, open_browser: bool = True, host: str = HOST) -> None:
+    httpd = ThreadingHTTPServer((host, port), _Handler)
+    # Show a reachable URL: 0.0.0.0 isn't dialable, so point at loopback for the
+    # local link (over Tailscale you'd use the machine's tailnet name).
+    shown = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    url = f"http://{shown}:{port}"
     print(f"Your life dashboard: {url}  (Ctrl-C to stop)")
+    if host in ("0.0.0.0", "::"):
+        print(f"  bound on {host} — reachable over your tailnet by this machine's Tailscale name")
     if open_browser:
         try:
             webbrowser.open(url)
@@ -442,11 +447,28 @@ def serve(port: int = DEFAULT_PORT, *, open_browser: bool = True) -> None:
 
 
 def _main(argv: list[str]) -> int:
+    import os
     port = DEFAULT_PORT
     if "--port" in argv:
         port = int(argv[argv.index("--port") + 1])
-    serve(port, open_browser="--no-open" not in argv)
+    elif os.environ.get("VERA_DASH_PORT"):
+        port = int(os.environ["VERA_DASH_PORT"])
+    # --host lets the dashboard bind beyond localhost (e.g. 0.0.0.0 to reach it
+    # from another device over Tailscale on the Linux home server). Defaults to
+    # 127.0.0.1 — private by default on every platform.
+    host = HOST
+    if "--host" in argv:
+        host = argv[argv.index("--host") + 1]
+    elif os.environ.get("VERA_DASH_HOST"):
+        host = os.environ["VERA_DASH_HOST"]
+    serve(port, open_browser="--no-open" not in argv, host=host)
     return 0
+
+
+def _entry() -> int:
+    """Console-script entry point (`vera-dashboard`), registered via pyproject."""
+    import sys
+    return _main(sys.argv[1:])
 
 
 if __name__ == "__main__":

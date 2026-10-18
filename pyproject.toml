@@ -30,6 +30,13 @@ dev = ["pytest>=7"]
 
 [project.scripts]
 ctwin = "cognitive_twin.cli:main"
+# The settings/control dashboard as a real registered command (every OS), so it
+# can be launched as `vera-dashboard` and registered as a service. Install with
+# `pip install -e .`.
+vera-dashboard = "cognitive_twin.dashboard:_entry"
+# Cross-platform service installer (launchd / systemd / Scheduled Task) — the
+# WatchTower-style "run it on any box you own, reach it over Tailscale" launcher.
+vera-service = "cognitive_twin.service:main"
 
 [project.urls]
 Homepage = "https://www.sinhaankur.com"
