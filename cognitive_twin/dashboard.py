@@ -171,6 +171,179 @@ load();setInterval(load,15000);
 </script></body></html>"""
 
 
+# ── NEW: Tailscale-quality settings (side-by-side at /settings; reference impl for
+#    every platform). Renders purely from controls.snapshot() — tabs, groups,
+#    toggles, typed-confirm for danger rows. Current "/" dashboard is untouched. ──
+SETTINGS_PAGE = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vera — Settings</title>
+<style>
+:root{
+ --bg:#f6f6f5;--panel:#fff;--ink:#1a1a19;--muted:#6b6b66;--line:#ececea;
+ --accent:#10a37f;--accent-ink:#0a7f63;--accent-soft:#e8f7f1;
+ --warn:#b06a00;--warn-soft:#fdf3e3;--danger:#c0392b;--danger-soft:#fbeceb;
+ --radius:12px;--shadow:0 1px 2px rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme:dark){:root{
+ --bg:#17171a;--panel:#1f1f23;--ink:#ededed;--muted:#9b9b9b;--line:#2c2c31;
+ --accent:#3ecf8e;--accent-ink:#3ecf8e;--accent-soft:#16342a;
+ --warn:#e0a44a;--warn-soft:#2e2615;--danger:#e06a5e;--danger-soft:#2e1a18;
+ --shadow:0 1px 2px rgba(0,0,0,.3);
+}}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);
+ font:15px/1.5 -apple-system,"Inter","Segoe UI",system-ui,sans-serif;
+ -webkit-font-smoothing:antialiased;padding:34px 16px 70px;min-height:100vh}
+.wrap{max-width:640px;margin:0 auto}
+.title{font-size:20px;font-weight:650;letter-spacing:-.01em;text-align:center}
+.sub{color:var(--muted);font-size:12.5px;text-align:center;margin:3px 0 20px}
+.tabs{display:flex;gap:4px;justify-content:center;margin-bottom:22px}
+.tabs button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:13.5px;
+ font-weight:550;padding:7px 15px;border-radius:9px;cursor:pointer;display:flex;align-items:center;gap:6px}
+.tabs button.sel{background:var(--panel);color:var(--ink);box-shadow:var(--shadow);border:1px solid var(--line)}
+.group{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+ font-weight:600;margin:20px 4px 8px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+ overflow:hidden;box-shadow:var(--shadow)}
+.row{display:flex;align-items:center;gap:14px;padding:13px 16px;border-top:1px solid var(--line)}
+.row:first-child{border-top:none}
+.row .meta{flex:1;min-width:0}
+.row .label{font-weight:550;font-size:14.5px}
+.row .desc{color:var(--muted);font-size:12.5px;margin-top:2px}
+.row.off .label{color:var(--muted)}
+.row.na{opacity:.55}
+.badge{font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:6px;
+ margin-left:7px;vertical-align:1px;border:1px solid var(--line);color:var(--muted)}
+.badge.danger{color:var(--danger);border-color:transparent;background:var(--danger-soft)}
+.badge.on{color:var(--accent-ink);border-color:transparent;background:var(--accent-soft)}
+.manage{font-size:12.5px;color:var(--accent-ink);background:transparent;border:1px solid var(--line);
+ border-radius:8px;padding:5px 11px;cursor:pointer;font-weight:550}
+.sw{position:relative;width:42px;height:25px;flex:none}
+.sw input{opacity:0;width:0;height:0}
+.slider{position:absolute;inset:0;cursor:pointer;background:var(--line);border-radius:25px;transition:.18s}
+.slider::before{content:"";position:absolute;height:19px;width:19px;left:3px;top:3px;background:#fff;
+ border-radius:50%;transition:.18s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+input:checked+.slider{background:var(--accent)}
+input:checked+.slider::before{transform:translateX(17px)}
+input:disabled+.slider{cursor:not-allowed;opacity:.45}
+.ro{font-size:12px;color:var(--muted)}
+.about .card{padding:18px}
+.about .appname{font-size:16px;font-weight:650}
+.about .ver{color:var(--muted);font-size:13px;margin-top:2px}
+.about .line{display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line);font-size:13.5px}
+.about .line:first-of-type{border-top:0;margin-top:8px}
+dialog{border:1px solid var(--line);border-radius:var(--radius);padding:0;background:var(--panel);
+ color:var(--ink);max-width:400px;box-shadow:0 12px 44px rgba(0,0,0,.28)}
+dialog::backdrop{background:rgba(0,0,0,.35)}
+dialog .pad{padding:20px}dialog h3{font-size:16px;margin-bottom:7px}
+dialog input[type=text]{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;
+ background:var(--bg);color:var(--ink);font:inherit;margin-top:10px}
+.btnrow{display:flex;gap:9px;justify-content:flex-end;margin-top:16px}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--ink);border-radius:8px;padding:8px 13px;font:inherit;cursor:pointer}
+button.primary{background:var(--accent);border:1px solid var(--accent);color:#fff;border-radius:8px;padding:8px 13px;font:inherit;font-weight:550;cursor:pointer}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel);
+ border:1px solid var(--line);padding:10px 16px;border-radius:10px;font-size:13px;opacity:0;
+ transition:.22s;pointer-events:none;box-shadow:var(--shadow)}
+#toast.show{opacity:1}#toast.err{border-color:var(--danger);color:var(--danger)}
+.foot{color:var(--muted);font-size:11.5px;text-align:center;margin-top:26px}
+.foot a{color:var(--accent-ink)}
+</style></head><body>
+<div class="wrap">
+  <div class="title">Vera</div>
+  <div class="sub">On-device · nothing here has left your Mac</div>
+  <div class="tabs" id="tabs">
+    <button data-tab="Settings" class="sel">Settings</button>
+    <button data-tab="Connections">Connections</button>
+    <button data-tab="About">About</button>
+  </div>
+  <div id="view"></div>
+  <div class="foot">Same settings, every device. <a href="/">Classic view</a></div>
+</div>
+<dialog id="confirmDlg"><div class="pad">
+  <h3 id="cfTitle">Confirm</h3>
+  <p id="cfMsg" class="ro"></p>
+  <input type="text" id="cfInput" placeholder="type ON to confirm" autocomplete="off">
+  <div class="btnrow"><button class="ghost" id="cfCancel">Cancel</button><button class="primary" id="cfOk">Enable</button></div>
+</div></dialog>
+<div id="toast"></div>
+<script>
+const $=s=>document.querySelector(s);
+const toastEl=$("#toast");
+function toast(m,e){toastEl.textContent=m;toastEl.className="show"+(e?" err":"");setTimeout(()=>toastEl.className="",2200)}
+let CONTROLS=[],TAB="Settings",pendingConfirm=null;
+
+async function load(){
+  const d=await fetch("/api/controls").then(r=>r.json()).catch(()=>({controls:[]}));
+  CONTROLS=d.controls||[];render();
+}
+function render(){
+  const view=$("#view");
+  if(TAB==="About")return renderAbout(view);
+  const inTab=CONTROLS.filter(c=>(c.tab||"Settings")===TAB);
+  if(!inTab.length){view.innerHTML='<div class="card" style="padding:18px" class="ro">Nothing here yet.</div>';return}
+  // group within the tab, preserving first-seen order
+  const groups=[];const byG={};
+  for(const c of inTab){if(!byG[c.group]){byG[c.group]=[];groups.push(c.group)}byG[c.group].push(c)}
+  view.innerHTML=groups.map(g=>{
+    const rows=byG[g].map(rowHTML).join("");
+    return `<div class="group">${g}</div><div class="card">${rows}</div>`;
+  }).join("");
+  // wire toggles
+  view.querySelectorAll("input[type=checkbox]").forEach(inp=>{
+    inp.addEventListener("change",()=>onToggle(inp));
+  });
+}
+function rowHTML(c){
+  const na=!c.available;
+  const cls="row"+(c.on?"":" off")+(na?" na":"");
+  let right;
+  if(c.type==="readonly"){
+    right=`<span class="ro">${c.on?"Connected":"—"}</span>`;
+  }else{
+    right=`<label class="sw"><input type="checkbox" data-key="${c.key}" data-confirm="${c.confirm?encodeURIComponent(c.confirm):""}" data-danger="${c.danger?1:0}" ${c.on?"checked":""} ${na?"disabled":""}><span class="slider"></span></label>`;
+  }
+  const badge=c.danger?'<span class="badge danger">needs care</span>':(c.on&&c.type!=="readonly"?'<span class="badge on">on</span>':"");
+  return `<div class="${cls}"><div class="meta"><div class="label">${c.label}${badge}</div><div class="desc">${c.description||""}</div></div>${right}</div>`;
+}
+function renderAbout(view){
+  const conn=CONTROLS.filter(c=>c.type==="readonly");
+  const lines=conn.map(c=>`<div class="line"><span>${c.label}</span><span class="ro">${c.on?"✓ connected":"—"}</span></div>`).join("");
+  view.className="about";view.innerHTML=
+    `<div class="card"><div class="appname">Vera</div><div class="ver">Cognitive twin · on-device · ${CONTROLS.length} controls</div>${lines}</div>`;
+}
+async function setControl(key,on){
+  const r=await fetch("/api/controls/set",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({key,on,confirmed:true})}).then(r=>r.json()).catch(()=>({error:"network error"}));
+  if(r.error){toast(r.error,true);load()}else{toast(`${r.label}: ${r.on?"on":"off"}`);load()}
+}
+function onToggle(inp){
+  const key=inp.dataset.key,on=inp.checked;
+  const confirm=inp.dataset.confirm?decodeURIComponent(inp.dataset.confirm):"";
+  if(on&&confirm){ // dangerous ON → typed confirmation
+    inp.checked=false; // revert visually until confirmed
+    pendingConfirm={key};
+    $("#cfTitle").textContent=document.querySelector(`[data-key="${key}"]`).closest(".row").querySelector(".label").textContent.replace(/needs care$/,"").trim();
+    $("#cfMsg").textContent=confirm;$("#cfInput").value="";
+    $("#confirmDlg").showModal();$("#cfInput").focus();
+    return;
+  }
+  setControl(key,on);
+}
+$("#cfCancel").onclick=()=>{pendingConfirm=null;$("#confirmDlg").close()};
+$("#cfOk").onclick=()=>{
+  if($("#cfInput").value.trim().toUpperCase()!=="ON"){$("#cfInput").focus();return}
+  const p=pendingConfirm;pendingConfirm=null;$("#confirmDlg").close();
+  if(p)setControl(p.key,true);
+};
+$("#tabs").querySelectorAll("button").forEach(b=>b.onclick=()=>{
+  TAB=b.dataset.tab;$("#tabs").querySelectorAll("button").forEach(x=>x.classList.toggle("sel",x===b));
+  $("#view").className="";render();
+});
+load();setInterval(load,15000);
+</script></body></html>"""
+
+
 class _Handler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="application/json"):
         data = body if isinstance(body, bytes) else body.encode("utf-8")
@@ -186,6 +359,9 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             self._send(200, PAGE, "text/html; charset=utf-8")
+        elif self.path in ("/settings", "/settings.html"):
+            # New Tailscale-style settings (side-by-side; "/" is unchanged).
+            self._send(200, SETTINGS_PAGE, "text/html; charset=utf-8")
         elif self.path == "/api/life":
             from . import life
             self._json(200, {"areas": life.snapshot()})
@@ -210,7 +386,16 @@ class _Handler(BaseHTTPRequestHandler):
             data = {}
         if self.path == "/api/controls/set":
             from . import controls
-            r = controls.set_control((data.get("key") or "").strip(), bool(data.get("on")))
+            key = (data.get("key") or "").strip()
+            on = bool(data.get("on"))
+            # Danger controls (e.g. real bookings) require an explicit confirmed:true
+            # — server-side guard so the UI's typed-confirm can't be bypassed.
+            c = controls.get_control(key)
+            if c is not None and on and getattr(c, "danger", False) and not data.get("confirmed"):
+                self._json(409, {"error": "confirmation required", "confirm": c.confirm,
+                                 "label": c.label, "needsConfirm": True})
+                return
+            r = controls.set_control(key, on)
             self._json(200 if "error" not in r else 400, r)
         elif self.path == "/api/automations/import":
             from .automations import recipe

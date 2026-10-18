@@ -38,6 +38,16 @@ class Control:
     available: Callable[[], bool] = lambda: True
     # Some controls are informational/read-only (e.g. "email connected") — no set.
     readonly: bool = False
+    # ── render metadata (shared across every platform's settings UI) ──
+    # Which top-level settings tab this control lives under. Tailscale-style:
+    # "Settings" (the toggles), "Connections" (accounts/links), "About" (status).
+    # Defaults are derived from `group` in snapshot() when left None.
+    tab: str | None = None
+    # If set, the UI must get an explicit confirmation before flipping this ON
+    # (dangerous/irreversible-ish actions, e.g. enabling real bookings). The
+    # string is the prompt to show; `danger` styles it as a warning row.
+    confirm: str | None = None
+    danger: bool = False
 
     def snapshot(self) -> dict[str, Any]:
         try:
@@ -56,7 +66,28 @@ class Control:
                 desc = ""
         return {"key": self.key, "label": self.label, "group": self.group,
                 "on": on, "available": avail, "readonly": self.readonly,
-                "description": desc}
+                "description": desc,
+                # render metadata — additive; existing UIs ignore unknown keys.
+                "tab": self.tab or _tab_for_group(self.group),
+                "type": "readonly" if self.readonly else "toggle",
+                "confirm": self.confirm,
+                "danger": self.danger}
+
+
+# Map the existing control `group` names onto the three Tailscale-style settings
+# tabs. Keeps one source of truth: groups stay as the fine-grained section labels,
+# tabs are the coarse top-level nav every platform renders.
+_GROUP_TAB = {
+    "Vera — senses": "Settings",
+    "Vera — capabilities": "Settings",
+    "Automations — amenity booker": "Settings",
+    "Connections": "Connections",
+    "Careers": "Connections",
+}
+
+
+def _tab_for_group(group: str) -> str:
+    return _GROUP_TAB.get(group, "Settings")
 
 
 # ── lazy accessors (import modules only when touched, so a missing optional dep
@@ -157,6 +188,9 @@ def _registry() -> list[Control]:
         available=_booker_available,
         description="OFF = dry-run (finds slots, never books). ON = will make real "
                     "reservations. Leave off unless you mean it.",
+        confirm="Turn ON real bookings? The booker will make actual reservations "
+                "on your BuildingLink account — including the nightly run.",
+        danger=True,
     ))
     controls.append(Control(
         "booker_nightly", "Booker: nightly auto-run", "Automations — amenity booker",
