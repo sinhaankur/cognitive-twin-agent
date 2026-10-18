@@ -178,19 +178,10 @@ SETTINGS_PAGE = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vera — Settings</title>
+<link rel="stylesheet" href="/tokens.css">
 <style>
-:root{
- --bg:#f6f6f5;--panel:#fff;--ink:#1a1a19;--muted:#6b6b66;--line:#ececea;
- --accent:#10a37f;--accent-ink:#0a7f63;--accent-soft:#e8f7f1;
- --warn:#b06a00;--warn-soft:#fdf3e3;--danger:#c0392b;--danger-soft:#fbeceb;
- --radius:12px;--shadow:0 1px 2px rgba(0,0,0,.04);
-}
-@media (prefers-color-scheme:dark){:root{
- --bg:#17171a;--panel:#1f1f23;--ink:#ededed;--muted:#9b9b9b;--line:#2c2c31;
- --accent:#3ecf8e;--accent-ink:#3ecf8e;--accent-soft:#16342a;
- --warn:#e0a44a;--warn-soft:#2e2615;--danger:#e06a5e;--danger-soft:#2e1a18;
- --shadow:0 1px 2px rgba(0,0,0,.3);
-}}
+/* Component styles; all colours/spacing come from the shared /tokens.css. */
+:root{--radius:var(--radius-md);--shadow:var(--shadow-card)}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--ink);
  font:15px/1.5 -apple-system,"Inter","Segoe UI",system-ui,sans-serif;
@@ -362,6 +353,15 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path in ("/settings", "/settings.html"):
             # New Tailscale-style settings (side-by-side; "/" is unchanged).
             self._send(200, SETTINGS_PAGE, "text/html; charset=utf-8")
+        elif self.path == "/tokens.css":
+            # The shared design tokens (generated from design/tokens.json). Every
+            # web surface links this so colours/spacing are defined once.
+            from pathlib import Path as _P
+            css = _P(__file__).resolve().parent / "design" / "tokens.css"
+            try:
+                self._send(200, css.read_text(encoding="utf-8"), "text/css")
+            except Exception:
+                self._send(404, "/* tokens.css not built — run design/build_tokens.py */", "text/css")
         elif self.path == "/api/life":
             from . import life
             self._json(200, {"areas": life.snapshot()})
