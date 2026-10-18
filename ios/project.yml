@@ -40,6 +40,14 @@ targets:
         # NSAllowsArbitraryLoads — public internet still requires TLS.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+          # Tailscale reaches your Mac by its MagicDNS name (….ts.net) over http —
+          # that host is NOT "local networking" to iOS (it's a 100.x CGNAT address),
+          # so without this exception iOS blocks it ("requires a secure connection").
+          # ts.net is an encrypted WireGuard tunnel, never the open internet.
+          NSExceptionDomains:
+            ts.net:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: true
         # Declare the private iCloud Drive container so it surfaces as a real folder
         # the app (and the Mac side) can read/write the sealed sync bundle in.
         NSUbiquitousContainers:
