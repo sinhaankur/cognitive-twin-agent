@@ -112,3 +112,63 @@ def check_amenity_availability() -> str:
 )
 def book_amenity() -> str:
     return _humanize(_run_booker([]))
+
+
+@R.add(
+    "book_specific_amenity",
+    "Book ONE named building amenity on BuildingLink — e.g. 'book tennis' or "
+    "'book the ping pong table'. Restricts the scan to that amenity and picks a "
+    "random open slot in its preferred window. Pass `amenity` as one of: "
+    "'pingpong', 'tennis', 'squash' (or part of the amenity's name). Actually "
+    "books only if confirmBookings is enabled; otherwise a safe dry run.",
+    {"type": "object", "properties": {
+        "amenity": {"type": "string",
+                    "description": "which amenity: pingpong, tennis, or squash"},
+    }, "required": ["amenity"]},
+)
+def book_specific_amenity(amenity: str) -> str:
+    key = (amenity or "").strip().lower()
+    if not key:
+        return "[error] which amenity? (pingpong, tennis, or squash)"
+    return _humanize(_run_booker(["--only", key]))
+
+
+@R.add(
+    "amenity_status",
+    "What the amenity booker last did and whether it's armed. Reports the last "
+    "result (booked / dry-run / none) and whether real booking (confirmBookings) "
+    "is ON or OFF — so Ankur knows if a 'book it' will actually reserve. Read-only.",
+    {"type": "object", "properties": {}},
+)
+def amenity_status() -> str:
+    import datetime as _dt
+
+    last_path = BOOKER_DIR / "last-result.json"
+    cfg_path = BOOKER_DIR / "src" / "config.mjs"
+
+    # Dry-run vs live is the literal `confirmBookings: true/false` in config.mjs.
+    armed = None
+    try:
+        cfg = cfg_path.read_text(encoding="utf-8")
+        import re
+        m = re.search(r"confirmBookings:\s*(true|false)", cfg)
+        if m:
+            armed = (m.group(1) == "true")
+    except Exception:
+        pass
+
+    mode = ("LIVE — a booking will really reserve" if armed
+            else "DRY RUN — bookings are previews only" if armed is False
+            else "unknown mode")
+
+    try:
+        r = json.loads(last_path.read_text(encoding="utf-8"))
+    except Exception:
+        return f"Booker mode: {mode}. No run recorded yet."
+
+    when = r.get("at", "")
+    try:
+        when = _dt.datetime.fromisoformat(when.replace("Z", "+00:00")).astimezone().strftime("%a %d %b, %I:%M %p")
+    except Exception:
+        pass
+    return f"Booker mode: {mode}. Last run ({when}): {_humanize(json.dumps(r))}"
