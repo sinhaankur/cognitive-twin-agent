@@ -8,7 +8,12 @@ struct VeraApp: App {
     @StateObject private var model = TwinModel()
     var body: some Scene {
         WindowGroup {
-            TwinView().environmentObject(model)
+            TwinView()
+                .environmentObject(model)
+                // Vera's one shared accent (Tailscale-quality green from
+                // design/tokens.json) — tints toggles, buttons, and controls
+                // app-wide so iOS matches the web settings and the booker.
+                .tint(VeraTokens.accent)
         }
     }
 }
@@ -35,7 +40,7 @@ final class TwinModel: ObservableObject {
     // here for simplicity — the Rust core compiles it identically to desktop).
     @Published var personaJSON: String =
         UserDefaults.standard.string(forKey: "persona") ??
-        #"{"name":"","likes":[],"dislikes":[],"values":[]}"#
+        #"{"name":"Emma","likes":[],"dislikes":[],"values":[]}"#
 
     // Local prompt history — persisted so the twin's "learned" topics survive
     // restarts (kept small + on-device only, never sent anywhere).
@@ -65,6 +70,15 @@ final class TwinModel: ObservableObject {
         let raw = modelHost.trimmingCharacters(in: .whitespaces)
         // No host set → try to AUTO-DETECT over Tailscale before giving up.
         guard !raw.isEmpty else {
+            reachable = nil
+            autoDetect()
+            return
+        }
+        // A bare Tailscale 100.x IP is blocked by iOS App Transport Security (it
+        // isn't "local networking" and has no ts.net exception), so it can never
+        // connect. Prefer the Mac's MagicDNS name instead — re-detect, which tries
+        // the hostname first. (The hostname is covered by our ts.net ATS exception.)
+        if raw.split(separator: ":").first.map({ $0.hasPrefix("100.") }) == true {
             reachable = nil
             autoDetect()
             return
@@ -197,6 +211,10 @@ final class TwinModel: ObservableObject {
                 self.history.append(text)
                 if self.history.count > 200 { self.history.removeFirst(self.history.count - 200) }
                 UserDefaults.standard.set(self.history, forKey: "history")
+                // Speak her reply aloud, on-device. Hearing her is the point;
+                // the Mac's Kokoro voice plays on the Mac, so on the phone she
+                // uses iOS's on-device neural voice (nothing leaves the device).
+                Voice.shared.speak(reply)
             }
         }
     }

@@ -10,6 +10,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject var model: TwinModel
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var voice = Voice.shared
 
     @State private var showPersona = false
     @State private var confirmClear = false
@@ -29,6 +30,25 @@ struct SettingsView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.body.monospaced())
+
+                    // The seamless path: find your Mac on the tailnet for you, so
+                    // you never have to type an address. This is what most people
+                    // should tap first.
+                    Button {
+                        reach = nil
+                        model.autoDetect()
+                    } label: {
+                        HStack {
+                            if model.autoDetecting {
+                                ProgressView().controlSize(.small)
+                                Text("Looking for your Mac…")
+                            } else {
+                                Image(systemName: "wand.and.stars")
+                                Text("Connect automatically")
+                            }
+                        }
+                    }
+                    .disabled(model.autoDetecting)
 
                     // Verify she can actually be reached before you rely on it —
                     // a wrong host otherwise only shows up as a silent failure
@@ -51,7 +71,7 @@ struct SettingsView: View {
                     if let reach {
                         HStack(spacing: 8) {
                             Image(systemName: reach.ok ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                                .foregroundStyle(reach.ok ? .green : .orange)
+                                .foregroundStyle(reach.ok ? VeraTokens.accent : VeraTokens.warn)
                             Text(reach.message)
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
@@ -60,11 +80,29 @@ struct SettingsView: View {
                 } header: {
                     Text("Where she thinks")
                 } footer: {
-                    Text("A phone can't run the model itself. Point this at a machine you own that does — your Mac or home server running Ollama (e.g. my-mac.tailnet.ts.net, or host:port), reached privately over your Tailscale network. Leave blank to use localhost. Nothing is sent to a third party.")
+                    Text("A phone can't run the model itself, so she thinks on your Mac. Tap **Connect automatically** and she'll find it over Tailscale — no address to type. Use your Mac's Tailscale name (ends in .ts.net), not its 100.x number: iPhones block plain numbers for safety. Everything stays between your devices; nothing is sent to a third party.")
+                }
+
+                // ── How to connect (plain-language help) ──────────────────
+                Section {
+                    DisclosureGroup {
+                        VStack(alignment: .leading, spacing: 10) {
+                            connectStep("1", "On your Mac, open the Vera app and leave it running — that's where she thinks.")
+                            connectStep("2", "Make sure Tailscale is on, signed in with the same account, on both the Mac and this phone. It's a private, encrypted link between your own devices — nothing public.")
+                            connectStep("3", "Back here, tap **Connect automatically**. She'll find your Mac by its name and remember it.")
+                            connectStep("4", "If it can't find her, open the Mac's menu-bar Tailscale, copy its name (ends in .ts.net), and paste it above.")
+                        }
+                        .padding(.vertical, 4)
+                    } label: {
+                        Label("How do I connect?", systemImage: "questionmark.circle")
+                    }
+                } footer: {
+                    Text("Tailscale is a free, private network just for the machines you own. Your Mac and phone talk directly, encrypted end-to-end — the way a loved one's words should stay.")
                 }
 
                 // ── Her presence ──────────────────────────────────────────
                 Section {
+                    Toggle("Speak her replies aloud", isOn: $voice.enabled)
                     Toggle("Show her in 3D", isOn: $model.portrait3DEnabled)
                     Button {
                         showPersona = true
@@ -74,7 +112,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Presence")
                 } footer: {
-                    Text("The 3D likeness is built on your Mac and arrives with the memory vault; when it isn't present the orb is shown as always. “Who she is” is the persona that shapes how she speaks.")
+                    Text("Her voice is spoken on this phone, entirely on-device — no audio ever leaves it. The 3D likeness is built on your Mac and arrives with the memory vault; when it isn't present the orb is shown as always. “Who she is” is the persona that shapes how she speaks.")
                 }
 
                 // ── Privacy ───────────────────────────────────────────────
@@ -129,6 +167,23 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Connect help
+
+    /// One numbered step in the "How do I connect?" guide.
+    private func connectStep(_ n: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(n)
+                .font(.caption.bold().monospaced())
+                .foregroundStyle(.white)
+                .frame(width: 20, height: 20)
+                .background(Circle().fill(VeraTokens.accent))
+            Text(.init(text))  // markdown-aware for **bold**
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     // MARK: - Reachability
 
     struct ReachResult { let ok: Bool; let message: String }
@@ -169,11 +224,18 @@ struct SettingsView: View {
     }
 
     private static func friendly(_ err: NSError) -> String {
+        // The "requires a secure connection" block: iOS refused a plain-number
+        // (100.x) address. Point them at the fix — use the Mac's Tailscale name.
+        let desc = err.localizedDescription.lowercased()
+        if desc.contains("secure connection") || desc.contains("app transport") ||
+           (err.domain == NSURLErrorDomain && err.code == NSURLErrorAppTransportSecurityRequiresSecureConnection) {
+            return "Use your Mac's Tailscale name (ends in .ts.net), not its 100.x number — iPhones block plain numbers. Tap “Connect automatically”."
+        }
         switch err.code {
         case NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost:
-            return "Can’t reach that host. Is the machine on and Ollama running?"
+            return "Can’t reach that host. Is your Mac on, with the Vera app and Ollama running?"
         case NSURLErrorTimedOut:
-            return "Timed out. Check you’re on the same tailnet."
+            return "Timed out. Check Tailscale is on, same account, on both devices."
         case NSURLErrorNotConnectedToInternet:
             return "No network. Connect to your tailnet and retry."
         default:

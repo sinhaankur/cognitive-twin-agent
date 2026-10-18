@@ -17,6 +17,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 TOKENS = HERE / "tokens.json"
 OUT = HERE / "tokens.css"
+# iOS reads the SAME canonical tokens, emitted as a SwiftUI Color extension.
+SWIFT_OUT = Path(__file__).resolve().parents[2] / "ios" / "Vera" / "Sources" / "VeraTokens.swift"
 
 # camelCase token name → kebab CSS var name (accentInk → --accent-ink).
 def _kebab(name: str) -> str:
@@ -62,10 +64,54 @@ def build() -> str:
     )
 
 
+def _hex_to_swift(h: str) -> str:
+    """'#3ecf8e' → a SwiftUI Color(red:…, green:…, blue:…) with 0–1 components."""
+    h = h.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"Color(red: {r/255:.3f}, green: {g/255:.3f}, blue: {b/255:.3f})"
+
+
+def build_swift() -> str:
+    t = json.loads(TOKENS.read_text(encoding="utf-8"))
+    color = t["color"]
+    # Dynamic colours: light value by default, dark value via UITraitCollection so
+    # a single Color adapts to the system appearance — same as the CSS @media.
+    lines = []
+    for name, pair in color.items():
+        light = _hex_to_swift(pair["light"])
+        dark = _hex_to_swift(pair["dark"])
+        lines.append(
+            f"    /// {name} — from tokens.json (light/dark).\n"
+            f"    static let {name} = dynamic(light: {light}, dark: {dark})"
+        )
+    body = "\n".join(lines)
+    return (
+        "// GENERATED from cognitive_twin/design/tokens.json by build_tokens.py — do not edit by hand.\n"
+        "// The iOS app's half of Vera's one shared design system (Tailscale-quality).\n"
+        "import SwiftUI\n"
+        "#if canImport(UIKit)\nimport UIKit\n#endif\n\n"
+        "enum VeraTokens {\n"
+        "    /// A Color that resolves light/dark from the system appearance.\n"
+        "    static func dynamic(light: Color, dark: Color) -> Color {\n"
+        "        #if canImport(UIKit)\n"
+        "        return Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light) })\n"
+        "        #else\n"
+        "        return light\n"
+        "        #endif\n"
+        "    }\n\n"
+        f"{body}\n"
+        "}\n"
+    )
+
+
 def main() -> None:
     css = build()
     OUT.write_text(css, encoding="utf-8")
     print(f"wrote {OUT} ({len(css)} bytes)")
+    swift = build_swift()
+    SWIFT_OUT.parent.mkdir(parents=True, exist_ok=True)
+    SWIFT_OUT.write_text(swift, encoding="utf-8")
+    print(f"wrote {SWIFT_OUT} ({len(swift)} bytes)")
 
 
 if __name__ == "__main__":
