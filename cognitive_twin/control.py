@@ -384,6 +384,79 @@ def capture_screen(scope: str = "window", ocr: bool = True, max_chars: int = 400
 _APP_NAME = re.compile(r"^[\w .&'\-]{1,60}$")           # plain app names only
 _URL = re.compile(r"^https?://[^\s]{1,300}$", re.IGNORECASE)
 _SHORTCUT = re.compile(r"^[\w .&'\-]{1,80}$")
+# a recipient is a phone number or an email/iMessage handle — nothing exotic.
+_RECIPIENT = re.compile(r"^[+()\d\s\-]{5,25}$|^[\w.+\-]+@[\w.\-]+\.\w{2,}$")
+
+
+def _imessage_allowlist() -> set[str]:
+    """Contacts Vera is allowed to message, in a SEALED file. EMPTY by default — she
+    can message no one until you add someone. A HARD gate on top of the per-send
+    confirmation: even confirmed, a recipient not on this list is refused, so a
+    misheard/injected number can never be texted."""
+    try:
+        from . import security
+        data = security.read_state(security.path("imessage_allow.json"), default=[])
+        return {str(x).strip() for x in (data or []) if str(x).strip()}
+    except Exception:
+        return set()
+
+
+def allow_imessage(recipient: str) -> str:
+    """Add a recipient to the iMessage allow-list (sealed). The user's explicit
+    opt-in for WHO Vera may ever text — separate from each send's confirmation."""
+    recipient = recipient.strip()
+    if not _RECIPIENT.match(recipient):
+        return f"[refused] '{recipient}' isn't a valid phone/email handle."
+    try:
+        from . import security
+        cur = _imessage_allowlist()
+        cur.add(recipient)
+        security.write_state(security.path("imessage_allow.json"), sorted(cur))
+        return f"Added {recipient} to the iMessage allow-list."
+    except Exception as e:
+        return f"[error] {e}"
+
+
+def send_imessage(recipient: str, message: str) -> str:
+    """Send an iMessage via Messages.app — the most guarded action here.
+
+    THREE gates, all required: (1) screen control is ON + not in lockdown; (2) the
+    recipient is on the sealed allow-list (allow_imessage); (3) the per-send confirm
+    hook shows you the FULL recipient + message and you approve. Nothing is ever
+    sent silently, and the message text is passed to AppleScript as a safely-escaped
+    string literal — never interpolated into a shell. On-device; Apple sends it."""
+    if (err := _require_enabled()):
+        return err
+    recipient = recipient.strip()
+    message = (message or "").strip()
+    if not _RECIPIENT.match(recipient):
+        return f"[refused] '{recipient}' isn't a valid phone/email handle."
+    if not message:
+        return "[refused] Empty message — nothing to send."
+    if len(message) > 2000:
+        return "[refused] Message too long (keep it under 2000 characters)."
+    allow = _imessage_allowlist()
+    if recipient not in allow:
+        return (f"[refused] {recipient} isn't on your iMessage allow-list. Add them "
+                f"first (you decide who she can ever text), then try again.")
+    # the confirmation shows EXACTLY what will be sent, to WHOM.
+    if not _confirm(f"Send this iMessage to {recipient}?\n\n{message}"):
+        return "[cancelled] Did not send the message."
+    # Escape for an AppleScript string literal: backslash + double-quote only.
+    esc = message.replace("\\", "\\\\").replace('"', '\\"')
+    er = recipient.replace("\\", "\\\\").replace('"', '\\"')
+    script = (
+        'tell application "Messages"\n'
+        '  set svc to 1st service whose service type = iMessage\n'
+        f'  set buddy to participant "{er}" of svc\n'
+        f'  send "{esc}" to buddy\n'
+        'end tell'
+    )
+    out = _osascript(script, timeout=15.0)
+    if out.startswith("[error]"):
+        # common case: the handle isn't reachable on iMessage
+        return f"[failed] Couldn't send via iMessage. {out}"
+    return f"Sent your message to {recipient}."
 
 
 def open_app(name: str) -> str:

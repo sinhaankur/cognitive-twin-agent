@@ -420,6 +420,11 @@ def _check_egress() -> tuple[bool, str, str]:
         # the full range of real turns to measure behaviour + latency. Loopback
         # only, synthetic prompts — nothing leaves the machine. See stress.py.
         "stress.py",
+        # right-sizing the local model to this machine: reads Ollama's /api/tags
+        # (127.0.0.1:11434) for installed model sizes so it never picks one too big
+        # for the RAM. LOCALHOST only — reads model metadata, sends nothing off the
+        # machine. See device_model.py (_model_sizes_gb).
+        "device_model.py",
     }
     unknown = [h for h in hits if h.split(":")[0].split("/")[-1] not in known]
     if unknown:

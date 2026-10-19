@@ -740,6 +740,30 @@ def run_shortcut(name: str) -> str:
     return control.run_shortcut(name)
 
 
+@R.add("send_imessage",
+       "Send an iMessage to someone. The recipient MUST already be on the user's "
+       "allow-list, and the user is shown the full message and asked to confirm "
+       "before anything is sent — nothing is ever sent silently.",
+       {"type": "object",
+        "properties": {
+            "recipient": {"type": "string", "description": "phone number or iMessage email handle"},
+            "message": {"type": "string", "description": "the message text to send"}},
+        "required": ["recipient", "message"]})
+def send_imessage(recipient: str, message: str) -> str:
+    from .. import control
+    return control.send_imessage(recipient, message)
+
+
+@R.add("allow_imessage",
+       "Add someone to the iMessage allow-list — the people Vera is permitted to "
+       "text. Use this when the user explicitly says who she may message.",
+       {"type": "object", "properties": {"recipient": {"type": "string"}},
+        "required": ["recipient"]})
+def allow_imessage(recipient: str) -> str:
+    from .. import control
+    return control.allow_imessage(recipient)
+
+
 # ---- camera + microphone (opt-in, permissioned, off by default) ---------------
 # Delegate to media.py, which enforces the per-device gate + per-capture
 # confirmation. They no-op with a clear message when the device is off, and the

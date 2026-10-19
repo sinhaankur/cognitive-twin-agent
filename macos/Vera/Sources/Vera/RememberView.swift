@@ -80,14 +80,14 @@ struct RememberView: View {
 
     // MARK: sections
 
+    // The shared window header (live orb + title + subtitle) — same identity as
+    // Settings / The Brain, so every Vera window opens the same way. The tally
+    // ("2 sayings, 1 memory so far") rides along as the subtitle when present.
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Remember them")
-                .font(.title2.weight(.semibold))
-            if !tally.isEmpty {
-                Text(tally).font(.caption).foregroundStyle(.secondary)
-            }
-        }
+        VeraWindowHeader(title: "Remember them",
+                         subtitle: tally.isEmpty ? "a little at a time" : tally)
+            .padding(.horizontal, -22)   // the header has its own padding; cancel the body's
+            .padding(.top, -22)
     }
 
     private var intro: some View {
