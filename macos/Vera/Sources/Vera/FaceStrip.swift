@@ -178,6 +178,15 @@ struct FaceStrip: View {
                 .allowsHitTesting(false))
     }
 
+    // Show the "Who is this?" button when a face is in frame and not yet named —
+    // BUT keep it on screen while the naming popover is open, so a momentary face
+    // flicker (a blink, a turn) can't tear down the button and dismiss the popover
+    // out from under you mid-typing. (That was the "I went to add the name and it
+    // went away" bug.)
+    private var showNameButton: Bool {
+        naming || (engine.facePresent && engine.recognizedName == nil)
+    }
+
     private var footer: some View {
         HStack(spacing: 6) {
             Image(systemName: "lock.fill").font(.system(size: 8))
@@ -187,14 +196,13 @@ struct FaceStrip: View {
             // When a face is in frame but NOT recognized, offer to name them —
             // enrollment is the base of the legacy/virtual-you arc, and it's how
             // the room read becomes "you + Dad".
-            if engine.facePresent, engine.recognizedName == nil {
+            if showNameButton {
                 Button { naming = true } label: {
                     Label("Who is this?", systemImage: "person.badge.plus")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(VeraTokens.accent)
                 }
                 .buttonStyle(.plain)
-                .popover(isPresented: $naming, arrowEdge: .bottom) { enrollPopover }
             }
             Button { model.toggleEye?() } label: {
                 Text("Stop").font(.system(size: 10.5, weight: .semibold))
@@ -203,6 +211,16 @@ struct FaceStrip: View {
         }
         .foregroundStyle(.secondary)
         .padding(.top, 7).padding(.horizontal, 3)
+        // The popover lives on the ALWAYS-PRESENT footer row, not on the conditional
+        // button — so face-read flicker never destroys its host and dismisses it.
+        .popover(isPresented: $naming, arrowEdge: .bottom) { enrollPopover }
+    }
+
+    // The Mac's owner — the natural first face to enroll ("this is you"). Read from
+    // the macOS account (NSFullUserName), never hardcoded, so it's right on any Mac.
+    private var ownerName: String {
+        let full = NSFullUserName().trimmingCharacters(in: .whitespaces)
+        return full.isEmpty ? "Me" : full
     }
 
     private var enrollPopover: some View {
@@ -210,6 +228,17 @@ struct FaceStrip: View {
             Text("Name this person").font(.system(size: 13, weight: .semibold))
             Text("She'll recognize them next time — enrolled on this Mac, never uploaded. (e.g. “Dad — Dr Randhir Kumar Sinha”.)")
                 .font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 240)
+            // One tap to enroll the OWNER of this Mac — the most common first face.
+            Button {
+                enrollName = ownerName
+                saveEnrollment()
+            } label: {
+                Label("This is me — \(ownerName)", systemImage: "person.crop.circle.badge.checkmark")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(VeraTokens.accent)
+            .disabled(!engine.hasFaceToEnroll)
             TextField("Name or relationship", text: $enrollName)
                 .textFieldStyle(.roundedBorder)
                 .onSubmit(saveEnrollment)
@@ -225,6 +254,9 @@ struct FaceStrip: View {
             }
         }
         .padding(14)
+        // seed the field with the owner's name the first time it opens, so enrolling
+        // yourself is effortless; it never overwrites what you've already typed.
+        .onAppear { if enrollName.isEmpty { enrollName = ownerName } }
     }
 
     private func saveEnrollment() {
