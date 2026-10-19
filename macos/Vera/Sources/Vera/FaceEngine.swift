@@ -107,10 +107,20 @@ final class FaceEngine: NSObject, ObservableObject {
     private var affectHistory: [Affect] = []
     private let affectWindow: TimeInterval = 30     // seconds we read the trend over
     // Published trend, each in -1…+1 (negative = falling, positive = rising):
+    // Published MIRRORS for the UI — written ONLY on the main thread (see the
+    // publish in `ingest`). Mutating an @Published off the main thread is the
+    // SwiftUI "Publishing changes from background threads is not allowed" fault,
+    // which corrupts/hangs the UI. The queue computes into the plain `q*` vars
+    // below; main mirrors them here.
     @Published var trendMood = 0.0      // ↑ brightening (smile up / brow+frown down)
     @Published var trendTension = 0.0   // ↑ tensing (brow-knit / frown rising)
     @Published var trendEnergy = 0.0    // ↑ more animated, ↓ winding down / settling
     @Published var moodLine = ""        // one plain phrase, or "" when nothing's moving
+    // queue-side source of truth for the trend (touched ONLY on `queue`).
+    private var qTrendMood = 0.0
+    private var qTrendTension = 0.0
+    private var qTrendEnergy = 0.0
+    private var qMoodLine = ""
     // auto-framing: the face fills the little window (Face ID-style) and the
     // frame glides after you rather than jumping — smoothed centre + span
     private var frameC = CGPoint(x: 0.5, y: 0.5)
@@ -468,11 +478,14 @@ final class FaceEngine: NSObject, ObservableObject {
         bits.append(energy < 0.08 ? "very still" : energy < 0.28 ? "calm"
                     : energy < 0.6 ? "animated" : "very animated")
         // the trend, when something is actually moving, reads last
-        if !moodLine.isEmpty { bits.append(moodLine) }
+        if !qMoodLine.isEmpty { bits.append(qMoodLine) }
         let line = "reading: " + bits.joined(separator: " · ")
 
         let m = (smile, browKnit, frown, blinkRate, attending, dimRoom)
         let fc = frameC, fs = frameS
+        // snapshot the queue-side trend so the UI mirror is set on MAIN (never
+        // publish an @Published from this background queue — that hangs SwiftUI).
+        let tm = qTrendMood, tt = qTrendTension, te = qTrendEnergy, ml = qMoodLine
         DispatchQueue.main.async {
             self.dots = out
             self.captions = caps
@@ -481,6 +494,8 @@ final class FaceEngine: NSObject, ObservableObject {
             self.readBlink = m.3; self.readAttending = m.4
             self.lowLight = m.5
             self.facePresent = true
+            self.trendMood = tm; self.trendTension = tt
+            self.trendEnergy = te; self.moodLine = ml
             self.frameCenter = fc; self.frameSpan = fs    // let the preview zoom to match
             self.status = m.5 ? "low light — steadying the read · on-device"
                               : "face landmarks · on-device · close to stop"
@@ -503,7 +518,7 @@ final class FaceEngine: NSObject, ObservableObject {
         guard let first = affectHistory.first,
               affectHistory.count >= 5,
               now.timeIntervalSince(first.t) >= 6 else {
-            trendMood = 0; trendTension = 0; trendEnergy = 0; moodLine = ""
+            qTrendMood = 0; qTrendTension = 0; qTrendEnergy = 0; qMoodLine = ""
             return
         }
         // least-squares slope of y against seconds, over the window
@@ -525,24 +540,24 @@ final class FaceEngine: NSObject, ObservableObject {
         let sEnergy = slope { $0.energy } * k
         func clamp(_ v: Double) -> Double { min(1, max(-1, v)) }
         // mood rises when the smile grows and the brow/frown ease
-        trendMood    = clamp(sSmile - 0.5 * sBrow - 0.5 * sFrown)
-        trendTension = clamp(0.6 * sBrow + 0.4 * sFrown)
-        trendEnergy  = clamp(sEnergy)
+        qTrendMood    = clamp(sSmile - 0.5 * sBrow - 0.5 * sFrown)
+        qTrendTension = clamp(0.6 * sBrow + 0.4 * sFrown)
+        qTrendEnergy  = clamp(sEnergy)
 
         // plain words, only when a move is real (hysteresis so it doesn't flicker)
         let strong = 0.22
-        if trendTension > strong && trendTension > trendMood {
-            moodLine = "tensing a little"
-        } else if trendMood > strong {
-            moodLine = "brightening"
-        } else if trendMood < -strong {
-            moodLine = "dimming a little"
-        } else if trendEnergy < -strong {
-            moodLine = "winding down"
-        } else if trendEnergy > strong {
-            moodLine = "picking up"
+        if qTrendTension > strong && qTrendTension > qTrendMood {
+            qMoodLine = "tensing a little"
+        } else if qTrendMood > strong {
+            qMoodLine = "brightening"
+        } else if qTrendMood < -strong {
+            qMoodLine = "dimming a little"
+        } else if qTrendEnergy < -strong {
+            qMoodLine = "winding down"
+        } else if qTrendEnergy > strong {
+            qMoodLine = "picking up"
         } else {
-            moodLine = ""
+            qMoodLine = ""
         }
     }
 
@@ -559,11 +574,11 @@ final class FaceEngine: NSObject, ObservableObject {
                 // FEELING OVER TIME — the arc, so she can respond to the shift
                 // ("you've been brightening", "you seem to be winding down"), not
                 // just the still frame. Only sent when a trend is actually moving.
-                if !moodLine.isEmpty {
-                    body["trend"] = moodLine
-                    body["trend_mood"] = (trendMood * 100).rounded() / 100
-                    body["trend_tension"] = (trendTension * 100).rounded() / 100
-                    body["trend_energy"] = (trendEnergy * 100).rounded() / 100
+                if !qMoodLine.isEmpty {
+                    body["trend"] = qMoodLine
+                    body["trend_mood"] = (qTrendMood * 100).rounded() / 100
+                    body["trend_tension"] = (qTrendTension * 100).rounded() / 100
+                    body["trend_energy"] = (qTrendEnergy * 100).rounded() / 100
                 }
             }
             body["attending"] = attending
