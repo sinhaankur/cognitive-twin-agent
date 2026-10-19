@@ -238,7 +238,7 @@ final class VoiceEngine: ObservableObject {
     private func whisperFinal(_ text: String) {
         isListening = false
         level = 0; brightness = 0
-        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let clean = Self.collapseRepeats(text.trimmingCharacters(in: .whitespacesAndNewlines))
         didDeliverFinal = false
         if clean.isEmpty {
             // Nothing intelligible this turn. Don't just go silent — a blank
@@ -1136,6 +1136,53 @@ final class VoiceEngine: ObservableObject {
     private static func joined(_ segments: [SFTranscriptionSegment], from: Int) -> String {
         guard from < segments.count else { return "" }
         return segments[from...].map(\.substring).joined(separator: " ")
+    }
+
+    /// Collapse the repetition loops Whisper falls into — the decoder sometimes
+    /// re-emits the same phrase back-to-back ("I'm not sure if I'm going to do it.
+    /// I'm not sure if I'm going to do it. I'm not sure…") on trailing silence or a
+    /// low-signal tail. We fold consecutive identical sentences down to one, so a
+    /// stutter never reaches the chat as three copies of what you said.
+    ///
+    /// Conservative on purpose: only *adjacent, exactly-repeated* chunks collapse
+    /// (compared case/space/punct-insensitively) — genuine repetition for emphasis
+    /// ("no, no, no") survives because real speech varies, and we never touch a
+    /// phrase that isn't immediately duplicated.
+    static func collapseRepeats(_ text: String) -> String {
+        guard !text.isEmpty else { return text }
+        // Split into sentence-ish chunks, keeping the delimiters so we can rebuild.
+        let parts = text.split(omittingEmptySubsequences: true,
+                               whereSeparator: { ".!?\n".contains($0) })
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        func norm(_ s: String) -> String {
+            s.lowercased().filter { $0.isLetter || $0.isNumber || $0 == " " }
+                .split(separator: " ").joined(separator: " ")
+        }
+        if parts.count >= 2 {
+            var kept: [String] = []
+            for p in parts where kept.last.map({ norm($0) != norm(p) }) ?? true {
+                kept.append(p)
+            }
+            if kept.count < parts.count {
+                // rebuild with periods; preserve a trailing terminator if there was one
+                let tail = text.last.map { ".!?".contains($0) ? String($0) : "." } ?? "."
+                return kept.joined(separator: ". ") + tail
+            }
+            return text
+        }
+        // No sentence breaks (one run-on) → collapse an immediately repeated word run.
+        let words = text.split(separator: " ").map(String.init)
+        guard words.count >= 4 else { return text }
+        for win in stride(from: words.count / 2, through: 2, by: -1) {
+            guard words.count >= win * 2 else { continue }
+            let a = words[(words.count - 2 * win)..<(words.count - win)]
+            let b = words[(words.count - win)...]
+            if a.map({ $0.lowercased() }) == b.map({ $0.lowercased() }) {
+                return words[0..<(words.count - win)].joined(separator: " ")
+            }
+        }
+        return text
     }
 }
 

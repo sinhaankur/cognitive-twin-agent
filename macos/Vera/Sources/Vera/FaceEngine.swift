@@ -72,7 +72,6 @@ final class FaceEngine: NSObject, ObservableObject {
     /// contract is unchanged. The preview is mirrored to match the landmark coords.
     var captureSession: AVCaptureSession { session }
     private let queue = DispatchQueue(label: "vera.eye", qos: .userInitiated)
-    private let sequence = VNSequenceRequestHandler()
     private var postTimer: Timer?
     // Vision throttle: run face-landmark detection at most this often (~13fps),
     // even though the camera delivers ~30fps. Halves CPU with no visible change.
@@ -184,9 +183,12 @@ final class FaceEngine: NSObject, ObservableObject {
     func enrollCurrentFace(as name: String) -> Int {
         guard let box = lastNearestBox, let pixels = lastPixels else { return 0 }
         let n = FaceID.shared.enroll(name: name, from: pixels, box: box)
-        // refresh the live read so the name shows at once
-        DispatchQueue.main.async {
-            self.recognizedName = FaceID.shared.identify(in: pixels, box: box)
+        // refresh the live read so the name shows at once — the identify pass is a
+        // Vision feature-print (not free), so run it OFF the main thread and only
+        // publish the name back on main (never block the UI on enroll).
+        queue.async { [weak self] in
+            let who = FaceID.shared.identify(in: pixels, box: box)
+            DispatchQueue.main.async { self?.recognizedName = who }
         }
         return n
     }
@@ -624,26 +626,24 @@ extension FaceEngine: AVCaptureVideoDataOutputSampleBufferDelegate {
         // (A single landmarks request often returns only the strongest face, which
         //  is why the room showed "just you" even with two people in frame.)
         //
-        // The room COUNT runs on a fresh one-shot VNImageRequestHandler, not the
-        // VNSequenceRequestHandler. The sequence handler is tuned for tracking ONE
-        // subject across frames and was under-counting a second person (the screen
-        // read "just you" with two people clearly in frame). A per-frame image
-        // handler, with the face detector pinned to its newest revision (best
-        // multi-face recall), reliably finds everyone. The orientation is passed so
-        // an angled second face isn't missed on a mis-oriented buffer.
+        // Both requests run on ONE fresh per-frame VNImageRequestHandler — the same
+        // cost as the old single call, but NOT the VNSequenceRequestHandler. The
+        // sequence handler is tuned for tracking ONE subject across frames and was
+        // under-counting a second person (the screen read "just you" with two people
+        // clearly in frame). A per-frame image handler, with the face detector
+        // pinned to its newest revision (best multi-face recall) and an explicit
+        // orientation (so an angled second face isn't missed), reliably finds
+        // everyone — without adding a second Vision pass per frame.
         let rectReq = VNDetectFaceRectanglesRequest()
         if let newest = VNDetectFaceRectanglesRequest.supportedRevisions.max() {
             rectReq.revision = newest
         }
-        let countHandler = VNImageRequestHandler(cvPixelBuffer: pixels,
-                                                 orientation: Self.bufferOrientation,
-                                                 options: [:])
-        try? countHandler.perform([rectReq])
-        let allFaces = rectReq.results ?? []
-        // Landmarks (expression/emotion) stay on the sequence handler — temporal
-        // smoothing across frames genuinely helps the nearest-face read.
         let landmarkReq = VNDetectFaceLandmarksRequest()
-        try? sequence.perform([landmarkReq], on: pixels, orientation: Self.bufferOrientation)
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixels,
+                                            orientation: Self.bufferOrientation,
+                                            options: [:])
+        try? handler.perform([rectReq, landmarkReq])
+        let allFaces = rectReq.results ?? []
         let landmarked = landmarkReq.results ?? []
         // Prefer the richer set for the room count (rectangles usually ≥ landmarks).
         readRoom(allFaces.count >= landmarked.count ? allFaces : landmarked)
@@ -658,10 +658,51 @@ extension FaceEngine: AVCaptureVideoDataOutputSampleBufferDelegate {
                        : face)
         let nearestBox = nearest?.boundingBox
         self.lastNearestBox = nearestBox
-        self.lastPixels = pixels
         let name: String? = nearestBox.flatMap { FaceID.shared.identify(in: pixels, box: $0) }
         recognizedNameSnapshot = name
         DispatchQueue.main.async { self.recognizedName = name }
+
+        // IMPORTANT (freeze fix): the camera vends frames from a SMALL fixed pool.
+        // We keep one frame around so "Who is this?" can enroll the face you're
+        // looking at — but retaining the camera's own CVPixelBuffer past this
+        // callback starves that pool, and the capture thread then stalls waiting
+        // for a free buffer → the whole preview freezes. So we hand enrollment a
+        // DEEP COPY and let the original buffer go back to the pool immediately.
+        self.lastPixels = nearestBox != nil ? Self.copyPixelBuffer(pixels) : nil
+    }
+
+    /// Deep-copy a CVPixelBuffer so we can hold it past the capture callback
+    /// without starving the camera's buffer pool (which would freeze the preview).
+    private static func copyPixelBuffer(_ src: CVPixelBuffer) -> CVPixelBuffer? {
+        let w = CVPixelBufferGetWidth(src)
+        let h = CVPixelBufferGetHeight(src)
+        let fmt = CVPixelBufferGetPixelFormatType(src)
+        var dst: CVPixelBuffer?
+        let attrs: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [:]]
+        guard CVPixelBufferCreate(kCFAllocatorDefault, w, h, fmt,
+                                  attrs as CFDictionary, &dst) == kCVReturnSuccess,
+              let out = dst else { return nil }
+        CVPixelBufferLockBaseAddress(src, .readOnly)
+        CVPixelBufferLockBaseAddress(out, [])
+        defer {
+            CVPixelBufferUnlockBaseAddress(out, [])
+            CVPixelBufferUnlockBaseAddress(src, .readOnly)
+        }
+        let planes = max(1, CVPixelBufferGetPlaneCount(src))
+        if CVPixelBufferIsPlanar(src) {
+            for p in 0..<planes {
+                guard let s = CVPixelBufferGetBaseAddressOfPlane(src, p),
+                      let d = CVPixelBufferGetBaseAddressOfPlane(out, p) else { return nil }
+                let bytes = CVPixelBufferGetBytesPerRowOfPlane(src, p)
+                      * CVPixelBufferGetHeightOfPlane(src, p)
+                memcpy(d, s, bytes)
+            }
+        } else {
+            guard let s = CVPixelBufferGetBaseAddress(src),
+                  let d = CVPixelBufferGetBaseAddress(out) else { return nil }
+            memcpy(d, s, CVPixelBufferGetBytesPerRow(src) * h)
+        }
+        return out
     }
 
     /// Count people and infer the social context from every visible face:
