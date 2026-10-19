@@ -434,6 +434,26 @@ def _twin_name() -> str:
 @R.add("greeting", "Produce a time-aware greeting (good morning/afternoon/evening) "
        "with today's date and — if internet is on — the current local weather. Use "
        "to open a session or when the user says hi / asks for a greeting.")
+def greeting_facts() -> dict:
+    """The REAL, honest facts behind the hello — so the aware greeting can be
+    PHRASED by the model from true values (never inventing the date/weather). The
+    model gets these facts; it only rewords, it never sources them."""
+    now = _dt.datetime.now()
+    h = now.hour
+    part = "morning" if h < 12 else "afternoon" if h < 18 else "evening"
+    facts: dict = {
+        "name": _twin_name() or "",
+        "part_of_day": part,
+        "date": f"{now.strftime('%A')}, {now.strftime('%B %d, %Y')}",
+        "time": now.strftime("%-I:%M %p"),
+    }
+    if _web_enabled():
+        w = _weather_now()
+        if w:
+            facts["weather"] = w.rstrip(".")
+    return facts
+
+
 def greeting() -> str:
     """Her first words when you open her — PRESENCE first, facts woven in gently.
 

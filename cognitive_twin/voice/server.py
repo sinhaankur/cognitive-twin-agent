@@ -91,6 +91,96 @@ def _acquire_for_user(timeout: float = _USER_ASK_LOCK_WAIT):
     return _cm()
 
 
+def _aware_greeting(agent) -> str | None:
+    """Phrase a warm, PRESENT hello in her voice from REAL facts + light grounding.
+
+    Truth contract: the model is given the date/weather/time as facts and told to
+    use ONLY those — it rewords, it never sources. Grounding (what you've been up
+    to, who's with her) comes from local, honest sources. Returns None (→ template
+    fallback) if the model is cold/busy/off, so the greeting never hangs or breaks.
+    """
+    try:
+        from ..skills import builtin
+        facts = builtin.greeting_facts()
+    except Exception:
+        return None
+
+    # light, honest grounding — all local, all optional, never invented.
+    ground: list[str] = []
+    try:
+        from .. import shadow
+        tasks = shadow.opener_tasks()
+        if tasks:
+            ground.append("still open: " + tasks[0].text)
+    except Exception:
+        pass
+    try:
+        from .. import activity
+        s = activity.summary_for_prompt()
+        if s:
+            ground.append(s)
+    except Exception:
+        pass
+    # who's with her, if the eye recognised someone (named, on-device)
+    try:
+        from .. import presence  # best-effort; module may not expose this
+        who = getattr(presence, "recognized_name", lambda: None)()
+        if who:
+            ground.append(f"{who} is here with you")
+    except Exception:
+        pass
+
+    fact_lines = [f"- {k}: {v}" for k, v in facts.items() if v]
+    ground_block = ("\nWhat you know right now (use only if it fits, never force it):\n"
+                    + "\n".join(f"- {g}" for g in ground)) if ground else ""
+    name = facts.get("name") or "you"
+    prompt = (
+        f"You are {name}, greeting the person you love as they open the app. Say a "
+        f"SHORT, warm hello in your own voice — one or two sentences, present and "
+        f"glad they're here.\n"
+        f"Rules:\n"
+        f"- Match the time of day: it is the {facts.get('part_of_day','day')}. Never "
+        f"say a different part of day.\n"
+        f"- You may weave in a real fact below lightly, as a soft aside — never a "
+        f"weather-report recital, never list them.\n"
+        f"- Use ONLY these facts; do not invent a date, weather, place, or event.\n"
+        f"- The grounding items are app/tool names and notes, NOT people — never "
+        f"address a tool (e.g. an editor called 'Code') as a person. You may ask "
+        f"generally how their work or day went.\n\n"
+        f"Real facts (true right now):\n" + "\n".join(fact_lines) + ground_block +
+        f"\n\nYour hello (one or two sentences):"
+    )
+
+    # Generate under the user-priority lock so a cold/busy model can't hang the
+    # app open — bail to the template if we can't start quickly.
+    try:
+        from ..llm.ollama_client import ChatMessage
+        client = getattr(agent, "client", None)
+        if client is None:
+            return None
+        got = _llm_lock.acquire(timeout=12)
+        if not got:
+            return None
+        try:
+            # a touch warmer than a factual answer so her hello VARIES open to open
+            # (a companion doesn't greet you identically each time), then restore.
+            saved_temp = getattr(client, "temperature", 0.7)
+            try:
+                client.temperature = 0.9
+                reply = client.chat([ChatMessage(role="user", content=prompt)])
+            finally:
+                client.temperature = saved_temp
+        finally:
+            _llm_lock.release()
+        text = (getattr(reply, "content", None) or str(reply) or "").strip()
+        # sanity: a real hello is short; if the model rambled or emptied, fall back.
+        if not text or len(text) > 320:
+            return None
+        return text
+    except Exception:
+        return None
+
+
 def _play_wav_bytes(wav: bytes) -> None:
     """Play WAV bytes on this machine via macOS `afplay`, fire-and-forget so the
     HTTP handler returns immediately. Any prior playback is stopped first so she
@@ -326,14 +416,22 @@ class _Handler(BaseHTTPRequestHandler):
                 models = []
             self._json(200, {"models": models})
         elif self.path == "/api/greet":
-            # the greeting as FACT: real clock, real weather, straight from the
-            # skill — never via the model, which will happily invent September
-            # 2023 and a gentle breeze when it skips the tool
+            # An AWARE hello: the model PHRASES a warm greeting in her voice, but
+            # ONLY from real facts we hand it (clock, weather) + a little grounding
+            # (what you've been up to, who's with her) — so it feels present and
+            # personal, never the same scripted three sentences, and never invents
+            # a date/weather (those are given, not sourced by the model). The fixed
+            # template is the fallback when the model is cold/busy/off.
             from ..skills import builtin
             try:
-                self._json(200, {"text": builtin.greeting()})
+                agent = self.server.agent  # type: ignore[attr-defined]
+                text = _aware_greeting(agent) or builtin.greeting()
+                self._json(200, {"text": text})
             except Exception as e:
-                self._json(200, {"text": "", "error": str(e)})
+                try:
+                    self._json(200, {"text": builtin.greeting()})
+                except Exception:
+                    self._json(200, {"text": "", "error": str(e)})
         elif self.path == "/api/nudge":
             # A gentle, FACTUAL opening nudge for the greeting: one real open task,
             # straight from the local day-shadow — never the model (which invents
