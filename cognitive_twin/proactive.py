@@ -397,15 +397,51 @@ def _pick_companion_line() -> str:
 # touch a life — science, tech, space, health, weather/disasters, India, economy.
 _CA_FILE = "proactive_news.json"            # a short cache so she doesn't re-fetch
 _CA_TTL_S = 3 * 3600                         # news is fresh enough for ~3 hours
-# BBC News RSS — keyless, reliable, real headlines + a one-line summary. World +
-# the sections that match "events that affect you". Fetched through net.py's fenced,
-# allow-listed, read-only doorway; the host is added to the allow-list on first use.
-_CA_HOST = "feeds.bbci.co.uk"
-_CA_FEEDS = [
-    "https://feeds.bbci.co.uk/news/world/rss.xml",
-    "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
-    "https://feeds.bbci.co.uk/news/technology/rss.xml",
+# Sources — MULTILATERAL, OWN-VOICE, INDIGENOUS-CENTERED (Ankur's steer). The old
+# single-BBC anchor is gone: colonial-era Western media carries an imperial lens
+# (borders, place-names, whose events "count"), and peoples routinely narrated by
+# outsiders — Hindus in India, indigenous Africans, Native Americans — are shown in
+# a wrong light. The fix is PLURALITY with NO anchor: several outlets across regions,
+# weighted toward the people an event happens TO, told through their OWN press, plus
+# neutral UN/scientific DATA for the hard facts. No single outlet (BBC, Al Jazeera,
+# or any one of these) is ever "the fact" — framing differences are surfaced, not
+# resolved. All keyless RSS, fetched only through net.py's fenced, allow-listed,
+# read-only doorway; hosts are added to the allow-list on first use.
+#
+# Bias is NOT hidden — each source is one voice among many, on purpose:
+_CA_HOSTS = [
+    # India — own voice, plural (not foreign desks narrating India)
+    "www.thehindu.com",       # Indian daily; English-liberal lean, but an Indian seat
+    "www.opindia.com",        # Hindu/right-leaning; counters the "Hindus in wrong light"
+                              #   default — partisan, so ONE voice, never the fact
+    # Africa — local / pan-African (not outsiders narrating Africa)
+    "allafrica.com",          # aggregates African outlets themselves, many countries
+    "www.africanews.com",     # pan-African newsroom (Congo desk)
+    # Americas — Native / First Nations (own voice)
+    "ictnews.org",            # Indian Country Today — Native American, Native-run
+    "www.aptnnews.ca",        # APTN — First Nations / Métis / Inuit desk (Canada)
+    # Neutral primary DATA — the hard facts, minimal framing
+    "reliefweb.int",          # UN OCHA humanitarian updates
+    "www.gdacs.org",          # Global Disaster Alert system (UN/EC)
+    "earthquake.usgs.gov",    # raw seismology, zero narrative
 ]
+_CA_FEEDS = [
+    "https://www.thehindu.com/news/national/feeder/default.rss",
+    "https://www.opindia.com/feed/",
+    "https://allafrica.com/tools/headlines/rdf/latest/headlines.rdf",
+    "https://www.africanews.com/feed/rss",
+    "https://ictnews.org/feed/",
+    "https://www.aptnnews.ca/feed/",
+    "https://reliefweb.int/updates/rss.xml",
+    "https://www.gdacs.org/xml/rss.xml",
+    "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.atom",
+]
+# a source's OWN channel/branding title is not a headline — drop these self-names.
+_CA_CHANNEL_NOISE = (
+    "allafrica", "africanews", "ict news", "indian country today", "aptn",
+    "the hindu", "opindia", "reliefweb", "gdacs", "usgs", "earthquake feed",
+    "latest headlines", "significant earthquakes",
+)
 
 # drop items dominated by PARTISAN politics (campaigns, party noise). War/conflict
 # is NOT dropped — Ankur wants major events that matter (war, climate) even if
@@ -513,11 +549,13 @@ def _fetch_headlines() -> list[str]:
         from . import net
         import html as _html
         import re as _re
-        # make sure BBC's feed host is allow-listed (idempotent); it's a public,
-        # low-risk news feed — the same class as the wikipedia.org default.
+        # make sure every source host is allow-listed (idempotent); these are public,
+        # low-risk news/data feeds — the same class as the wikipedia.org default.
         try:
-            if _CA_HOST not in net._cfg().get("allow", []):
-                net.allow(_CA_HOST)
+            allowed = set(net._cfg().get("allow", []))
+            for host in _CA_HOSTS:
+                if host not in allowed:
+                    net.allow(host)
         except Exception:
             pass
         out: list[str] = []
@@ -529,8 +567,11 @@ def _fetch_headlines() -> list[str]:
             for t in _re.findall(r"<title>\s*(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?\s*</title>", raw, _re.S):
                 it = _html.unescape(_re.sub(r"\s+", " ", t)).strip().rstrip(".")
                 low = it.lower()
+                # drop a feed's own channel/branding title (e.g. "allAfrica.com",
+                # "Africanews", "ICT News", "The Hindu - National", "GDACS") so a
+                # source name never surfaces as a "headline".
                 if (12 <= len(it) <= 160 and low not in seen
-                        and "bbc news" not in low and low != "bbc"):
+                        and not any(b in low for b in _CA_CHANNEL_NOISE)):
                     seen.add(low); out.append(it)
         return out
     except Exception:
