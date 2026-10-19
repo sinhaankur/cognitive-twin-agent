@@ -15,9 +15,9 @@
   --font-family: -apple-system, "Inter", "Segoe UI", system-ui, sans-serif;
   --font-size: 15px;
   --line-height: 1.5;
-  --accent: #10a37f;
-  --accent-ink: #0a7f63;
-  --accent-soft: #e8f7f1;
+  --accent: #bf8a3c;
+  --accent-ink: #8a6420;
+  --accent-soft: #f4ecdd;
   --bg: #f6f6f5;
   --panel: #ffffff;
   --ink: #1a1a19;
@@ -31,9 +31,9 @@
   --shadow-pop: 0 12px 44px rgba(0,0,0,.2);
 }
 @media (prefers-color-scheme: dark){:root{
-  --accent: #3ecf8e;
-  --accent-ink: #3ecf8e;
-  --accent-soft: #16342a;
+  --accent: #d6a95f;
+  --accent-ink: #e4bd7e;
+  --accent-soft: #261f12;
   --bg: #17171a;
   --panel: #1f1f23;
   --ink: #ededed;

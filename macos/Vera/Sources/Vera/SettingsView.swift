@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 /// privacy controls. Kept simple and native.
 struct SettingsView: View {
     @EnvironmentObject var model: AppModel
+    // Vera's orb form — shared with LiveOrb via the same @AppStorage key.
+    @AppStorage("vera.orbForm") private var orbForm: String = "dots"
     @Environment(\.dismiss) private var dismiss
 
     // export-for-another-device sheet (the memory vault)
@@ -61,19 +63,48 @@ struct SettingsView: View {
         model.availableModels.filter { Self.provider(of: $0) == provider }
     }
 
+    private var deviceName: String { Host.current().localizedName ?? "this Mac" }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Settings").font(.title2.weight(.semibold))
+            // Identity card — Tailscale opens its settings with who + where you are.
+            // Here: her live form (the dotted orb), her name, and a one-line
+            // "On this Mac · connected" status so the window has a clear subject.
+            HStack(spacing: 12) {
+                LiveOrb(model: model, size: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.assistantName)
+                        .font(.title3.weight(.semibold))
+                    HStack(spacing: 5) {
+                        Circle().fill(model.serverUp ? VeraTokens.accent : VeraTokens.warn)
+                            .frame(width: 6, height: 6)
+                        Text(model.serverUp ? "On \(deviceName) · connected"
+                                            : "On \(deviceName) · starting…")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Spacer()
                 Button { dismiss() } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title3).foregroundStyle(.secondary)
                 }.buttonStyle(.plain)
             }
-            .padding(.bottom, 18)
+            .padding(.bottom, 16)
 
             Form {
+                // Appearance — her visual form, promoted out of "Memory" (it's a
+                // look, not a memory). First thing, like Tailscale's top row.
+                Section("Appearance") {
+                    Picker("Her form", selection: $orbForm) {
+                        Text("Field (dots)").tag("dots")
+                        Text("Orb").tag("siri")
+                    }
+                    .pickerStyle(.segmented)
+                    Text("The point-cloud “field” says what she's doing — idle, listening, thinking, speaking. The “orb” is her original iridescent form.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+
                 Section {
                     // LM Studio-style picker: models grouped by provider, each a
                     // tappable row with a checkmark for the active one.
@@ -281,8 +312,8 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack {
-                Circle().fill(model.serverUp ? .green : .orange).frame(width: 7, height: 7)
-                Text(model.serverUp ? "local agent connected" : "agent starting…")
+                Image(systemName: "lock.fill").font(.system(size: 9)).foregroundStyle(.tertiary)
+                Text("Everything here stays on \(deviceName).")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Text("Vera").font(.caption).foregroundStyle(.tertiary)
@@ -290,7 +321,7 @@ struct SettingsView: View {
             .padding(.top, 14)
         }
         .padding(22)
-        .frame(width: 420, height: 480)
+        .frame(width: 440, height: 560)
         .onAppear { model.refreshModels(); model.refreshPortrait(); model.loadPersonality(); model.loadHealthStatus() }
         .onDisappear { model.savePersonality() }
         .sheet(isPresented: $exporting) {

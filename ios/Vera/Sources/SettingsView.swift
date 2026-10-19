@@ -11,6 +11,8 @@ struct SettingsView: View {
     @EnvironmentObject var model: TwinModel
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var voice = Voice.shared
+    // Vera's orb form — shared with TwinView via the same key.
+    @AppStorage("vera.orbForm") private var orbForm: String = "dots"
 
     @State private var showPersona = false
     @State private var confirmClear = false
@@ -104,6 +106,12 @@ struct SettingsView: View {
                 Section {
                     Toggle("Speak her replies aloud", isOn: $voice.enabled)
                     Toggle("Show her in 3D", isOn: $model.portrait3DEnabled)
+                    // Vera's visual form — the dotted point-cloud (default) or her
+                    // original iridescent orb. Both react the same to her state.
+                    Picker("Her form", selection: $orbForm) {
+                        Text("Field").tag("dots")
+                        Text("Orb").tag("siri")
+                    }
                     Button {
                         showPersona = true
                     } label: {
@@ -112,7 +120,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Presence")
                 } footer: {
-                    Text("Her voice is spoken on this phone, entirely on-device — no audio ever leaves it. The 3D likeness is built on your Mac and arrives with the memory vault; when it isn't present the orb is shown as always. “Who she is” is the persona that shapes how she speaks.")
+                    Text("Her voice is spoken on this phone, entirely on-device — no audio ever leaves it. “Field” shows her as a point-cloud that says what she's doing; “Orb” is her warm iridescent sphere. The 3D likeness is built on your Mac and arrives with the memory vault. “Who she is” is the persona that shapes how she speaks.")
                 }
 
                 // ── Privacy ───────────────────────────────────────────────

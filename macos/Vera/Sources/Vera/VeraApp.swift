@@ -38,7 +38,7 @@ struct VeraApp: App {
 ///   2. a CHAT panel that appears when you click the orb (like Siri today).
 /// No Dock icon, no normal window — it runs independently in the background.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// So the SwiftUI `Settings` command (⌘, / app menu) can open the ONE real
     /// settings window instead of the empty placeholder scene.
     static weak var shared: AppDelegate?
@@ -54,7 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var voiceLearnWindow: NSWindow?
     private var brainWindow: NSWindow?
     private var rememberWindow: NSWindow?   // "Remember them…" — the life-story interview
-    private var eyeWindow: NSWindow?     // her opt-in eye (small, always visible while on)
+    // (the eye is no longer a window — it's the FaceStrip inside the chat panel,
+    //  driven by model.eyeOn. No eyeWindow to track.)
     private var statusItem: NSStatusItem?
     private var privacyItem: NSMenuItem?
     private var learnItem: NSMenuItem?
@@ -137,26 +138,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         enableDefaultSensesOnce()
     }
 
-    /// Senses ON by default — her full presence from the first launch (voice is
-    /// already on by default; this adds the eye + the room). Done ONCE via a
-    /// flag, so after the first run the user's own choices stick: if they turn
-    /// the eye or ear off, it stays off. macOS still asks its own camera/mic
-    /// permission on top — this only opens the switches, never bypasses TCC.
+    /// Room sense ON by default — her ambient presence from the first launch
+    /// (voice is already on by default; this adds the room/ear). Done ONCE via a
+    /// flag, so after the first run the user's own choice sticks. macOS still asks
+    /// its own mic permission on top — this only opens the switch, never bypasses
+    /// TCC. The EYE is deliberately NOT defaulted on now: her camera only runs
+    /// while the in-panel FaceStrip is visible (never unseen), so it waits until
+    /// the user opens it — a cleaner, more honest opt-in than a camera that comes
+    /// up behind a closed panel.
     private func enableDefaultSensesOnce() {
         let key = "vera.sensesDefaultedOn.v1"
         guard !UserDefaults.standard.bool(forKey: key) else { return }
         UserDefaults.standard.set(true, forKey: key)
-        // give the brain/server a moment to come up, then open eye + ear.
+        // give the brain/server a moment to come up, then open the room sense.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             guard let self else { return }
-            if self.eyeWindow == nil { self.toggleEye() }      // camera on (opens the visible preview)
             if !self.model.ear.on { self.model.ear.toggle() }  // room on (ambient sound types)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.syncMenuChecks() }
         }
     }
 
-    /// A menu-bar status icon (top-right) so you know Anita is running, with
-    /// Settings + actions tucked inside its menu.
+    // The hosting view for the rich header row (so we can refresh it on open).
+    private var headerHost: NSHostingView<MenuHeaderView>?
+    // Form picker items (checkmark reflects the live @AppStorage choice).
+    private var formItemDots: NSMenuItem?
+    private var formItemOrb: NSMenuItem?
+
+    /// A menu-bar status icon (top-right) so you know she's running, with a
+    /// Tailscale-grade menu: a header (name · live status · one Active/Private
+    /// toggle · "This Mac"), then grouped sections instead of a flat list —
+    /// Senses ›, Memory & learning ›, Voice & look › tuck the ten toggles into
+    /// three tidy submenus, so the top level stays short and calm.
     private func makeStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
@@ -165,13 +177,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.image?.isTemplate = true
         }
         let menu = NSMenu()
-        menu.addItem(withTitle: model.assistantName, action: nil, keyEquivalent: "")
-        menu.addItem(.separator())
+        menu.delegate = self            // refresh the live header/checks on open
         // every item carries its canonical SF Symbol — the menu reads at a
         // glance, the way the system's own menus do
         func symbol(_ name: String) -> NSImage? {
             NSImage(systemSymbolName: name, accessibilityDescription: nil)
         }
+
+        // ── Header: name · status · primary Active/Private switch · device ──────
+        let header = NSMenuItem()
+        let host = NSHostingView(rootView: MenuHeaderView(model: model) { [weak self] in
+            self?.menuTogglePrivate()
+        })
+        host.frame = NSRect(x: 0, y: 0, width: 260, height: 96)
+        header.view = host
+        headerHost = host
+        menu.addItem(header)
+        menu.addItem(.separator())
+
+        // ── Primary actions — the two things you reach for most ─────────────────
         let show = NSMenuItem(title: "Open \(model.assistantName)",
                               action: #selector(menuShowOrb), keyEquivalent: "")
         show.image = symbol("circle.hexagongrid.fill")
@@ -195,56 +219,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             else { chat.keyEquivalent = "" }
         }
         menu.addItem(.separator())
-        // Privacy controls — front and centre.
+
+        // ── Senses › — every "let her …" switch, grouped (with chevron) ─────────
+        let sensesItem = NSMenuItem(title: "Senses", action: nil, keyEquivalent: "")
+        sensesItem.image = symbol("sensor.tag.radiowaves.forward")
+        let senses = NSMenu(title: "Senses")
+        eyeItem = NSMenuItem(title: "See me", action: #selector(menuEye), keyEquivalent: "")
+        eyeItem?.image = symbol("eye"); eyeItem?.target = self; senses.addItem(eyeItem!)
+        earItem = NSMenuItem(title: "Hear the room", action: #selector(menuEar), keyEquivalent: "")
+        earItem?.image = symbol("ear"); earItem?.target = self; senses.addItem(earItem!)
+        let wakeName = model.assistantName.components(separatedBy: " ").first ?? model.assistantName
+        wakeItem = NSMenuItem(title: "Wake when I say “\(wakeName)”",
+                              action: #selector(menuWake), keyEquivalent: "")
+        wakeItem?.image = symbol("person.wave.2"); wakeItem?.target = self; senses.addItem(wakeItem!)
+        photosItem = NSMenuItem(title: "Read my Photos", action: #selector(menuPhotos), keyEquivalent: "")
+        photosItem?.image = symbol("photo.on.rectangle"); photosItem?.target = self; senses.addItem(photosItem!)
+        musicItem = NSMenuItem(title: "Hear my music", action: #selector(menuMusic), keyEquivalent: "")
+        musicItem?.image = symbol("music.note"); musicItem?.target = self; senses.addItem(musicItem!)
+        menu.setSubmenu(senses, for: sensesItem)
+        menu.addItem(sensesItem)
+
+        // ── Memory & learning › — observing, privacy, the deeper memory windows ─
+        let memItem = NSMenuItem(title: "Memory & learning", action: nil, keyEquivalent: "")
+        memItem.image = symbol("brain")
+        let mem = NSMenu(title: "Memory & learning")
+        learnItem = NSMenuItem(title: "Learn how I work", action: #selector(menuToggleLearn), keyEquivalent: "")
+        learnItem?.image = symbol("graduationcap"); learnItem?.target = self; mem.addItem(learnItem!)
         privacyItem = NSMenuItem(title: "Private mode (pause learning)",
                                  action: #selector(menuTogglePrivate), keyEquivalent: "")
-        privacyItem?.image = symbol("hand.raised")
-        privacyItem?.target = self; menu.addItem(privacyItem!)
+        privacyItem?.image = symbol("hand.raised"); privacyItem?.target = self; mem.addItem(privacyItem!)
         let snooze = NSMenuItem(title: "Snooze 30 min", action: #selector(menuSnooze), keyEquivalent: "")
-        snooze.image = symbol("moon.zzz")
-        snooze.target = self; menu.addItem(snooze)
-        learnItem = NSMenuItem(title: "Learn how I work", action: #selector(menuToggleLearn), keyEquivalent: "")
-        learnItem?.image = symbol("graduationcap")
-        learnItem?.target = self; menu.addItem(learnItem!)
+        snooze.image = symbol("moon.zzz"); snooze.target = self; mem.addItem(snooze)
+        mem.addItem(.separator())
+        let remember = NSMenuItem(title: "Remember them…", action: #selector(menuRemember), keyEquivalent: "")
+        remember.image = symbol("heart.text.square"); remember.target = self; mem.addItem(remember)
+        let brain = NSMenuItem(title: "See how she thinks…", action: #selector(menuBrain), keyEquivalent: "b")
+        brain.image = symbol("brain.head.profile"); brain.target = self; mem.addItem(brain)
+        menu.setSubmenu(mem, for: memItem)
+        menu.addItem(memItem)
+
+        // ── Voice & look › — her voice + the orb/field form ─────────────────────
+        let voiceItem = NSMenuItem(title: "Voice & look", action: nil, keyEquivalent: "")
+        voiceItem.image = symbol("waveform")
+        let vl = NSMenu(title: "Voice & look")
+        let teach = NSMenuItem(title: "Teach her a voice…", action: #selector(menuVoice), keyEquivalent: "")
+        teach.image = symbol("waveform.badge.mic"); teach.target = self; vl.addItem(teach)
+        vl.addItem(.separator())
+        let formField = NSMenuItem(title: "Form: Field (dots)", action: #selector(menuFormDots), keyEquivalent: "")
+        formField.image = symbol("circle.dotted"); formField.target = self; vl.addItem(formField)
+        let formOrb = NSMenuItem(title: "Form: Orb", action: #selector(menuFormOrb), keyEquivalent: "")
+        formOrb.image = symbol("circle.fill"); formOrb.target = self; vl.addItem(formOrb)
+        formItemDots = formField; formItemOrb = formOrb
+        menu.setSubmenu(vl, for: voiceItem)
+        menu.addItem(voiceItem)
+
         menu.addItem(.separator())
         let settings = NSMenuItem(title: "Settings…", action: #selector(menuSettings), keyEquivalent: ",")
         settings.image = symbol("gearshape")
         settings.target = self; menu.addItem(settings)
-        let remember = NSMenuItem(title: "Remember them…", action: #selector(menuRemember), keyEquivalent: "")
-        remember.image = symbol("heart.text.square")
-        remember.target = self; menu.addItem(remember)
-        let voice = NSMenuItem(title: "Teach her a voice…", action: #selector(menuVoice), keyEquivalent: "")
-        voice.image = symbol("waveform")
-        voice.target = self; menu.addItem(voice)
-        let brain = NSMenuItem(title: "See how she thinks…", action: #selector(menuBrain), keyEquivalent: "b")
-        brain.image = symbol("brain.head.profile")
-        brain.target = self; menu.addItem(brain)
-        eyeItem = NSMenuItem(title: "Let her see me (on/off)", action: #selector(menuEye), keyEquivalent: "")
-        eyeItem?.image = symbol("eye")
-        eyeItem?.target = self; menu.addItem(eyeItem!)
-        earItem = NSMenuItem(title: "Let her hear the room (on/off)",
-                             action: #selector(menuEar), keyEquivalent: "")
-        earItem?.image = symbol("ear")
-        earItem?.target = self; menu.addItem(earItem!)
-        let wakeName = model.assistantName.components(separatedBy: " ").first ?? model.assistantName
-        wakeItem = NSMenuItem(title: "Listen when I say “\(wakeName)”",
-                              action: #selector(menuWake), keyEquivalent: "")
-        wakeItem?.image = symbol("person.wave.2")
-        wakeItem?.target = self; menu.addItem(wakeItem!)
-        photosItem = NSMenuItem(title: "Let her read my Photos (on/off)",
-                                action: #selector(menuPhotos), keyEquivalent: "")
-        photosItem?.image = symbol("photo.on.rectangle")
-        photosItem?.target = self; menu.addItem(photosItem!)
-        musicItem = NSMenuItem(title: "Let her hear my music (on/off)",
-                               action: #selector(menuMusic), keyEquivalent: "")
-        musicItem?.image = symbol("music.note")
-        musicItem?.target = self; menu.addItem(musicItem!)
-        menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit \(model.assistantName)", action: #selector(menuQuit), keyEquivalent: "q")
         quit.image = symbol("power")
         quit.target = self; menu.addItem(quit)
         item.menu = menu
         statusItem = item
+    }
+
+    @objc private func menuFormDots() { setOrbForm("dots") }
+    @objc private func menuFormOrb()  { setOrbForm("siri") }
+    private func setOrbForm(_ v: String) {
+        UserDefaults.standard.set(v, forKey: "vera.orbForm")
+        syncFormChecks()
+    }
+    private func syncFormChecks() {
+        let v = UserDefaults.standard.string(forKey: "vera.orbForm") ?? "dots"
+        formItemDots?.state = (v == "dots") ? .on : .off
+        formItemOrb?.state  = (v == "siri") ? .on : .off
     }
 
     @objc private func menuShowOrb() { orbWindow?.makeKeyAndOrderFront(nil) }
@@ -296,56 +345,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The See-me switch. ON opens a small floating preview window (her eye is
-    /// never on without a visible preview); OFF — or just closing the window —
-    /// stops the camera and posts /api/presence/stop so she forgets at once.
+    /// The See-me switch. INTEGRATED now: instead of a detached "she can see you"
+    /// window, her eye is a strip INSIDE the chat panel (FaceStrip, shown while
+    /// `model.eyeOn`). The camera is never on without that visible preview — the
+    /// strip's onAppear/onDisappear starts/stops FaceEngine — so the opt-in
+    /// contract holds. ON opens the chat panel so the strip is seen; OFF stops the
+    /// camera and posts /api/presence/stop so she forgets at once.
     private func toggleEye() {
-        if let w = eyeWindow {                 // ON → OFF
-            w.close()                          // willClose handler does the rest
+        if model.eyeOn {                       // ON → OFF
+            model.eyeOn = false                // FaceStrip disappears → engine.stop()
+            eyeItem?.state = .off
+            postPresenceStop()
             return
         }
-        let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 288, height: 216),
-            styleMask: [.titled, .closable, .fullSizeContentView],
-            backing: .buffered, defer: false)
-        w.title = "she can see you"
-        w.level = .floating
-        w.isReleasedWhenClosed = false
-        // the window is a dark instrument, chrome included — no white bar over
-        // a black canvas
-        w.titlebarAppearsTransparent = true
-        w.appearance = NSAppearance(named: .darkAqua)
-        w.backgroundColor = NSColor(red: 0.02, green: 0.024, blue: 0.04, alpha: 1)
-        w.isMovableByWindowBackground = true
-        w.contentView = NSHostingView(rootView: EyeView())
-        NotificationCenter.default.addObserver(
-            forName: NSWindow.willCloseNotification, object: w, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.eyeWindow = nil
-                self.model.eyeOn = false
-                self.eyeItem?.state = .off
-                self.postPresenceStop()
-            }
-        }
-        w.center(); w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
-        eyeWindow = w
-        model.eyeOn = true
+        model.eyeOn = true                     // OFF → ON: the strip appears in the panel
         eyeItem?.state = .on
+        // make sure the panel is open so the eye is actually visible (its camera
+        // only runs while the strip is on screen — never unseen).
+        if let chat = chatWindow, !chat.isVisible { toggleChat() }
+        else { chatWindow?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
     }
 
     private var onboardWindow: NSWindow?
     private func showOnboarding() {
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 430, height: 330),
-                         styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        w.title = "Vera"
-        w.isReleasedWhenClosed = false
-        w.contentView = NSHostingView(rootView: OnboardingView(model: model) { [weak self] in
+        // Onboarding carries a completion closure, so it's built inline — but with
+        // the SAME chrome as makeWindow (transparent titlebar, full-size content)
+        // so it matches the rest of the app.
+        let host = NSHostingController(rootView: OnboardingView(model: model) { [weak self] in
             UserDefaults.standard.set(true, forKey: "didOnboard")
             self?.onboardWindow?.close()
             self?.onboardWindow = nil
         })
-        w.center(); w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        let w = NSWindow(contentViewController: host)
+        w.styleMask = [.titled, .closable, .fullSizeContentView]
+        w.title = model.assistantName
+        w.titlebarAppearsTransparent = true
+        w.titleVisibility = .hidden
+        w.isMovableByWindowBackground = true
+        w.isReleasedWhenClosed = false
+        w.setContentSize(NSSize(width: 440, height: 360))
+        w.center(); present(w)
         onboardWindow = w
     }
 
@@ -375,6 +414,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func syncMenuChecks() {
         privacyItem?.state = model.activityPrivate ? .on : .off
         learnItem?.state = model.activityEnabled ? .on : .off
+        syncFormChecks()
         // when private, dim/slash the menu-bar icon so you can SEE she's paused
         if let b = statusItem?.button {
             let sym = model.activityPrivate ? "moon.zzz.fill" : "circle.hexagongrid.fill"
@@ -383,32 +423,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: NSMenuDelegate
+    /// Every time the menu opens, refresh the live header (status line, device,
+    /// the Active/Private switch) and all the checkmarks — so the menu is always
+    /// showing the truth, not a stale snapshot from launch. The header is a
+    /// SwiftUI view bound to the @ObservedObject model, so re-reading its state
+    /// here keeps the one toggle and the status dot honest.
+    func menuWillOpen(_ menu: NSMenu) {
+        syncMenuChecks()
+        // reflect the real server music state (lives server-side)
+        model.refreshMusic { [weak self] on in self?.musicItem?.state = on ? .on : .off }
+        eyeItem?.state = model.eyeOn ? .on : .off
+        earItem?.state = model.ear.on ? .on : .off
+        wakeItem?.state = model.wakeOn ? .on : .off
+        photosItem?.state = UserDefaults.standard.bool(forKey: "photosOn") ? .on : .off
+        // nudge the SwiftUI header to re-lay its bound state
+        headerHost?.needsLayout = true
+    }
+
     private func showVoiceLearn() {
-        if let w = voiceLearnWindow {
-            w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return
-        }
-        let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 480),
-            styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        w.title = "Teach \(model.assistantName) a voice"
-        w.isReleasedWhenClosed = false
-        w.contentView = NSHostingView(rootView: VoiceLearnView().environmentObject(model))
-        w.center(); w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        if let w = voiceLearnWindow { present(w); return }
+        let w = makeWindow(title: "Teach \(model.assistantName) a voice",
+                           root: VoiceLearnView(), model: model,
+                           size: NSSize(width: 480, height: 500),
+                           minSize: NSSize(width: 440, height: 440),
+                           autosave: "vera.window.voice")
+        present(w)
         voiceLearnWindow = w
     }
 
     /// Open the Brain — a graph of how the twin thinks and learns.
     private func showBrain() {
-        if let w = brainWindow {
-            w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return
-        }
-        let w = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 780, height: 600),
-            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        w.title = "\(model.assistantName) — The Brain"
-        w.isReleasedWhenClosed = false
-        w.contentView = NSHostingView(rootView: BrainView().environmentObject(model))
-        w.center(); w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        if let w = brainWindow { present(w); return }
+        let w = makeWindow(title: "\(model.assistantName) — The Brain",
+                           root: BrainView(), model: model,
+                           size: NSSize(width: 820, height: 620),
+                           minSize: NSSize(width: 560, height: 440),
+                           resizable: true,
+                           autosave: "vera.window.brain")
+        present(w)
         brainWindow = w
     }
 
@@ -416,16 +469,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the loved one was (their sayings, stories, the things that make her feel
     /// like them). The deepest part of the app, now findable, not CLI-only.
     private func showRemember() {
-        if let w = rememberWindow {
-            w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return
-        }
-        let host = NSHostingController(rootView: RememberView().environmentObject(model))
-        let w = NSWindow(contentViewController: host)
-        w.styleMask = [.titled, .closable]
-        w.title = "Remember them"
-        w.isReleasedWhenClosed = false
-        w.setContentSize(NSSize(width: 520, height: 560))
-        w.center(); w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+        if let w = rememberWindow { present(w); return }
+        let w = makeWindow(title: "Remember them",
+                           root: RememberView(), model: model,
+                           size: NSSize(width: 520, height: 580),
+                           minSize: NSSize(width: 460, height: 460),
+                           autosave: "vera.window.remember")
+        present(w)
         rememberWindow = w
     }
 
@@ -440,25 +490,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 win.close()
             }
         }
-        if let w = settingsWindow {
-            w.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-        // Use an NSHostingController (NOT a bare NSHostingView): a SwiftUI `Form`
-        // inside a raw NSHostingView in a hand-made window lays its rows out at
-        // zero height — the window opens but the body is BLANK (the reported bug).
-        // The controller gives SwiftUI the proper hosting/layout context, and we
-        // size the window to the view's fitting size so nothing is clipped.
-        let host = NSHostingController(rootView: SettingsView().environmentObject(model))
-        let w = NSWindow(contentViewController: host)
-        w.styleMask = [.titled, .closable]
-        w.title = "\(model.assistantName) — Settings"
-        w.isReleasedWhenClosed = false
-        w.setContentSize(NSSize(width: 440, height: 520))
-        w.center()
-        w.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if let w = settingsWindow { present(w); return }
+        let w = makeWindow(title: "\(model.assistantName) — Settings",
+                           root: SettingsView(), model: model,
+                           size: NSSize(width: 460, height: 600),
+                           minSize: NSSize(width: 440, height: 480),
+                           autosave: "vera.window.settings")
+        present(w)
         settingsWindow = w
     }
 
@@ -1878,11 +1916,21 @@ final class AppModel: ObservableObject {
         return 0
     }
 
+    // Her colour, per state — WARM, anchored on her gold identity (not the old
+    // cold blue/teal/indigo, which clashed with the gold chrome + the website's
+    // dotted orb). Each state is still distinct, but all live in the same warm
+    // family: idle rests on gold, listening lifts to amber, thinking cools only
+    // slightly to a dusk rose, speaking brightens to a warm honey. Mirrors the
+    // website's dotted-orb palette so she looks like one person across surfaces.
     var tint: Color {
-        if voice.isListening { return Color(red: 0.04, green: 0.52, blue: 1.0) }   // blue
-        if voice.isSpeaking { return Color(red: 0.18, green: 0.80, blue: 0.55) }   // teal/green
-        if phase == .thinking { return Color(red: 0.45, green: 0.40, blue: 0.95) } // indigo
-        return Color(red: 0.30, green: 0.45, blue: 0.95)
+        // Each state is clearly ITS OWN colour so the orb is expressive at a glance —
+        // but all stay in her warm amber family (never neon, never a hue jump). The
+        // shift carries the feeling: listening lifts brighter, thinking cools to a
+        // rose-amber, speaking glows honey, idle rests on her gold accent.
+        if voice.isListening { return Color(red: 0.910, green: 0.698, blue: 0.290) } // #E8B24A bright amber — attentive
+        if voice.isSpeaking { return Color(red: 0.941, green: 0.753, blue: 0.404) }  // #F0C067 honey glow — alive
+        if phase == .thinking { return Color(red: 0.788, green: 0.561, blue: 0.420) } // #C98F6B rose-amber — reflecting
+        return Color(red: 0.839, green: 0.663, blue: 0.373)                            // #D6A95F gold — at rest
     }
 
     /// Wake on her name (opt-in). Persisted; the watch re-arms whenever idle.

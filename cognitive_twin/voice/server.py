@@ -54,6 +54,41 @@ _playback_proc: Any = None
 # waits its turn, the model does one generation at a time (which is all it can
 # really do anyway), and a burst degrades to "a bit slower" instead of a crash.
 _llm_lock = threading.Lock()
+# How long a USER ask will wait for the one model before giving up with a warm
+# line instead of hanging. Background work (warming, the companion check-in) can
+# hold the model briefly; a real person should never wait a minute-and-a-half
+# behind it. If we can't start within this, we answer warmly and bail — the next
+# turn will be instant. (Stress finding 2026-10-19: a user ask queued ~90s behind
+# background generation and timed out; the model itself answers in <1s.)
+_USER_ASK_LOCK_WAIT = 30.0  # seconds
+
+# Set True once the model has actually generated at least once (warm-up done), so
+# /api/health can say "warming" vs "ready" and the app shows "waking her mind…"
+# during the ~1 min cold-load after a (re)start instead of a dead spinner / a
+# first ask that times out. Honest feedback over a silent hang.
+_model_ready = threading.Event()
+
+
+class _Busy(Exception):
+    """The model was busy with other work longer than a user should wait."""
+
+
+def _acquire_for_user(timeout: float = _USER_ASK_LOCK_WAIT):
+    """Context-manager: take the LLM lock for a USER turn, but never hang. Raises
+    _Busy if the model is still occupied after `timeout` so the handler can answer
+    warmly instead of leaving the person staring at a spinner."""
+    import contextlib
+
+    @contextlib.contextmanager
+    def _cm():
+        got = _llm_lock.acquire(timeout=timeout)
+        if not got:
+            raise _Busy()
+        try:
+            yield
+        finally:
+            _llm_lock.release()
+    return _cm()
 
 
 def _play_wav_bytes(wav: bytes) -> None:
@@ -228,6 +263,10 @@ class _Handler(BaseHTTPRequestHandler):
                 "tts": tts.is_available(),
                 "stt_local": stt.is_available(),
                 "model": model,
+                # True once the model has warmed enough to answer fast; during the
+                # cold ~1 min after (re)start it's False → the app shows "waking
+                # her mind…" instead of a spinner that looks stuck.
+                "model_ready": _model_ready.is_set(),
                 "routing": routing,
                 # Vera's bundled neural voice (Kokoro preferred, Piper fallback) —
                 # the app uses it when present for a natural, human-sounding reply.
@@ -757,8 +796,15 @@ class _Handler(BaseHTTPRequestHandler):
             not_you = data.get("is_you") is False
             record = (not internal) and (not not_you)
             try:
-                with _llm_lock:   # one generation at a time — a burst queues, not crashes
+                # one generation at a time — a burst queues — BUT a user never
+                # waits forever behind background work: bail warmly after 30s.
+                with _acquire_for_user():
                     answer, route = _run_once_capture(agent, text, record=record)
+            except _Busy:
+                self._json(200, {
+                    "answer": "Give me just a second — finishing a thought. Ask me again?",
+                    "route": {"rule": "busy"}})
+                return
             except Exception as e:  # never 500 the UI on an agent hiccup
                 self._json(200, {"answer": _llm_error_message(e), "route": None})
                 return
@@ -786,11 +832,17 @@ class _Handler(BaseHTTPRequestHandler):
                 except (BrokenPipeError, ConnectionResetError):
                     raise
             try:
-                with _llm_lock:   # serialize generation (burst-safe)
+                # serialize generation (burst-safe) but never hang a person behind
+                # background work — bail warmly after 30s like /api/ask.
+                with _acquire_for_user():
                     answer, route = _run_once_capture(
                         agent, text, record=not internal,
                         on_delta=lambda d: _send({"delta": d}))
                 _send({"done": True, "answer": answer, "route": route})
+            except _Busy:
+                _send({"done": True,
+                       "answer": "Give me just a second — finishing a thought. Ask me again?",
+                       "route": {"rule": "busy"}})
             except (BrokenPipeError, ConnectionResetError):
                 pass                        # client went away mid-stream
             except Exception as e:
@@ -1186,6 +1238,7 @@ def _warm_model(agent) -> None:
             except Exception:
                 pass
             time.sleep(0.2)
+        _model_ready.set()      # warm-up done — health can now say "ready"
     threading.Thread(target=warm, daemon=True).start()
 
 

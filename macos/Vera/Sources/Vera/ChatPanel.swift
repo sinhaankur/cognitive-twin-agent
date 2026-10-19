@@ -11,15 +11,26 @@ struct ChatPanel: View {
     // Orb animation comes from the ONE shared driver (model.orbPhase) — no
     // per-view 60fps timer, so this panel rests when she rests.
 
-    // Vera's palette — warm sandstone gold (matches the orb), used sparingly.
-    private static let gold = Color(red: 0.86, green: 0.68, blue: 0.38)
+    // Vera's accent — warm sandstone gold, now from the shared token system
+    // (VeraTokens.accent) so it stays consistent across the app + adapts
+    // light/dark. Alias kept so existing references read unchanged.
+    private static let gold = VeraTokens.accent
 
     var body: some View {
         VStack(spacing: 0) {
             header
+            // Her "See me" sense lives HERE — inside the panel, sliding in under
+            // the header — not an orphan window. One integrated surface.
+            if model.eyeOn {
+                FaceStrip(model: model)
+                    .transition(.asymmetric(
+                        insertion: .push(from: .top).combined(with: .opacity),
+                        removal: .opacity))
+            }
             conversation
             inputBar
         }
+        .animation(.easeOut(duration: 0.28), value: model.eyeOn)
         .background(Color.black.opacity(0.001))     // let the window material show
         .onAppear {
             focused = true
@@ -69,7 +80,7 @@ struct ChatPanel: View {
                 }
                 HStack(spacing: 5) {
                     Circle()
-                        .fill(model.serverUp ? Color.green.opacity(0.9) : Color.orange.opacity(0.9))
+                        .fill(model.serverUp ? VeraTokens.accent : VeraTokens.warn)
                         .frame(width: 5, height: 5)
                     // The LIVE, honest status — the words that carry the feeling of
                     // what she's doing right now (waking her mind… / listening… /
@@ -95,7 +106,7 @@ struct ChatPanel: View {
         .padding(.horizontal, 16)
         .padding(.top, 14).padding(.bottom, 12)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1)
+            Rectangle().fill(VeraTokens.line).frame(height: 1)
         }
     }
 
@@ -225,7 +236,7 @@ struct ChatPanel: View {
     }
     private var micPermissionBanner: some View {
         HStack(spacing: 9) {
-            Image(systemName: "mic.slash.fill").foregroundStyle(.orange)
+            Image(systemName: "mic.slash.fill").foregroundStyle(VeraTokens.warn)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Allow \(deniedWhat) to talk").font(.system(size: 12, weight: .semibold))
                 Text("Typing works meanwhile. If you just turned it on, tap the mic again.")
@@ -239,8 +250,8 @@ struct ChatPanel: View {
                 .buttonStyle(.borderedProminent).controlSize(.small)
         }
         .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(Color.orange.opacity(0.12))
-        .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Color.orange.opacity(0.3)))
+        .background(VeraTokens.warnSoft)
+        .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(VeraTokens.warn.opacity(0.4)))
         .clipShape(RoundedRectangle(cornerRadius: 11))
     }
 
@@ -254,7 +265,7 @@ struct ChatPanel: View {
                 HStack(spacing: 7) {
                     Image(systemName: "waveform")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.red)
+                        .foregroundStyle(VeraTokens.danger)
                         .opacity(0.55 + Double(model.voice.level) * 0.45)
                     Text(model.voice.transcript.isEmpty ? "listening…" : model.voice.transcript)
                         .font(.system(size: 12))
@@ -285,7 +296,7 @@ struct ChatPanel: View {
         .animation(.easeOut(duration: 0.2), value: model.voice.isListening)
         .animation(.easeOut(duration: 0.2), value: model.pendingAttachment != nil)
         .overlay(alignment: .top) {
-            Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1)
+            Rectangle().fill(VeraTokens.line).frame(height: 1)
         }
     }
 
@@ -336,8 +347,8 @@ struct ChatPanel: View {
                     .foregroundStyle(.white)
                     .frame(width: 30, height: 30)
                     .background(Circle().fill(
-                        model.voice.isSpeaking ? Color.orange
-                        : model.voice.isListening ? Color.red : Self.gold))
+                        model.voice.isSpeaking ? VeraTokens.warn
+                        : model.voice.isListening ? VeraTokens.danger : Self.gold))
             }.buttonStyle(.plain)
             .help(model.voice.isListening ? "Stop listening" : "Talk to her")
 
@@ -374,7 +385,7 @@ struct ChatPanel: View {
 private struct ThinkingRow: View {
     let phase: CGFloat
     var elapsed: TimeInterval = 0
-    private var gold: Color { Color(red: 0.86, green: 0.68, blue: 0.38) }
+    private var gold: Color { VeraTokens.accent }
     // a gentle rotation of words so it feels alive, not stuck on one label — and
     // on a long wait it REASSURES (warming up / almost there) so the user always
     // knows it's working, never stuck. Micro-detail, but it's the whole feeling.
@@ -418,7 +429,7 @@ private struct ThinkingRow: View {
 /// a soft accent bubble, right-aligned. Markdown-rendered, selectable.
 private struct TurnBubble: View {
     let turn: ChatTurn
-    private var gold: Color { Color(red: 0.86, green: 0.68, blue: 0.38) }
+    private var gold: Color { VeraTokens.accent }
 
     private var rendered: AttributedString {
         if turn.isUser { return AttributedString(turn.text) }

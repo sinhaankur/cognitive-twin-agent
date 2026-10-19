@@ -16,11 +16,11 @@ enum VeraTokens {
     }
 
     /// accent — from tokens.json (light/dark).
-    static let accent = dynamic(light: Color(red: 0.063, green: 0.639, blue: 0.498), dark: Color(red: 0.243, green: 0.812, blue: 0.557))
+    static let accent = dynamic(light: Color(red: 0.749, green: 0.541, blue: 0.235), dark: Color(red: 0.839, green: 0.663, blue: 0.373))
     /// accentInk — from tokens.json (light/dark).
-    static let accentInk = dynamic(light: Color(red: 0.039, green: 0.498, blue: 0.388), dark: Color(red: 0.243, green: 0.812, blue: 0.557))
+    static let accentInk = dynamic(light: Color(red: 0.541, green: 0.392, blue: 0.125), dark: Color(red: 0.894, green: 0.741, blue: 0.494))
     /// accentSoft — from tokens.json (light/dark).
-    static let accentSoft = dynamic(light: Color(red: 0.910, green: 0.969, blue: 0.945), dark: Color(red: 0.086, green: 0.204, blue: 0.165))
+    static let accentSoft = dynamic(light: Color(red: 0.957, green: 0.925, blue: 0.867), dark: Color(red: 0.149, green: 0.122, blue: 0.071))
     /// bg — from tokens.json (light/dark).
     static let bg = dynamic(light: Color(red: 0.965, green: 0.965, blue: 0.961), dark: Color(red: 0.090, green: 0.090, blue: 0.102))
     /// panel — from tokens.json (light/dark).

@@ -17,8 +17,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 TOKENS = HERE / "tokens.json"
 OUT = HERE / "tokens.css"
-# iOS reads the SAME canonical tokens, emitted as a SwiftUI Color extension.
-SWIFT_OUT = Path(__file__).resolve().parents[2] / "ios" / "Vera" / "Sources" / "VeraTokens.swift"
+# BOTH apps read the SAME canonical tokens, emitted as a SwiftUI Color extension —
+# one shared design system across the web, iOS, and macOS.
+_ROOT = Path(__file__).resolve().parents[2]
+SWIFT_OUT = _ROOT / "ios" / "Vera" / "Sources" / "VeraTokens.swift"
+SWIFT_OUT_MAC = _ROOT / "macos" / "Vera" / "Sources" / "Vera" / "VeraTokens.swift"
 
 # camelCase token name → kebab CSS var name (accentInk → --accent-ink).
 def _kebab(name: str) -> str:
@@ -109,9 +112,10 @@ def main() -> None:
     OUT.write_text(css, encoding="utf-8")
     print(f"wrote {OUT} ({len(css)} bytes)")
     swift = build_swift()
-    SWIFT_OUT.parent.mkdir(parents=True, exist_ok=True)
-    SWIFT_OUT.write_text(swift, encoding="utf-8")
-    print(f"wrote {SWIFT_OUT} ({len(swift)} bytes)")
+    for out in (SWIFT_OUT, SWIFT_OUT_MAC):
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(swift, encoding="utf-8")
+        print(f"wrote {out} ({len(swift)} bytes)")
 
 
 if __name__ == "__main__":

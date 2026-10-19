@@ -12,9 +12,7 @@ struct OnboardingView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                SiriOrb(amplitude: 0.25, phase: 1.2,
-                        tint: Color(red: 0.3, green: 0.45, blue: 0.95))
-                    .frame(width: 44, height: 44)
+                LiveOrb(model: model, size: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("She's yours").font(.title3.weight(.semibold))
                     Text("private, on this Mac, already someone — better once she's someone you name")

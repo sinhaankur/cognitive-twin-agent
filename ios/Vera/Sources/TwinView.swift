@@ -5,6 +5,8 @@ import SwiftUI
 /// SFSpeechRecognizer/AVSpeechSynthesizer (same as macOS); this is the typed core.
 struct TwinView: View {
     @EnvironmentObject var model: TwinModel
+    // Vera's orb form — "dots" (point-cloud, default) or "siri" (original blob).
+    @AppStorage("vera.orbForm") private var orbForm: String = "dots"
     @State private var phase: CGFloat = 0
     @State private var typed = ""
     @State private var showPersona = false
@@ -50,12 +52,22 @@ struct TwinView: View {
 
                 Spacer()
 
-                // The Siri-style orb — the original visual Ankur preferred.
-                SiriOrb(amplitude: model.thinking ? 0.35 : 0.18,
-                        phase: phase,
-                        tint: Color(red: 0.30, green: 0.45, blue: 0.95),
-                        portraitMesh: model.portraitMeshURL)
-                    .frame(width: 220, height: 220)
+                // Vera's orb — the dotted point-cloud by default (matches the
+                // website); the original Siri blob stays available via the
+                // vera.orbForm switch. Same amplitude/phase/tint drive both.
+                Group {
+                    if orbForm == "siri" {
+                        SiriOrb(amplitude: model.thinking ? 0.35 : 0.18,
+                                phase: phase,
+                                tint: Color(red: 0.30, green: 0.45, blue: 0.95),
+                                portraitMesh: model.portraitMeshURL)
+                    } else {
+                        DottedOrb(amplitude: model.thinking ? 0.35 : 0.18,
+                                  phase: phase,
+                                  tint: Color(red: 0.30, green: 0.45, blue: 0.95))
+                    }
+                }
+                .frame(width: 220, height: 220)
 
                 if !model.transcript.isEmpty {
                     Text(model.transcript)

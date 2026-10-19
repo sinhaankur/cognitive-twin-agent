@@ -14,13 +14,25 @@ import SwiftUI
 struct LiveOrb: View {
     @ObservedObject var model: AppModel
     var size: CGFloat
+    // Vera's visual form, switchable + remembered. "dots" = the point-cloud orb
+    // (matches the website); "siri" = the original iridescent blob. Defaults to
+    // the dotted field; flip back in Settings via @AppStorage("vera.orbForm").
+    @AppStorage("vera.orbForm") private var orbForm: String = "dots"
 
     var body: some View {
-        SiriOrb(amplitude: model.orbSpringAmp,
-                phase: model.orbPhase,
-                tint: model.tint,
-                brightness: model.brightness,
-                portraitMesh: model.portraitMeshURL)
-            .frame(width: size, height: size)
+        Group {
+            if orbForm == "siri" {
+                SiriOrb(amplitude: model.orbSpringAmp,
+                        phase: model.orbPhase,
+                        tint: model.tint,
+                        brightness: model.brightness,
+                        portraitMesh: model.portraitMeshURL)
+            } else {
+                DottedOrb(amplitude: model.orbSpringAmp,
+                          phase: model.orbPhase,
+                          tint: model.tint)
+            }
+        }
+        .frame(width: size, height: size)
     }
 }

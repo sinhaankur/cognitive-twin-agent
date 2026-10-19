@@ -8,6 +8,10 @@ struct FloatingOrb: View {
     var onTap: () -> Void
 
     @State private var pressed = false         // click/tap highlight
+    // Her visual form — the SAME switch LiveOrb reads, so the big floating orb you
+    // actually look at honours it too (it used to hard-render the blob, ignoring
+    // the Settings choice). "dots" = the point-cloud field; "siri" = old blob.
+    @AppStorage("vera.orbForm") private var orbForm: String = "dots"
     // Animation state (phase, spring-tracked amplitude, breathing pulse) now comes
     // from the ONE shared driver on AppModel — no per-view 60fps timer. This orb
     // just READS model.orbPhase / orbSpringAmp / orbPulse, so it rests exactly
@@ -29,8 +33,13 @@ struct FloatingOrb: View {
             }
 
             ZStack {
-                SiriOrb(amplitude: model.orbSpringAmp, phase: model.orbPhase,
-                        tint: model.tint, brightness: model.brightness)
+                if orbForm == "siri" {
+                    SiriOrb(amplitude: model.orbSpringAmp, phase: model.orbPhase,
+                            tint: model.tint, brightness: model.brightness)
+                } else {
+                    DottedOrb(amplitude: model.orbSpringAmp, phase: model.orbPhase,
+                              tint: model.tint)
+                }
                 // press highlight: a bright ring that flashes on click
                 Circle()
                     .strokeBorder(Color.white.opacity(pressed ? 0.9 : 0), lineWidth: 3)

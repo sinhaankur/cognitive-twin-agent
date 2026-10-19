@@ -54,12 +54,49 @@ def _rule(obj: dict) -> str:
 
 # ── scenarios ──────────────────────────────────────────────────────────────────
 
+def _warmup() -> None:
+    """Make the brain WARM before the timed scenarios so we measure steady-state
+    (what a user feels after the first minute), not the one-time cold VRAM load.
+    Wait for the server's own model_ready flag, then send a throwaway turn. Both are
+    best-effort — a cold box just means the first scenario is a little slower."""
+    import urllib.error
+    # 1) wait (up to ~2 min) for the model to report ready
+    for _ in range(24):
+        try:
+            with urllib.request.urlopen(_BRAIN + "/api/health", timeout=5) as r:
+                if json.loads(r.read() or b"{}").get("model_ready"):
+                    break
+        except Exception:
+            pass
+        time.sleep(5)
+    # 2) one throwaway generation to make sure the gen path is hot
+    try:
+        _ask("ready?", timeout=90)
+    except Exception:
+        pass
+
+
 def s_basic() -> Result:
     """A plain question gets a real, non-empty answer."""
-    obj, ms = _ask("In one short sentence, what is the capital of France?")
+    obj, ms = _ask("In one short sentence, what is the capital of France?", timeout=45)
     a = _answer(obj)
     ok = len(a) > 0 and "paris" in a.lower()
     return Result(ok, "basic Q&A", f'"{a[:60]}"', ms)
+
+
+def s_rag_retrieval() -> Result:
+    """RAG: a question whose answer lives in her sealed memory/documents should
+    pull the right passage, not hallucinate. We seed a distinctive fact, then ask —
+    a correct recall proves the retrieve→generate path end to end. Private + local."""
+    marker = "zephyrine"   # a distinctive token unlikely to be in the base model
+    try:
+        _ask(f"Please remember this: my project codename is {marker}.", timeout=45)
+    except Exception:
+        pass
+    obj, ms = _ask("What's my project codename?", timeout=45)
+    a = _answer(obj).lower()
+    ok = marker in a
+    return Result(ok, "RAG recall", f'"{_answer(obj)[:60]}"', ms)
 
 
 def s_empty() -> Result:
@@ -164,13 +201,14 @@ def s_concurrency() -> Result:
 
 SCENARIOS = [
     s_basic, s_empty, s_long, s_emotional_routing, s_task_routing,
-    s_memory, s_identity_honesty, s_rapid_fire,
+    s_memory, s_rag_retrieval, s_identity_honesty, s_rapid_fire,
 ]
 HEAVY = [s_concurrency]
 
 
 def run(quick: bool = False) -> list[Result]:
     scen = SCENARIOS + ([] if quick else HEAVY)
+    _warmup()                 # pay the cold-load cost once, off the clock
     out: list[Result] = []
     for fn in scen:
         try:

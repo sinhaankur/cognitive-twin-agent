@@ -57,8 +57,20 @@ final class FaceEngine: NSObject, ObservableObject {
     @Published var attendingCount = 0           // of those, how many face the camera
     @Published var roomContext = ""             // "with you", "a group · 2 looking her way", …
     @Published var likelyAddressingHer = true   // gate the listening side can read
+    // Who the NEAREST face is, if it matches an enrolled person (on-device FaceID).
+    // nil = unknown / not enrolled / recognition off. Drives the named room read.
+    @Published var recognizedName: String? = nil
+    // The nearest face's box + the last pixel buffer, kept so the UI can ENROLL
+    // the person you're looking at ("this is Dad") on demand. Pixels stay in RAM.
+    private var lastNearestBox: CGRect? = nil
+    private var lastPixels: CVPixelBuffer? = nil
 
     private let session = AVCaptureSession()
+    /// The live capture session, exposed read-only so an AVCaptureVideoPreviewLayer
+    /// can show the REAL camera feed in the panel (FaceStrip) — the same session
+    /// Vision already runs on, so there's no second camera and the opt-in/stop
+    /// contract is unchanged. The preview is mirrored to match the landmark coords.
+    var captureSession: AVCaptureSession { session }
     private let queue = DispatchQueue(label: "vera.eye", qos: .userInitiated)
     private let sequence = VNSequenceRequestHandler()
     private var postTimer: Timer?
@@ -100,6 +112,14 @@ final class FaceEngine: NSObject, ObservableObject {
     // frame glides after you rather than jumping — smoothed centre + span
     private var frameC = CGPoint(x: 0.5, y: 0.5)
     private var frameS: CGFloat = 1.0
+    // The auto-frame, PUBLISHED so the camera preview can zoom to match. The
+    // `dots` are already mapped into this framed space (face ≈ 62% of the window);
+    // the live video must apply the SAME crop/zoom or the overlay won't sit on the
+    // face. frameCenter is the face centre (mirrored view space, 0…1), frameSpan
+    // the zoom denominator (smaller span = tighter crop). Updated on `queue`,
+    // mirrored to these @Published on main.
+    @Published var frameCenter = CGPoint(x: 0.5, y: 0.5)
+    @Published var frameSpan: CGFloat = 1.0
     // per-landmark temporal smoothing: Vision's points jitter a little every
     // frame; each landmark eases toward its new position, so the whole face
     // GLIDES — the single biggest "finished" cue in the preview
@@ -151,6 +171,24 @@ final class FaceEngine: NSObject, ObservableObject {
         queue.async { self.session.stopRunning() }
         Self.post(path: "/api/presence/stop", body: [:])   // she forgets immediately
     }
+
+    /// Enroll the face you're CURRENTLY looking at under `name` (on-device FaceID).
+    /// Uses the most recent nearest-face crop; call a few times from slightly
+    /// different angles for a robust match. Returns the sample count (0 = no face
+    /// in frame right now). Everything stays on this Mac.
+    @discardableResult
+    func enrollCurrentFace(as name: String) -> Int {
+        guard let box = lastNearestBox, let pixels = lastPixels else { return 0 }
+        let n = FaceID.shared.enroll(name: name, from: pixels, box: box)
+        // refresh the live read so the name shows at once
+        DispatchQueue.main.async {
+            self.recognizedName = FaceID.shared.identify(in: pixels, box: box)
+        }
+        return n
+    }
+
+    /// Is a face in frame right now (so the UI can offer "name this person")?
+    var hasFaceToEnroll: Bool { lastNearestBox != nil }
 
     private func configure() {
         // pick a REAL camera. AVCaptureDevice.default(for:.video) can hand back a
@@ -428,6 +466,7 @@ final class FaceEngine: NSObject, ObservableObject {
         let line = "reading: " + bits.joined(separator: " · ")
 
         let m = (smile, browKnit, frown, blinkRate, attending, dimRoom)
+        let fc = frameC, fs = frameS
         DispatchQueue.main.async {
             self.dots = out
             self.captions = caps
@@ -436,6 +475,7 @@ final class FaceEngine: NSObject, ObservableObject {
             self.readBlink = m.3; self.readAttending = m.4
             self.lowLight = m.5
             self.facePresent = true
+            self.frameCenter = fc; self.frameSpan = fs    // let the preview zoom to match
             self.status = m.5 ? "low light — steadying the read · on-device"
                               : "face landmarks · on-device · close to stop"
         }
@@ -531,6 +571,9 @@ final class FaceEngine: NSObject, ObservableObject {
         body["people_attending"] = attendingCountSnapshot
         if !roomContextSnapshot.isEmpty { body["room_context"] = roomContextSnapshot }
         body["addressing_her"] = likelyAddressingHerSnapshot
+        // WHO she's with, if recognized on-device — so her brain can greet them by
+        // name ("Hello again, Dad"). Just the name; no image ever leaves.
+        if let who = recognizedNameSnapshot { body["recognized"] = who }
         Self.post(path: "/api/presence", body: body)
     }
 
@@ -540,6 +583,7 @@ final class FaceEngine: NSObject, ObservableObject {
     private var attendingCountSnapshot = 0
     private var roomContextSnapshot = ""
     private var likelyAddressingHerSnapshot = true
+    private var recognizedNameSnapshot: String? = nil
 
     private static func post(path: String, body: [String: Any]) {
         guard let url = URL(string: "http://127.0.0.1:7878" + path),
@@ -569,15 +613,34 @@ extension FaceEngine: AVCaptureVideoDataOutputSampleBufferDelegate {
         lastVisionAt = now
 
         dimRoom = Self.isDim(pixels)
-        let request = VNDetectFaceLandmarksRequest()
-        try? sequence.perform([request], on: pixels)
-        let faces = request.results ?? []
-        // Read the whole room, not just the nearest face: how many people, and
-        // how many are looking toward the camera (toward HER). The nearest face
-        // still drives the expression/orb reading below.
-        readRoom(faces)
-        let face = faces.max { $0.boundingBox.width < $1.boundingBox.width }
+        // TWO passes, on purpose:
+        //  • Rectangles finds EVERY face in frame (reliable multi-face count) — this
+        //    is what "reads the room": how many people, how many looking her way.
+        //  • Landmarks runs on the nearest face for the expression/emotion read.
+        // (A single landmarks request often returns only the strongest face, which
+        //  is why the room showed "just you" even with two people in frame.)
+        let rectReq = VNDetectFaceRectanglesRequest()
+        let landmarkReq = VNDetectFaceLandmarksRequest()
+        try? sequence.perform([rectReq, landmarkReq], on: pixels)
+        let allFaces = rectReq.results ?? []
+        let landmarked = landmarkReq.results ?? []
+        // Prefer the richer set for the room count (rectangles usually ≥ landmarks).
+        readRoom(allFaces.count >= landmarked.count ? allFaces : landmarked)
+        let face = landmarked.max { $0.boundingBox.width < $1.boundingBox.width }
         ingest(face)          // delegate already runs on `queue`
+
+        // On-device FACE ID: who is the nearest face? (opt-in via enrolled people;
+        // no-op + nil when nobody is enrolled). Keep the box + pixels so the UI can
+        // enroll "this is Dad" for the face you're currently looking at.
+        let nearest = (allFaces.count >= landmarked.count
+                       ? allFaces.max { $0.boundingBox.width < $1.boundingBox.width }
+                       : face)
+        let nearestBox = nearest?.boundingBox
+        self.lastNearestBox = nearestBox
+        self.lastPixels = pixels
+        let name: String? = nearestBox.flatMap { FaceID.shared.identify(in: pixels, box: $0) }
+        recognizedNameSnapshot = name
+        DispatchQueue.main.async { self.recognizedName = name }
     }
 
     /// Count people and infer the social context from every visible face:

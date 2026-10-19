@@ -111,7 +111,7 @@ struct RememberView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.title3.weight(.medium))
-                .foregroundStyle(tender ? Color(red: 0.86, green: 0.68, blue: 0.38) : .primary)
+                .foregroundStyle(tender ? VeraTokens.accent : .primary)
             Text(hint)
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
