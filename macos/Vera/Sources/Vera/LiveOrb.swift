@@ -13,23 +13,33 @@ import SwiftUI
 /// tweak, is the fix.
 struct LiveOrb: View {
     @ObservedObject var model: AppModel
+    // Observe the ANIMATION driver directly — so a 24fps phase tick redraws THIS
+    // tiny orb view and nothing else (model is observed too, but it only changes
+    // on real state transitions, not every frame).
+    @ObservedObject var orb: OrbDriver
     var size: CGFloat
     // Vera's visual form, switchable + remembered. "dots" = the point-cloud orb
     // (matches the website); "siri" = the original iridescent blob. Defaults to
     // the dotted field; flip back in Settings via @AppStorage("vera.orbForm").
     @AppStorage("vera.orbForm") private var orbForm: String = "dots"
 
+    init(model: AppModel, size: CGFloat) {
+        self.model = model
+        self.orb = model.orb
+        self.size = size
+    }
+
     var body: some View {
         Group {
             if orbForm == "siri" {
-                SiriOrb(amplitude: model.orbSpringAmp,
-                        phase: model.orbPhase,
+                SiriOrb(amplitude: orb.springAmp,
+                        phase: orb.phase,
                         tint: model.tint,
                         brightness: model.brightness,
                         portraitMesh: model.portraitMeshURL)
             } else {
-                DottedOrb(amplitude: model.orbSpringAmp,
-                          phase: model.orbPhase,
+                DottedOrb(amplitude: orb.springAmp,
+                          phase: orb.phase,
                           tint: model.tint)
             }
         }

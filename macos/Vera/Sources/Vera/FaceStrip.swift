@@ -50,9 +50,11 @@ struct FaceStrip: View {
         return "she sees you"
     }
 
-    // Auto-frame transform for the video (match the dots' framing). Clamped so a
-    // jittery frame can't over-zoom. frameSpan ~0.6–1.0; 1/span is the zoom.
-    private var zoom: CGFloat { max(1.0, min(2.4, 1.0 / max(0.45, engine.frameSpan))) }
+    // Auto-frame transform for the video — a GENTLE zoom that keeps your whole
+    // head in view (never a tight, over-cropped close-up). Capped at 1.35× and the
+    // frameSpan floored high so it eases toward you without cutting off the top of
+    // your head. Pulled back from the old 2.4× that read as "over-focused".
+    private var zoom: CGFloat { max(1.0, min(1.35, 1.0 / max(0.74, engine.frameSpan))) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

@@ -138,6 +138,14 @@ struct ChatPanel: View {
                         : "Tap-to-talk. Click for hands-free voice (she keeps listening between turns).") {
                 model.voiceMode.toggle()
             }
+            // See how she thinks — her Brain, one tap from the conversation. The
+            // glyph fills + glows gold while she's actively thinking, so you can
+            // SEE her mind working, not just a static icon.
+            iconButton(model.phase == .thinking ? "brain.head.profile.fill" : "brain.head.profile",
+                       on: model.phase == .thinking,
+                       help: "See how she thinks — her Brain") {
+                model.openBrain?()
+            }
             iconButton("gearshape", on: false, help: "Settings") {
                 model.openSettings?()
             }
@@ -173,7 +181,7 @@ struct ChatPanel: View {
                                 .id(turn.id)
                         }
                         if model.phase == .thinking {
-                            ThinkingRow(phase: model.orbPhase,
+                            ThinkingRow(orb: model.orb,
                                         elapsed: Date().timeIntervalSince(model.thinkingSince))
                                 .id("thinking")
                                 .transition(.opacity)
@@ -383,7 +391,8 @@ struct ChatPanel: View {
 /// (same thin gold accent bar). Clear feedback that she heard you and is working,
 /// so the chat never feels dead while she composes a reply.
 private struct ThinkingRow: View {
-    let phase: CGFloat
+    @ObservedObject var orb: OrbDriver
+    var phase: CGFloat { orb.phase }
     var elapsed: TimeInterval = 0
     private var gold: Color { VeraTokens.accent }
     // a gentle rotation of words so it feels alive, not stuck on one label — and

@@ -14,16 +14,32 @@ cd "$(dirname "$0")"
 APP="Vera.app"
 BIN_NAME="Vera"
 
-# Native arch by default (your own machine); --universal adds Intel so the
-# bundle runs on any Mac someone drags it onto.
+# ── build flavour ────────────────────────────────────────────────────────────
+# Default = FAST dev build: release config (so it behaves like the shipped app)
+# but WITHOUT cross-module-optimization and WITHOUT the universal/Intel slice —
+# CMO + a 2nd arch roughly double compile time and only matter for a bundle you
+# SHARE. Pass --ship for the full optimized/universal build + the Ollama setup
+# check. This is the single biggest iteration-speed win (CMO re-optimizes every
+# module on every rebuild).
 ARCH_FLAGS=""
-[ "${1:-}" = "--universal" ] && ARCH_FLAGS="--arch arm64 --arch x86_64"
+EXTRA_SWIFTC=""
+SHIP=0
+for arg in "$@"; do
+  case "$arg" in
+    --universal) ARCH_FLAGS="--arch arm64 --arch x86_64" ;;
+    --ship)      SHIP=1; ARCH_FLAGS="--arch arm64 --arch x86_64"
+                 EXTRA_SWIFTC="-Xswiftc -cross-module-optimization" ;;
+  esac
+done
 
-echo "[1/4] Compiling (release, cross-module optimized${ARCH_FLAGS:+, universal})..."
+echo "[1/5] Compiling ($([ "$SHIP" = 1 ] && echo 'ship: optimized, universal' || echo 'dev: fast')${ARCH_FLAGS:+}) ..."
 T0=$(date +%s)
-swift build -c release $ARCH_FLAGS -Xswiftc -cross-module-optimization
-
-BIN_PATH="$(swift build -c release $ARCH_FLAGS --show-bin-path)/$BIN_NAME"
+# Build once, and read the bin path from the SAME invocation's output instead of a
+# second `swift build --show-bin-path` (which re-walks the whole graph). We ask for
+# the path first (cheap when already built) then build — net one real compile.
+BIN_DIR="$(swift build -c release $ARCH_FLAGS --show-bin-path)"
+swift build -c release $ARCH_FLAGS $EXTRA_SWIFTC
+BIN_PATH="$BIN_DIR/$BIN_NAME"
 if [ ! -f "$BIN_PATH" ]; then
   echo "build failed: $BIN_PATH not found" >&2
   exit 1
@@ -168,8 +184,10 @@ fi
 # running and at least one chat model is pulled; start / pull if needed so the
 # first launch isn't "LLM missing". Entirely local; skipped gracefully if Ollama
 # isn't installed (the app still runs, just asks the user to set a model up).
-echo "[activate] Checking the local LLM (Ollama)..."
-if command -v ollama >/dev/null 2>&1; then
+if [ "$SHIP" != 1 ]; then
+  echo "[activate] (skipped on a dev build — pass --ship to run the Ollama setup check)"
+fi
+if [ "$SHIP" = 1 ] && command -v ollama >/dev/null 2>&1; then
   if ! curl -s -m 3 http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
     echo "  Ollama not running — starting it..."
     (ollama serve >/dev/null 2>&1 &) ; sleep 4
@@ -181,7 +199,7 @@ if command -v ollama >/dev/null 2>&1; then
   else
     echo "  LLM ready."
   fi
-else
+elif [ "$SHIP" = 1 ]; then
   echo "  Ollama isn't installed. Vera thinks on a local model via Ollama."
   echo "  Install it from https://ollama.com, then: ollama pull qwen2.5:3b"
 fi

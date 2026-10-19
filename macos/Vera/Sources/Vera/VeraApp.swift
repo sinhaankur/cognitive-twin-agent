@@ -102,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         NSApp.setActivationPolicy(.accessory)   // background app, NO Dock icon
         model.openSettings = { [weak self] in self?.showSettings() }
+        model.openBrain = { [weak self] in self?.showBrain() }
         model.openVoiceLearn = { [weak self] in self?.showVoiceLearn() }
         model.openRemember = { [weak self] in self?.showRemember() }
         model.toggleEye = { [weak self] in self?.toggleEye() }
@@ -610,6 +611,9 @@ final class AppModel: ObservableObject {
     /// Wired by the AppDelegate to open settings as a real window (a .sheet won't
     /// reliably present from the borderless floating panel).
     var openSettings: (() -> Void)?
+    /// Opens "The Brain" — how she thinks. Wired by the AppDelegate so the chat
+    /// header's brain button can open it (not just the menu).
+    var openBrain: (() -> Void)?
     /// Opens the gentle "teach a loved one's voice" window.
     var openVoiceLearn: (() -> Void)?
     /// The See-me switch (her opt-in eye). Wired by the AppDelegate.
@@ -1968,11 +1972,11 @@ final class AppModel: ObservableObject {
     // syncPhase() every frame were what pinned a CPU core while she just sat
     // there; now an idle orb costs nothing. Call `orbAnimating(true/false)` is not
     // needed — the driver self-gates off `amplitude`/`phase` each tick.
-    @Published var orbPhase: CGFloat = 0
-    @Published var orbSpringAmp: CGFloat = 0     // spring-tracked amplitude (shared)
-    @Published var orbPulse: CGFloat = 0         // breathing pulse for "thought waiting"
-    private var orbSpringVel: CGFloat = 0
-    private var orbTimer: Timer?
+    // The orb animation lives in its OWN ObservableObject (OrbDriver), NOT as
+    // @Published scalars here — so its 24fps ticks redraw only the orb, never the
+    // whole app (the old setup re-rendered ChatPanel/FaceStrip every tick → ~25%
+    // idle CPU → she felt "frozen"). Orb views observe `model.orb`.
+    let orb = OrbDriver()
 
     /// Start the shared driver once (from app launch). Safe to call repeatedly.
     /// This is the ONLY animation clock in the app — every orb reads orbPhase /
@@ -1986,30 +1990,16 @@ final class AppModel: ObservableObject {
     /// A glowing orb is perfectly smooth at 24fps; this ~halves the draw cost with
     /// no perceptible change. It still does real work ONLY while something moves;
     /// fully idle (no mic, no speech, no thought) it rests completely.
-    private static let orbFPS: Double = 24
+    /// Start the shared orb animation. The clock + state live in OrbDriver; here we
+    /// just wire it to read our live signals each tick (amplitude, thinking, thought,
+    /// and the voice-pulse decay) + keep syncPhase running on the same cadence.
     func startOrbDriver() {
-        guard orbTimer == nil else { return }
-        orbTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / Self.orbFPS, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            self.syncPhase()   // cheap; only publishes on a real phase change
-
-            let dt = CGFloat(1.0 / Self.orbFPS)
-            let target = self.amplitude
-            // Are we animating, OR is the spring still settling toward rest?
-            let moving = target > 0.001 || self.orbSpringAmp > 0.001
-                || abs(self.orbSpringVel) > 0.001 || self.phase == .thinking
-                || self.hasThoughtWaiting
-            guard moving else { return }
-
-            // phase advance scaled by dt so the swirl speed is FPS-independent
-            self.orbPhase += (0.05 + self.orbSpringAmp * 0.30) * (60 * dt)
-            self.orbPulse = (sin(self.orbPhase * 0.9) + 1) / 2
-            // stiff spring toward the live amplitude: word onsets punch, silence
-            // settles — the same feel the per-view timers had, now in one place.
-            self.orbSpringVel += (target - self.orbSpringAmp) * 90 * dt
-            self.orbSpringVel *= exp(-dt * 14)
-            self.orbSpringAmp = max(0, self.orbSpringAmp + self.orbSpringVel * dt)
-            self.voice.speakPulse *= pow(0.86, 60 * dt)
+        orb.signals = { [weak self] in
+            guard let self else { return (0, false, false, {}) }
+            self.syncPhase()   // cheap; keeps .listening/.speaking phase current
+            return (self.amplitude, self.phase == .thinking, self.hasThoughtWaiting,
+                    { self.voice.speakPulse *= pow(0.86, 60 * (1.0 / 24.0)) })
         }
+        orb.start()
     }
 }

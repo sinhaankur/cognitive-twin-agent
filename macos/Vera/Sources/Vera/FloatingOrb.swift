@@ -5,7 +5,14 @@ import SwiftUI
 /// by background) to reposition. This is item #1 of the two-thing app.
 struct FloatingOrb: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var orb: OrbDriver
     var onTap: () -> Void
+
+    init(model: AppModel, onTap: @escaping () -> Void) {
+        self.model = model
+        self.orb = model.orb
+        self.onTap = onTap
+    }
 
     @State private var pressed = false         // click/tap highlight
     // Her visual form — the SAME switch LiveOrb reads, so the big floating orb you
@@ -24,7 +31,7 @@ struct FloatingOrb: View {
             if model.hasThoughtWaiting {
                 Circle()
                     .fill(RadialGradient(
-                        colors: [Color.pink.opacity(0.45 * model.orbPulse), .clear],
+                        colors: [Color.pink.opacity(0.45 * orb.pulse), .clear],
                         center: .center, startRadius: 0,
                         endRadius: model.orbSize * 0.85))
                     .frame(width: model.orbSize * 1.7, height: model.orbSize * 1.7)
@@ -34,10 +41,10 @@ struct FloatingOrb: View {
 
             ZStack {
                 if orbForm == "siri" {
-                    SiriOrb(amplitude: model.orbSpringAmp, phase: model.orbPhase,
+                    SiriOrb(amplitude: orb.springAmp, phase: orb.phase,
                             tint: model.tint, brightness: model.brightness)
                 } else {
-                    DottedOrb(amplitude: model.orbSpringAmp, phase: model.orbPhase,
+                    DottedOrb(amplitude: orb.springAmp, phase: orb.phase,
                               tint: model.tint)
                 }
                 // press highlight: a bright ring that flashes on click

@@ -111,6 +111,44 @@ def _installed_chat_models() -> list[str]:
     return [n for n in names if n and not is_embedder(n)]
 
 
+# Cache of model name → on-disk size in GB (from Ollama /api/tags), so a single
+# pick doesn't re-query per candidate.
+_SIZE_CACHE: dict[str, float] = {}
+
+
+def _model_sizes_gb() -> dict[str, float]:
+    """Each installed model's size in GB, from Ollama's /api/tags (best-effort)."""
+    if _SIZE_CACHE:
+        return _SIZE_CACHE
+    try:
+        import json as _json
+        import urllib.request as _url
+        host = os.environ.get("CTWIN_OLLAMA_HOST") or "http://localhost:11434"
+        with _url.urlopen(host.rstrip("/") + "/api/tags", timeout=4) as r:
+            data = _json.loads(r.read() or b"{}")
+        for m in data.get("models", []):
+            name = m.get("name") or m.get("model")
+            size = m.get("size")
+            if name and isinstance(size, (int, float)):
+                _SIZE_CACHE[name] = float(size) / (1024 ** 3)
+    except Exception:
+        pass
+    return _SIZE_CACHE
+
+
+def _model_fits(name: str, ram_gb: float) -> bool:
+    """Does `name` fit comfortably in RAM? A model needs its own weights PLUS
+    headroom for the KV-cache and the OS; a model bigger than ~55% of total RAM
+    will swap and feel frozen. If we can't read the size (first run, Ollama down),
+    assume it fits so we never block her from starting."""
+    sizes = _model_sizes_gb()
+    gb = sizes.get(name)
+    if gb is None:
+        return True            # unknown → don't block
+    # leave room for the OS + app + KV-cache: the model should be ≲55% of total RAM
+    return gb <= max(2.0, ram_gb * 0.55)
+
+
 def pick_default(installed: list[str] | None = None, ram_gb: float | None = None,
                  *, query_ollama: bool = False) -> str:
     """The best chat model for THIS machine.
@@ -140,16 +178,27 @@ def pick_default(installed: list[str] | None = None, ram_gb: float | None = None
     if installed is None:
         installed = _installed_chat_models()
     inst = set(installed)
-    # Prefer Vera's OWN trained model when it's installed — it's her, and it's
-    # light (3B) so it suits every device. Only once we know what's installed
-    # (this branch) so we never pick a model that isn't pulled.
+    # Prefer Vera's OWN trained model when it's installed AND it comfortably FITS
+    # this machine. The catch: her model is a 3B, but an UNQUANTIZED (F16) build is
+    # ~6.5 GB — that does NOT fit an 8 GB Mac, where it swaps and feels frozen (the
+    # "not awake" bug on base specs). So we size-check the installed Vera model and
+    # only pick it when the RAM can hold it; on a tight machine we prefer a
+    # quantized Vera tag if one's pulled, else fall through to the small base tiers.
     for vm in _VERA_MODELS:
-        if vm in inst:
-            return vm
+        matches = [vm] if vm in inst else []
         base = vm.split(":")[0]
-        for i in installed:
-            if i.split(":")[0] == base:
-                return i
+        matches += [i for i in installed if i.split(":")[0] == base and i != vm]
+        if not matches:
+            continue
+        # among the installed variants of this Vera model, pick the largest one
+        # that fits the RAM (quantized tags are smaller than F16) — fits() reads
+        # Ollama's reported size; on tight RAM an F16 build is skipped.
+        fitting = [m for m in matches if _model_fits(m, ram_gb)]
+        if fitting:
+            # prefer the exact canonical tag when it fits, else any fitting variant
+            return vm if vm in fitting else fitting[0]
+        # her model is installed but too big for this RAM → fall through to a
+        # smaller base below rather than pick a model that will thrash.
     for floor, candidates in _TIERS:
         if ram_gb >= floor:
             for m in candidates:

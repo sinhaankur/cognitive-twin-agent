@@ -12,12 +12,16 @@ struct TwinView: View {
     @State private var showPersona = false
     @State private var showBrain = false
     @State private var showSettings = false
-    private let timer = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
+    // 24fps, not 60 — the orb is perfectly smooth at 24 and a phone's battery +
+    // thermals care about every needless redraw (parity with the Mac's 24fps orb
+    // driver). The tick also only advances while something is actually moving.
+    private let timer = Timer.publish(every: 1.0 / 24.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
         ZStack {
-            // dark Siri backdrop
-            RadialGradient(colors: [Color(red: 0.08, green: 0.09, blue: 0.13), .black],
+            // warm dark backdrop — a faint amber warmth at the top so the orb
+            // sits in her world (not a cold navy "Siri" field).
+            RadialGradient(colors: [Color(red: 0.09, green: 0.075, blue: 0.055), .black],
                            center: .top, startRadius: 0, endRadius: 700)
                 .ignoresSafeArea()
 
@@ -31,7 +35,7 @@ struct TwinView: View {
                     if let reachable = model.reachable {
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(reachable ? Color.green : Color.orange)
+                                .fill(reachable ? VeraTokens.accent : VeraTokens.warn)
                                 .frame(width: 7, height: 7)
                             Text(reachable ? "connected" : "unreachable")
                                 .font(.system(size: 11, weight: .medium))
@@ -39,6 +43,15 @@ struct TwinView: View {
                         }
                         .transition(.opacity)
                     }
+                    // See how she thinks — her Brain, one tap (parity w/ the Mac
+                    // header's brain button). Fills + glows gold while she's thinking.
+                    Button { showBrain = true } label: {
+                        Image(systemName: model.thinking ? "brain.head.profile.fill" : "brain.head.profile")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(model.thinking ? VeraTokens.accent : .white.opacity(0.75))
+                            .frame(width: 34, height: 34)
+                    }
+                    .accessibilityLabel("See how she thinks")
                     TopMenu(
                         name: model.personaName,
                         onWhoSheIs: { showPersona = true },
@@ -53,18 +66,19 @@ struct TwinView: View {
                 Spacer()
 
                 // Vera's orb — the dotted point-cloud by default (matches the
-                // website); the original Siri blob stays available via the
-                // vera.orbForm switch. Same amplitude/phase/tint drive both.
+                // website). Her colour is LIVING: OrbTint blends her warm amber
+                // family by time of day (dawn/day/dusk/night) + state (thinking
+                // cools, idle rests) + a faint weekly lilt — so she's in the day
+                // with you, not a static UI colour.
                 Group {
+                    let tint = OrbTint.forState(thinking: model.thinking)
                     if orbForm == "siri" {
                         SiriOrb(amplitude: model.thinking ? 0.35 : 0.18,
-                                phase: phase,
-                                tint: Color(red: 0.30, green: 0.45, blue: 0.95),
+                                phase: phase, tint: tint,
                                 portraitMesh: model.portraitMeshURL)
                     } else {
                         DottedOrb(amplitude: model.thinking ? 0.35 : 0.18,
-                                  phase: phase,
-                                  tint: Color(red: 0.30, green: 0.45, blue: 0.95))
+                                  phase: phase, tint: tint)
                     }
                 }
                 .frame(width: 220, height: 220)
@@ -94,7 +108,7 @@ struct TwinView: View {
                     Button(action: send) {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: 30))
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(VeraTokens.accent)
                     }
                     .padding(.trailing, 6)
                 }
@@ -149,8 +163,8 @@ struct TopMenu: View {
                 .background(
                     Circle().fill(
                         LinearGradient(
-                            colors: [Color(red: 0.34, green: 0.49, blue: 0.98),
-                                     Color(red: 0.24, green: 0.33, blue: 0.80)],
+                            colors: [Color(red: 0.90, green: 0.72, blue: 0.44),
+                                     Color(red: 0.72, green: 0.53, blue: 0.26)],
                             startPoint: .topLeading, endPoint: .bottomTrailing
                         )
                     )
@@ -246,7 +260,7 @@ private struct TopMenuSheet: View {
                 .environment(\.colorScheme, .dark)
                 .overlay(
                     RoundedRectangle(cornerRadius: 28, style: .continuous)
-                        .fill(Color(red: 0.08, green: 0.09, blue: 0.14).opacity(0.72))
+                        .fill(Color(red: 0.09, green: 0.075, blue: 0.055).opacity(0.74))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 28, style: .continuous)
