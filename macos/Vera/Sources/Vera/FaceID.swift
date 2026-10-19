@@ -25,7 +25,15 @@ final class FaceID {
     struct Person: Codable {
         var id: String            // stable id
         var name: String          // "Dad — Dr Randhir Kumar Sinha"
-        var prints: [[Float]]     // a few feature-print vectors
+        // The RAW Vision feature-print blobs (base64 Data). We keep the raw
+        // observation data — not a hand-rolled float array — so we can reconstruct a
+        // VNFeaturePrintObservation and compare with Vision's OWN computeDistance
+        // (the metric the match threshold is calibrated for). The old `prints`
+        // (plain [Float] + hand-rolled Euclidean) never matched because that distance
+        // is on a different scale than the threshold.
+        var printData: [Data] = []
+        // legacy: older enrollments stored float vectors. Decoded for migration only.
+        var prints: [[Float]]? = nil
     }
 
     private var people: [Person] = []
@@ -34,10 +42,15 @@ final class FaceID {
                                             in: .userDomainMask).first!
         return base.appendingPathComponent("Vera/faceid.json")
     }()
-    // Distance below this = a confident match. Vision face-print distances are
-    // typically ~0.3–0.6 for the same person, higher for different people. Tuned
-    // conservative so a stranger is "someone", never a wrong name.
-    private let matchThreshold: Float = 0.62
+    // Match metric = COSINE distance (1 − cosine similarity), range 0…2. We can't use
+    // Vision's computeDistance against a STORED print because VNFeaturePrintObservation
+    // has no public init-from-Data — but its prints are high-dim embeddings where
+    // cosine distance separates identities cleanly and, unlike the old hand-rolled
+    // Euclidean, is SCALE-STABLE (that mismatch is why enrollment never recognized
+    // anyone). Same-person face crops typically score well under ~0.35; different
+    // people higher. Start a touch generous so you're recognized across normal
+    // angle/lighting, still short of confusing two people.
+    private let matchThreshold: Float = 0.35
 
     private init() { load() }
 
@@ -47,13 +60,21 @@ final class FaceID {
     // MARK: recognition
 
     /// Name the person whose face occupies `box` in `pixels`, or nil if unknown /
-    /// not confident. Runs entirely on-device.
+    /// not confident. Runs entirely on-device. Uses Vision's native computeDistance.
     func identify(in pixels: CVPixelBuffer, box: CGRect) -> String? {
-        guard !people.isEmpty, let print = featurePrint(of: pixels, box: box) else { return nil }
+        guard !people.isEmpty,
+              let liveObs = featurePrintObservation(of: pixels, box: box),
+              let live = Self.vector(liveObs) else { return nil }
         var best: (name: String, dist: Float)? = nil
         for p in people {
-            for enrolled in p.prints {
-                if let d = Self.distance(print, enrolled) {
+            for blob in p.printData {
+                guard let enrolled = Self.vector(fromBlob: blob),
+                      let d = Self.cosineDistance(live, enrolled) else { continue }
+                if best == nil || d < best!.dist { best = (p.name, d) }
+            }
+            // migrate any legacy float prints (pre-blob enrollments) into the match
+            for vec in p.prints ?? [] {
+                if let d = Self.cosineDistance(live, vec) {
                     if best == nil || d < best!.dist { best = (p.name, d) }
                 }
             }
@@ -68,15 +89,24 @@ final class FaceID {
     /// slightly different angles for a robust match. Returns the sample count.
     @discardableResult
     func enroll(name: String, from pixels: CVPixelBuffer, box: CGRect) -> Int {
-        guard let print = featurePrint(of: pixels, box: box) else { return currentCount(name) }
+        guard let obs = featurePrintObservation(of: pixels, box: box) else {
+            return currentCount(name)
+        }
+        enroll(name: name, observation: obs)
+        return currentCount(name)
+    }
+
+    /// Core enroll: store a feature-print observation's raw blob under `name`.
+    /// Shared by live-camera enrollment and the Photos importer.
+    func enroll(name: String, observation obs: VNFeaturePrintObservation) {
+        let blob = obs.data
         if let i = people.firstIndex(where: { $0.name == name }) {
-            people[i].prints.append(print)
-            if people[i].prints.count > 8 { people[i].prints.removeFirst() }  // keep recent 8
+            people[i].printData.append(blob)
+            if people[i].printData.count > 12 { people[i].printData.removeFirst() } // keep recent 12
         } else {
-            people.append(Person(id: UUID().uuidString, name: name, prints: [print]))
+            people.append(Person(id: UUID().uuidString, name: name, printData: [blob]))
         }
         save()
-        return currentCount(name)
     }
 
     func forget(name: String) {
@@ -90,15 +120,16 @@ final class FaceID {
     }
 
     private func currentCount(_ name: String) -> Int {
-        people.first(where: { $0.name == name })?.prints.count ?? 0
+        people.first(where: { $0.name == name })?.printData.count ?? 0
     }
 
     // MARK: feature-print extraction
 
     private let ciContext = CIContext(options: nil)
 
-    /// Crop the face box out of the frame and compute its Vision feature-print.
-    private func featurePrint(of pixels: CVPixelBuffer, box: CGRect) -> [Float]? {
+    /// Crop the face box out of the frame and compute its Vision feature-print
+    /// OBSERVATION (kept whole so we can use Vision's native computeDistance).
+    private func featurePrintObservation(of pixels: CVPixelBuffer, box: CGRect) -> VNFeaturePrintObservation? {
         let full = CIImage(cvPixelBuffer: pixels)
         let w = full.extent.width, h = full.extent.height
         // Vision boxes are normalized, origin bottom-left. Pad a little around the
@@ -112,31 +143,45 @@ final class FaceID {
         guard !rect.isNull, rect.width > 20, rect.height > 20 else { return nil }
         let cropped = full.cropped(to: rect)
         guard let cg = ciContext.createCGImage(cropped, from: rect) else { return nil }
+        return Self.featurePrint(ofCGImage: cg)
+    }
 
+    /// Feature-print of an arbitrary CGImage crop — used by the Photos importer too.
+    static func featurePrint(ofCGImage cg: CGImage) -> VNFeaturePrintObservation? {
         let req = VNGenerateImageFeaturePrintRequest()
         let handler = VNImageRequestHandler(cgImage: cg, options: [:])
         try? handler.perform([req])
-        guard let obs = req.results?.first as? VNFeaturePrintObservation else { return nil }
-        return Self.vector(obs)
+        return req.results?.first as? VNFeaturePrintObservation
     }
 
-    /// Pull the float vector out of a feature-print observation.
-    private static func vector(_ obs: VNFeaturePrintObservation) -> [Float]? {
-        let count = obs.elementCount
-        guard obs.elementType == .float, count > 0 else { return nil }
-        let data = obs.data
-        return data.withUnsafeBytes { raw -> [Float] in
-            let buf = raw.bindMemory(to: Float.self)
-            return Array(buf.prefix(count))
+    /// The float vector inside a feature-print observation (little-endian Float32).
+    static func vector(_ obs: VNFeaturePrintObservation) -> [Float]? {
+        guard obs.elementType == .float, obs.elementCount > 0 else { return nil }
+        return obs.data.withUnsafeBytes { raw in
+            Array(raw.bindMemory(to: Float.self).prefix(obs.elementCount))
         }
     }
 
-    /// Euclidean distance between two prints (same length).
-    private static func distance(_ a: [Float], _ b: [Float]) -> Float? {
+    /// Decode a stored blob (raw Float32 bytes) back to a vector.
+    static func vector(fromBlob blob: Data) -> [Float]? {
+        guard !blob.isEmpty, blob.count % 4 == 0 else { return nil }
+        return blob.withUnsafeBytes { raw in
+            Array(raw.bindMemory(to: Float.self))
+        }
+    }
+
+    /// Cosine distance between two prints: 1 − (a·b)/(‖a‖‖b‖). Range 0 (identical
+    /// direction) … 2 (opposite). Scale-stable, so it tracks identity regardless of
+    /// print magnitude — the robust metric for high-dim embeddings like these.
+    static func cosineDistance(_ a: [Float], _ b: [Float]) -> Float? {
         guard a.count == b.count, !a.isEmpty else { return nil }
-        var sum: Float = 0
-        for i in 0..<a.count { let d = a[i] - b[i]; sum += d * d }
-        return sum.squareRoot()
+        var dot: Float = 0, na: Float = 0, nb: Float = 0
+        for i in 0..<a.count {
+            dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]
+        }
+        let denom = (na.squareRoot() * nb.squareRoot())
+        guard denom > 0 else { return nil }
+        return 1 - dot / denom
     }
 
     // MARK: persistence (local only)
