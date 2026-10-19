@@ -25,16 +25,23 @@ final class FaceID {
     struct Person: Codable {
         var id: String            // stable id
         var name: String          // "Dad — Dr Randhir Kumar Sinha"
-        // The RAW Vision feature-print blobs (base64 Data). We keep the raw
-        // observation data — not a hand-rolled float array — so we can reconstruct a
-        // VNFeaturePrintObservation and compare with Vision's OWN computeDistance
-        // (the metric the match threshold is calibrated for). The old `prints`
-        // (plain [Float] + hand-rolled Euclidean) never matched because that distance
-        // is on a different scale than the threshold.
+        // Enrolled embeddings as raw Float32 bytes. We compare with cosine distance
+        // (scale-stable, the right metric for these hypersphere embeddings — the old
+        // hand-rolled Euclidean vs a mismatched threshold is why nobody ever matched).
         var printData: [Data] = []
+        // Which model produced `printData` — we must NEVER compare an ArcFace vector
+        // against a general-image-embedding vector (different spaces, meaningless
+        // distance). "arcface" = the bundled face model; "vnprint" = Apple's general
+        // feature print. Defaults to vnprint for pre-tag enrollments.
+        var model: String = "vnprint"
         // legacy: older enrollments stored float vectors. Decoded for migration only.
         var prints: [[Float]]? = nil
     }
+
+    /// Which embedding model is active right now — the real face model if bundled,
+    /// else Apple's general print. Stored with each enrollment so we only ever
+    /// compare like-with-like.
+    private var activeModelKind: String { FaceEmbedder.shared != nil ? "arcface" : "vnprint" }
 
     private var people: [Person] = []
     private let store: URL = {
@@ -60,22 +67,25 @@ final class FaceID {
     // MARK: recognition
 
     /// Name the person whose face occupies `box` in `pixels`, or nil if unknown /
-    /// not confident. Runs entirely on-device. Uses Vision's native computeDistance.
+    /// not confident. Runs entirely on-device. Prefers the real face model (ArcFace)
+    /// when bundled; compares with cosine distance; only against same-model prints.
     func identify(in pixels: CVPixelBuffer, box: CGRect) -> String? {
-        guard !people.isEmpty,
-              let liveObs = featurePrintObservation(of: pixels, box: box),
-              let live = Self.vector(liveObs) else { return nil }
+        guard !people.isEmpty, let cg = Self.crop(of: pixels, box: box),
+              let live = embedVector(cg) else { return nil }
+        let kind = activeModelKind
         var best: (name: String, dist: Float)? = nil
-        for p in people {
+        for p in people where p.model == kind {   // never cross model spaces
             for blob in p.printData {
                 guard let enrolled = Self.vector(fromBlob: blob),
                       let d = Self.cosineDistance(live, enrolled) else { continue }
                 if best == nil || d < best!.dist { best = (p.name, d) }
             }
-            // migrate any legacy float prints (pre-blob enrollments) into the match
-            for vec in p.prints ?? [] {
-                if let d = Self.cosineDistance(live, vec) {
-                    if best == nil || d < best!.dist { best = (p.name, d) }
+            // migrate any legacy float prints (pre-blob, general-embedding only)
+            if kind == "vnprint" {
+                for vec in p.prints ?? [] {
+                    if let d = Self.cosineDistance(live, vec) {
+                        if best == nil || d < best!.dist { best = (p.name, d) }
+                    }
                 }
             }
         }
@@ -83,28 +93,47 @@ final class FaceID {
         return b.name
     }
 
+    /// The identity embedding for a face crop — the REAL face model when bundled,
+    /// else Apple's general image feature-print. L2-normalized either way so cosine
+    /// distance is meaningful.
+    private func embedVector(_ cg: CGImage) -> [Float]? {
+        if let arc = FaceEmbedder.shared, let v = arc.embed(cgImage: cg) { return v }
+        guard let obs = Self.featurePrint(ofCGImage: cg), let v = Self.vector(obs) else { return nil }
+        return v
+    }
+
     // MARK: enrollment
 
-    /// Add a print for `name` (creating the person if new). Call a few times from
+    /// Enroll the face in `box` from a camera/photo frame. Call a few times from
     /// slightly different angles for a robust match. Returns the sample count.
     @discardableResult
     func enroll(name: String, from pixels: CVPixelBuffer, box: CGRect) -> Int {
-        guard let obs = featurePrintObservation(of: pixels, box: box) else {
+        guard let cg = Self.crop(of: pixels, box: box), let v = embedVector(cg) else {
             return currentCount(name)
         }
-        enroll(name: name, observation: obs)
+        enroll(name: name, vector: v)
         return currentCount(name)
     }
 
-    /// Core enroll: store a feature-print observation's raw blob under `name`.
-    /// Shared by live-camera enrollment and the Photos importer.
-    func enroll(name: String, observation obs: VNFeaturePrintObservation) {
-        let blob = obs.data
-        if let i = people.firstIndex(where: { $0.name == name }) {
+    /// Enroll directly from a face-cropped CGImage (the Photos importer path).
+    @discardableResult
+    func enroll(name: String, faceCrop cg: CGImage) -> Int {
+        guard let v = embedVector(cg) else { return currentCount(name) }
+        enroll(name: name, vector: v)
+        return currentCount(name)
+    }
+
+    /// Core enroll: store an embedding under `name`, tagged with the active model so
+    /// we only ever compare like-with-like. Shared by camera + Photos import.
+    func enroll(name: String, vector v: [Float]) {
+        let blob = v.withUnsafeBytes { Data($0) }
+        let kind = activeModelKind
+        if let i = people.firstIndex(where: { $0.name == name && $0.model == kind }) {
             people[i].printData.append(blob)
             if people[i].printData.count > 12 { people[i].printData.removeFirst() } // keep recent 12
         } else {
-            people.append(Person(id: UUID().uuidString, name: name, printData: [blob]))
+            people.append(Person(id: UUID().uuidString, name: name,
+                                 printData: [blob], model: kind))
         }
         save()
     }
@@ -120,20 +149,20 @@ final class FaceID {
     }
 
     private func currentCount(_ name: String) -> Int {
-        people.first(where: { $0.name == name })?.printData.count ?? 0
+        let kind = activeModelKind
+        return people.first(where: { $0.name == name && $0.model == kind })?.printData.count ?? 0
     }
 
     // MARK: feature-print extraction
 
     private let ciContext = CIContext(options: nil)
 
-    /// Crop the face box out of the frame and compute its Vision feature-print
-    /// OBSERVATION (kept whole so we can use Vision's native computeDistance).
-    private func featurePrintObservation(of pixels: CVPixelBuffer, box: CGRect) -> VNFeaturePrintObservation? {
+    /// Crop the face box out of a frame into a CGImage (padded to carry the head).
+    static func crop(of pixels: CVPixelBuffer, box: CGRect) -> CGImage? {
         let full = CIImage(cvPixelBuffer: pixels)
         let w = full.extent.width, h = full.extent.height
         // Vision boxes are normalized, origin bottom-left. Pad a little around the
-        // face so the crop carries the whole head (more stable print).
+        // face so the crop carries the whole head (more stable embedding).
         let pad: CGFloat = 0.15
         var rect = CGRect(x: (box.minX - pad * box.width) * w,
                           y: (box.minY - pad * box.height) * h,
@@ -141,10 +170,9 @@ final class FaceID {
                           height: box.height * (1 + 2 * pad) * h)
         rect = rect.intersection(full.extent)
         guard !rect.isNull, rect.width > 20, rect.height > 20 else { return nil }
-        let cropped = full.cropped(to: rect)
-        guard let cg = ciContext.createCGImage(cropped, from: rect) else { return nil }
-        return Self.featurePrint(ofCGImage: cg)
+        return sharedCtx.createCGImage(full.cropped(to: rect), from: rect)
     }
+    private static let sharedCtx = CIContext(options: nil)
 
     /// Feature-print of an arbitrary CGImage crop — used by the Photos importer too.
     static func featurePrint(ofCGImage cg: CGImage) -> VNFeaturePrintObservation? {

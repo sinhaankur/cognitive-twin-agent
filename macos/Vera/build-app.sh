@@ -60,6 +60,22 @@ if [ ! -f AppIcon.icns ]; then
 fi
 [ -f AppIcon.icns ] && cp AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
+# Real face-recognition model (ArcFace → Core ML), if built via ./build-face-model.sh.
+# Optional: when absent, FaceID.swift falls back to Apple's general image embedding,
+# so the app still runs — it just recognizes faces less reliably. Compile the
+# .mlpackage to a .mlmodelc the app loads directly from Resources.
+if [ -d FaceEmbedder.mlpackage ] || [ -f FaceEmbedder.mlmodel ]; then
+  SRC_MODEL="$([ -d FaceEmbedder.mlpackage ] && echo FaceEmbedder.mlpackage || echo FaceEmbedder.mlmodel)"
+  echo "  face model: compiling $SRC_MODEL → Resources/FaceEmbedder.mlmodelc"
+  if xcrun coremlcompiler compile "$SRC_MODEL" "$APP/Contents/Resources" >/dev/null 2>&1; then
+    echo "  face model: bundled (genuine ArcFace recognition)"
+  else
+    echo "  face model: compile failed — app falls back to general embedding"
+  fi
+else
+  echo "  face model: none bundled — using Apple's general embedding (run ./build-face-model.sh for real recognition)"
+fi
+
 echo "[3/4] Writing Info.plist..."
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
