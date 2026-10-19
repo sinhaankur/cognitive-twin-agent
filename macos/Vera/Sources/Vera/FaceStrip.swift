@@ -50,27 +50,27 @@ struct FaceStrip: View {
         return "she sees you"
     }
 
-    // Auto-frame transform for the video — a GENTLE zoom that keeps your whole
-    // head in view (never a tight, over-cropped close-up). Capped at 1.35× and the
-    // frameSpan floored high so it eases toward you without cutting off the top of
-    // your head. Pulled back from the old 2.4× that read as "over-focused".
-    private var zoom: CGFloat { max(1.0, min(1.35, 1.0 / max(0.74, engine.frameSpan))) }
+    // (Auto-frame zoom removed from the SwiftUI layer — it animated a live camera
+    // NSView ~13×/second and thrashed layout into a freeze. If it returns, it must
+    // be a CALayer transform inside CameraPreview, not a per-frame SwiftUI modifier.)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack {
                 Color(red: 0.04, green: 0.035, blue: 0.03)
 
-                // 1) the real camera feed — AUTO-FRAMED on the face (zoom + glide).
-                GeometryReader { geo in
-                    CameraPreview(session: engine.captureSession)
-                        .scaleEffect(zoom)
-                        .offset(x: (0.5 - engine.frameCenter.x) * geo.size.width * zoom,
-                                y: (0.5 - engine.frameCenter.y) * geo.size.height * zoom)
-                        .animation(.easeOut(duration: 0.25), value: engine.frameCenter)
-                        .animation(.easeOut(duration: 0.25), value: engine.frameSpan)
-                }
-                .clipped()
+                // 1) the real camera feed. FREEZE FIX: the preview is NOT animated by
+                //    the live face frame anymore. Driving .scaleEffect/.offset from
+                //    engine.frameCenter/Span — which update ~13×/second — with an
+                //    implicit .animation restarted every frame made SwiftUI + Core
+                //    Animation re-lay-out the whole view tree continuously (a sample of
+                //    the hang sat in -[NSWindow _layoutViewTree] inside the CA commit).
+                //    The live camera NSView must not be re-transformed every frame. The
+                //    preview now sits steady (aspect-fill), which is stable and still
+                //    reads well; the auto-frame can return later as a LAYER transform
+                //    inside CameraPreview (no SwiftUI layout), not a per-frame modifier.
+                CameraPreview(session: engine.captureSession)
+                    .clipped()
                 .overlay(
                     RadialGradient(colors: [.clear, .black.opacity(0.3)],
                                    center: .center, startRadius: 50, endRadius: 230)
