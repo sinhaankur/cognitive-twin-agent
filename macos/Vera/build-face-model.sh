@@ -38,9 +38,12 @@ fi
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
 
-echo "[2/4] Installing conversion tooling (insightface, onnx, coremltools) ..."
+echo "[2/4] Installing conversion tooling (insightface, onnx→torch, coremltools) ..."
 pip install --quiet --upgrade pip
-pip install --quiet "coremltools>=8.0" "onnx>=1.16" "insightface>=0.7" onnxruntime numpy
+# Modern coremltools has NO direct ONNX path, so we go ONNX → PyTorch (onnx2torch)
+# → traced → Core ML. torch + onnx2torch do the bridge.
+pip install --quiet "coremltools>=8.0" "onnx>=1.16" "insightface>=0.7" onnxruntime \
+    "numpy<2" torch onnx2torch
 
 echo "[3/4] Fetching ArcFace weights + converting to Core ML ..."
 python3 - <<'PY'
@@ -48,14 +51,10 @@ import os, sys
 import numpy as np
 
 # InsightFace ships ArcFace (buffalo_l → w600k_r50) as ONNX; download via its model zoo.
-from insightface.app import FaceAnalysis
 from insightface.utils import storage
-
-# this pulls the open model pack into ~/.insightface/models/buffalo_l/
 name = "buffalo_l"
 storage.ensure_available("models", name, root=os.path.expanduser("~/.insightface"))
 model_dir = os.path.expanduser(f"~/.insightface/models/{name}")
-# the recognition model inside the pack
 rec = None
 for f in os.listdir(model_dir):
     if f.endswith(".onnx") and ("w600k" in f or "glint" in f or "arcface" in f.lower()):
@@ -64,24 +63,30 @@ if rec is None:
     sys.exit(f"could not find the ArcFace .onnx inside {model_dir}: {os.listdir(model_dir)}")
 print("ArcFace ONNX:", rec)
 
+import torch
+from onnx2torch import convert as onnx2torch_convert
 import coremltools as ct
-import onnx
-onnx_model = onnx.load(rec)
 
-# ArcFace expects a 112x112 BGR face, normalized to [-1,1]. We convert to a Core ML
-# model that takes an image; preprocessing (scale/bias) encodes the normalization.
-# scale=1/127.5, bias=-1 per channel → maps [0,255] to [-1,1].
-mlmodel = ct.converters.onnx.convert(  # type: ignore[attr-defined]
-    model=rec,
-    minimum_ios_deployment_target="13",
-) if hasattr(ct.converters, "onnx") else None
+# ONNX → PyTorch
+torch_model = onnx2torch_convert(rec).eval()
 
-if mlmodel is None:
-    # newer coremltools dropped the onnx path → go through torch? Simplest robust
-    # route: use ct.convert on the onnx via the unified converter.
-    mlmodel = ct.convert(rec, source="auto", minimum_deployment_target=ct.target.macOS13)
+# ArcFace input is a 112x112 face. The ONNX graph takes an already-normalized
+# [1,3,112,112] float tensor (InsightFace normalizes (x-127.5)/127.5 → [-1,1]).
+# We bake that normalization into the Core ML image input via scale + bias so the
+# app can hand it a plain image: pixel/127.5 - 1  →  scale=1/127.5, bias=-1.
+example = torch.rand(1, 3, 112, 112)
+traced = torch.jit.trace(torch_model, example)
 
-mlmodel.short_description = "ArcFace face-identity embedding (InsightFace buffalo_l). On-device, 512-D."
+scale = 1.0 / 127.5
+mlmodel = ct.convert(
+    traced,
+    inputs=[ct.ImageType(name="input", shape=(1, 3, 112, 112),
+                         scale=scale, bias=[-1.0, -1.0, -1.0],
+                         color_layout=ct.colorlayout.RGB)],
+    minimum_deployment_target=ct.target.macOS13,
+    compute_units=ct.ComputeUnit.ALL,
+)
+mlmodel.short_description = "ArcFace face-identity embedding (InsightFace buffalo_l, r50). On-device, 512-D."
 out = os.path.join(os.getcwd(), "FaceEmbedder.mlpackage")
 mlmodel.save(out)
 print("saved:", out)

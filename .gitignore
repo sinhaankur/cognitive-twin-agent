@@ -27,6 +27,13 @@ training/adapters/
 training/vera-tuned/
 training/data/
 
+# Face-recognition model (large; regenerable via macos/Vera/build-face-model.sh).
+# The ArcFace Core ML model + its build venv are NOT committed — run the script to
+# produce them locally; build-app.sh bundles the result into Vera.app.
+macos/Vera/FaceEmbedder.mlpackage/
+macos/Vera/FaceEmbedder.mlmodelc/
+macos/Vera/.facemodel-venv/
+
 # on-device twin state must NEVER be committed (sealed personal data / test residue)
 life_story.json
 persona.json
