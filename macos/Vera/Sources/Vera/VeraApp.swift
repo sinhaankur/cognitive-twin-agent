@@ -1927,13 +1927,13 @@ final class AppModel: ObservableObject {
     // slightly to a dusk rose, speaking brightens to a warm honey. Mirrors the
     // website's dotted-orb palette so she looks like one person across surfaces.
     var tint: Color {
-        // Each state is clearly ITS OWN colour so the orb is expressive at a glance —
-        // but all stay in her warm amber family (never neon, never a hue jump). The
-        // shift carries the feeling: listening lifts brighter, thinking cools to a
-        // rose-amber, speaking glows honey, idle rests on her gold accent.
-        if voice.isListening { return Color(red: 0.910, green: 0.698, blue: 0.290) } // #E8B24A bright amber — attentive
-        if voice.isSpeaking { return Color(red: 0.941, green: 0.753, blue: 0.404) }  // #F0C067 honey glow — alive
-        if phase == .thinking { return Color(red: 0.788, green: 0.561, blue: 0.420) } // #C98F6B rose-amber — reflecting
+        // SUBTLE per-state shifts — all tightly within her warm amber family, so
+        // the feeling reads without the colour ever "jumping". Listening lifts only
+        // slightly, thinking cools a touch, speaking warms a touch; idle rests on
+        // her gold. Quiet, not theatrical.
+        if voice.isListening { return Color(red: 0.868, green: 0.682, blue: 0.360) } // amber, barely lifted — attentive
+        if voice.isSpeaking { return Color(red: 0.882, green: 0.706, blue: 0.396) }  // amber, barely warmed — alive
+        if phase == .thinking { return Color(red: 0.812, green: 0.636, blue: 0.408) } // amber, barely cooled — reflecting
         return Color(red: 0.839, green: 0.663, blue: 0.373)                            // #D6A95F gold — at rest
     }
 

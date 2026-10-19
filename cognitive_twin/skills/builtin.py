@@ -764,6 +764,47 @@ def allow_imessage(recipient: str) -> str:
     return control.allow_imessage(recipient)
 
 
+@R.add("keep_this",
+       "Keep something WHOLE, forever — a keepsake. Use this when the user asks you "
+       "to remember something for keeps / never forget it / keep it for someone (a "
+       "memory of a loved one, a lesson, a story, who someone was). Unlike ordinary "
+       "memory this is stored in FULL, never shortened, never pruned, and carried "
+       "forward. Capture their exact words.",
+       {"type": "object",
+        "properties": {
+            "text": {"type": "string", "description": "the full thing to keep, in their words"},
+            "title": {"type": "string", "description": "a short name for it (optional)"},
+            "about": {"type": "string", "description": "who/what it's about, e.g. 'my mother' (optional)"},
+            "for_whom": {"type": "string", "description": "who it's for, e.g. 'my son' (optional)"},
+            "kind": {"type": "string", "description": "memory | lesson | story | who | saying | wish"}},
+        "required": ["text"]})
+def keep_this(text: str, title: str = "", about: str = "",
+              for_whom: str = "", kind: str = "memory") -> str:
+    from .. import keepsake
+    ks = keepsake.keep(text, title=title, about=about, for_whom=for_whom, kind=kind)
+    if ks is None:
+        return "There was nothing to keep."
+    where = (f" for {for_whom}" if for_whom else "") + (f", about {about}" if about else "")
+    return f"Kept{where} — whole, and I won't forget it. ({keepsake.count()} kept so far.)"
+
+
+@R.add("list_keepsakes",
+       "Show everything kept for keeps — the keepsakes. Use when the user asks what "
+       "you've kept / what you'll pass on / what you remember forever.")
+def list_keepsakes() -> str:
+    from .. import keepsake
+    ks = keepsake.all_keepsakes()
+    if not ks:
+        return keepsake.status()
+    lines = [keepsake.status(), ""]
+    for x in ks:
+        head = x.title or (x.about and f"about {x.about}") or x.kind
+        tags = " · ".join(t for t in (x.about and f"about {x.about}",
+                                      x.for_whom and f"for {x.for_whom}") if t)
+        lines.append(f"• {head}" + (f"  ({tags})" if tags else ""))
+    return "\n".join(lines)
+
+
 # ---- camera + microphone (opt-in, permissioned, off by default) ---------------
 # Delegate to media.py, which enforces the per-device gate + per-capture
 # confirmation. They no-op with a clear message when the device is off, and the

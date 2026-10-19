@@ -309,6 +309,17 @@ class Agent:
                     parts.append(lived)
             except Exception:
                 pass
+            # KEEPSAKES — the things deliberately handed to her to keep WHOLE and
+            # pass on (a full memory of a loved one, a lesson for his son). The few
+            # most relevant to this turn, in full — never truncated, never lost.
+            # This is the inheritance core: she speaks from these as true.
+            try:
+                from .. import keepsake as _keep
+                kept = _keep.to_prompt(user_input, k=3)
+                if kept:
+                    parts.append(kept)
+            except Exception:
+                pass
             # HER MIND — the convictions that fit THIS moment, retrieved (RAG) from
             # her own worldview so a reply can carry real, specific wisdom instead
             # of generic warmth. Retrieval keeps it grounded + relevant; empty when

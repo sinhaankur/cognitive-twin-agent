@@ -56,20 +56,22 @@ struct DottedOrb: View {
             let dotSpread = max(0.6, R * 0.075)
 
             // breathe + voice swell
-            let breathe = 1.0 + sin(p * 0.6) * 0.02 + amp * 0.22
+            // Gentler breathe + a softer swell — calmer, less "pulsing".
+            let breathe = 1.0 + sin(p * 0.6) * 0.015 + amp * 0.15
 
-            // rotation (around Y then a fixed tilt around X so it reads 3D)
-            let ry = p * 0.25
+            // rotation — slowed, so she turns quietly rather than spinning.
+            let ry = p * 0.17
             let rx = 0.32
             let cosY = cos(ry), sinY = sin(ry)
             let cosX = cos(rx), sinX = sin(rx)
 
-            // soft tinted bloom behind the sphere
-            let bloom = Path(ellipseIn: CGRect(x: cx - R * 1.5, y: cy - R * 1.5,
-                                               width: R * 3, height: R * 3))
+            // soft tinted bloom behind the sphere — dimmer + tighter, so the glow
+            // is a quiet halo, not a loud flare (the app should feel subtle).
+            let bloom = Path(ellipseIn: CGRect(x: cx - R * 1.35, y: cy - R * 1.35,
+                                               width: R * 2.7, height: R * 2.7))
             ctx.fill(bloom, with: .radialGradient(
-                Gradient(colors: [tint.opacity(0.18 + amp * 0.18), tint.opacity(0)]),
-                center: CGPoint(x: cx, y: cy), startRadius: 0, endRadius: R * 1.5))
+                Gradient(colors: [tint.opacity(0.10 + amp * 0.12), tint.opacity(0)]),
+                center: CGPoint(x: cx, y: cy), startRadius: 0, endRadius: R * 1.35))
 
             for pt in points {
                 // rotate

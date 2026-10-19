@@ -24,6 +24,7 @@ struct BrainView: View {
             if serverUp {
                 MindWebView(url: mindURL)
                     .ignoresSafeArea()
+                    .id("mind")          // stable identity — never recreated on re-render
             } else {
                 VStack(spacing: 10) {
                     if checking {
@@ -67,22 +68,32 @@ struct BrainView: View {
     }
 }
 
-/// A minimal WKWebView host — local page only (127.0.0.1), nothing else.
+/// A minimal WKWebView host — local page only (127.0.0.1), nothing else. The web
+/// view is created and loaded ONCE and then left alone: SwiftUI re-renders of the
+/// parent used to re-fire updateNSView and reload the page, which read as the Mind
+/// "flickering / going off at random". A coordinator tracks that we've loaded, so
+/// updateNSView never reloads a page that's already up.
 private struct MindWebView: NSViewRepresentable {
     let url: URL
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    final class Coordinator { var loaded = false }
 
     func makeNSView(context: Context) -> WKWebView {
         let web = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
         web.setValue(false, forKey: "drawsBackground")   // let the page's space show
-        // a magnified webview crops the canvas and throws the heart off-centre
-        // ("unable to zoom and center it") — the page owns zoom, not the view
-        web.allowsMagnification = false
+        web.allowsMagnification = false                  // the page owns zoom, not the view
         web.load(URLRequest(url: url))
+        context.coordinator.loaded = true
         return web
     }
 
     func updateNSView(_ web: WKWebView, context: Context) {
-        if web.magnification != 1 { web.magnification = 1 }
-        if web.url == nil { web.load(URLRequest(url: url)) }
+        // Load ONCE. Only (re)load if we somehow never loaded AND there's no page —
+        // never reload a page that's already there (that was the flicker).
+        if !context.coordinator.loaded && web.url == nil {
+            web.load(URLRequest(url: url))
+            context.coordinator.loaded = true
+        }
     }
 }
