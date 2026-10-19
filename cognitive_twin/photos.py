@@ -68,25 +68,47 @@ def learn(events: list[dict[str, Any]]) -> dict[str, int]:
     return {"learned": learned, "skipped": skipped}
 
 
+# A place becomes part of HER (woven into who she is), not just a searchable
+# memory, only when it reads like a REAL part of the life — several photos, not a
+# single stray GPS tag. This is the line between "she can answer if asked" and
+# "she carries where this life was lived." Tunable; conservative on purpose.
+_PLACE_LIFE_STORY_MIN_PHOTOS = 4
+
+
 def learn_places(places: list[dict[str, Any]]) -> dict[str, int]:
     """Store PLACES you've been (from photo location metadata) as memories, so
     Vera knows where you've travelled. Metadata only, on-device, dedup-safe.
-    Each record: a place name, how many photos, and the date span of the visit."""
+    Each record: a place name, how many photos, and the date span of the visit.
+
+    The SIGNIFICANT places (a real visit — several photos) are also folded into her
+    LIFE STORY, so she carries where this life was lived as part of who she is (it
+    goes into her system prompt), not just something she can look up. This is the
+    'living that life, on-device' step — all sealed, all local, never uploaded."""
     from . import memory
     known = {e.get("prompt") for e in memory.entries() if e.get("source") == "photos-places"}
-    learned = skipped = 0
+    learned = skipped = to_life_story = 0
     for p in places or []:
         name = (p.get("region") or p.get("place") or "").strip()
         if not name:
             continue
         prompt = f"a place you've been: {name}"
-        if prompt in known:
-            skipped += 1
-            continue
         photos_n = p.get("photos")
         first, last = p.get("first"), p.get("last")
         span = (f"{first} → {last}" if first and last and first != last
                 else (first or last or ""))
+        # Promote a real visit into her life story (idempotent — add_place dedupes).
+        if isinstance(photos_n, int) and photos_n >= _PLACE_LIFE_STORY_MIN_PHOTOS:
+            try:
+                from . import life_story
+                before = set(life_story.load().places)
+                life_story.add_place(name)
+                if name not in before:
+                    to_life_story += 1
+            except Exception:
+                pass
+        if prompt in known:
+            skipped += 1
+            continue
         gist = "from your photos' location metadata (opt-in)"
         if photos_n:
             gist += f": {photos_n} photos"
@@ -95,7 +117,8 @@ def learn_places(places: list[dict[str, Any]]) -> dict[str, int]:
         memory.record(prompt, gist, source="photos-places")
         known.add(prompt)
         learned += 1
-    return {"places_learned": learned, "places_skipped": skipped}
+    return {"places_learned": learned, "places_skipped": skipped,
+            "places_to_life_story": to_life_story}
 
 
 def learn_moments(moments: list[dict[str, Any]]) -> dict[str, int]:
