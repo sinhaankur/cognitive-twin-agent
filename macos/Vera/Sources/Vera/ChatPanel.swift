@@ -90,6 +90,13 @@ struct ChatPanel: View {
                     Text(statusSubline)
                         .font(.system(size: 10.5, design: .default))
                         .foregroundStyle(statusTint)
+                        // one honest line — never break a word like "listenin / g…";
+                        // if the header is tight it shrinks, then truncates, but the
+                        // status word always reads whole.
+                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .minimumScaleFactor(0.85)
+                        .truncationMode(.tail)
                     // a tiny breathing dot while loading/working, so you can SEE it's
                     // alive and not stuck (Claude-style "working…").
                     if model.isBusyState {

@@ -78,6 +78,10 @@ final class FaceEngine: NSObject, ObservableObject {
     // even though the camera delivers ~30fps. Halves CPU with no visible change.
     private static let visionMinInterval: CFTimeInterval = 1.0 / 13.0
     private var lastVisionAt: CFTimeInterval = 0
+    // The built-in Mac camera delivers upright frames, so Vision reads the raw
+    // buffer as .up. (The FaceStrip preview is mirrored for display only — that
+    // never touches the buffer Vision analyzes, so detection isn't flipped.)
+    private static let bufferOrientation: CGImagePropertyOrientation = .up
 
     // ---- state below is touched ONLY on `queue` -----------------------------
     // rolling histories (~1.5 s at 30 fps), same signal logic as the page's flow.js
@@ -619,10 +623,27 @@ extension FaceEngine: AVCaptureVideoDataOutputSampleBufferDelegate {
         //  • Landmarks runs on the nearest face for the expression/emotion read.
         // (A single landmarks request often returns only the strongest face, which
         //  is why the room showed "just you" even with two people in frame.)
+        //
+        // The room COUNT runs on a fresh one-shot VNImageRequestHandler, not the
+        // VNSequenceRequestHandler. The sequence handler is tuned for tracking ONE
+        // subject across frames and was under-counting a second person (the screen
+        // read "just you" with two people clearly in frame). A per-frame image
+        // handler, with the face detector pinned to its newest revision (best
+        // multi-face recall), reliably finds everyone. The orientation is passed so
+        // an angled second face isn't missed on a mis-oriented buffer.
         let rectReq = VNDetectFaceRectanglesRequest()
-        let landmarkReq = VNDetectFaceLandmarksRequest()
-        try? sequence.perform([rectReq, landmarkReq], on: pixels)
+        if let newest = VNDetectFaceRectanglesRequest.supportedRevisions.max() {
+            rectReq.revision = newest
+        }
+        let countHandler = VNImageRequestHandler(cvPixelBuffer: pixels,
+                                                 orientation: Self.bufferOrientation,
+                                                 options: [:])
+        try? countHandler.perform([rectReq])
         let allFaces = rectReq.results ?? []
+        // Landmarks (expression/emotion) stay on the sequence handler — temporal
+        // smoothing across frames genuinely helps the nearest-face read.
+        let landmarkReq = VNDetectFaceLandmarksRequest()
+        try? sequence.perform([landmarkReq], on: pixels, orientation: Self.bufferOrientation)
         let landmarked = landmarkReq.results ?? []
         // Prefer the richer set for the room count (rectangles usually ≥ landmarks).
         readRoom(allFaces.count >= landmarked.count ? allFaces : landmarked)
