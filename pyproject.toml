@@ -30,6 +30,10 @@ dev = ["pytest>=7"]
 
 [project.scripts]
 ctwin = "cognitive_twin.cli:main"
+# The one entry point every cross-platform package (Flatpak / AppImage / MSIX /
+# winget) launches: start her brain + voice server and open the web UI. The Mac
+# app is a native Swift shell; on Linux + Windows, `vera-app` IS the app.
+vera-app = "cognitive_twin.desktop:main"
 # The settings/control dashboard as a real registered command (every OS), so it
 # can be launched as `vera-dashboard` and registered as a service. Install with
 # `pip install -e .`.

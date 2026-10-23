@@ -20,6 +20,7 @@ Run:  python -m cognitive_twin.voice.server
 from __future__ import annotations
 
 import json
+import os
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -224,7 +225,11 @@ def _play_wav_bytes(wav: bytes) -> None:
 
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
-HOST = "127.0.0.1"
+# Bind to loopback by default (on-device, private). VERA_HOST can widen it —
+# e.g. the cross-platform `vera-app` launcher passes 0.0.0.0 with --host so the
+# UI is reachable over a trusted tailnet. Loopback stays the safe default; you
+# have to ask for anything broader.
+HOST = os.environ.get("VERA_HOST", "127.0.0.1").strip() or "127.0.0.1"
 DEFAULT_PORT = 7878
 
 
