@@ -69,9 +69,36 @@ _DEFAULT_VOICE = "af_heart"
 DEFAULT_SPEED = 0.92
 
 
+# Where the user's chosen voice is remembered BETWEEN runs. The picker used to
+# set only an in-process env var, so the choice evaporated on the next service
+# restart and she fell back to the default — "the app still doesn't have the
+# voice I selected." We persist it next to the other small prefs (the memory
+# dir), so a restart keeps her sounding the way the user chose.
+def _pref_path() -> Path:
+    root = Path(os.environ.get("CTWIN_MEMORY_DIR", Path.home() / ".cognitive-twin"))
+    return root / "voice_pref.json"
+
+
+def _saved_voice() -> str | None:
+    """The voice the user last chose, remembered on disk (None if never set)."""
+    try:
+        data = json.loads(_pref_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    v = str(data.get("kokoro_voice", "")).strip()
+    return v if v in VOICES else None
+
+
 def _voice() -> str:
-    v = os.environ.get("CTWIN_KOKORO_VOICE", _DEFAULT_VOICE).strip()
-    return v if v in VOICES else _DEFAULT_VOICE
+    # Precedence: explicit env override (power users / tests) → the user's saved
+    # choice from the picker → the shipped default.
+    env = os.environ.get("CTWIN_KOKORO_VOICE", "").strip()
+    if env in VOICES:
+        return env
+    saved = _saved_voice()
+    if saved:
+        return saved
+    return _DEFAULT_VOICE
 
 
 def _default_speed() -> float:
@@ -105,10 +132,20 @@ def current_voice() -> str:
 
 def set_voice(voice_id: str) -> bool:
     voice_id = (voice_id or "").strip()
-    if voice_id in VOICES:
-        os.environ["CTWIN_KOKORO_VOICE"] = voice_id
-        return True
-    return False
+    if voice_id not in VOICES:
+        return False
+    # Take effect immediately for THIS process…
+    os.environ["CTWIN_KOKORO_VOICE"] = voice_id
+    # …and remember it on disk so the choice survives a restart (the whole point
+    # of the picker). Best-effort: a write failure must never break switching.
+    try:
+        p = _pref_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps({"kokoro_voice": voice_id}, indent=2) + "\n",
+                     encoding="utf-8")
+    except OSError:
+        pass
+    return True
 
 
 # ── the persistent, warm worker ────────────────────────────────────────────────
@@ -134,7 +171,14 @@ def voice_state() -> dict:
 # How long we'll ever wait on the worker before giving up and falling back to the
 # system voice. A stalled worker must NEVER wedge Vera's chat — synthesis is a
 # nicety, answering is not. Model load is slower than a synth, so it gets longer.
-_READY_TIMEOUT = 30.0   # cold model load
+#
+# COLD-LOAD under launchd is the slow case: importing torch + loading the Kokoro
+# 82M model from a cold filesystem cache, with the service's constrained CPU
+# scheduling, can take ~60-90s the FIRST time. The old 30s was too short — the
+# loader got KILLED mid-import by the next caller, over and over, so the model
+# never finished loading and the voice stayed "warming" forever. Give the cold
+# load real head-room; warm synths are still ~0.3-1s, so this only affects boot.
+_READY_TIMEOUT = 120.0  # cold model load (torch import + Kokoro-82M, first time)
 _SYNTH_TIMEOUT = 20.0   # one line of speech
 
 
@@ -185,9 +229,16 @@ def _ensure_worker() -> subprocess.Popen | None:
     if not py or not script:
         return None
     try:
+        # CTWIN_KOKORO_DEBUG=1 → capture the worker's stderr to a file for
+        # diagnosing a cold-load problem; otherwise discard it (the torch/model
+        # load emits chatty warnings we don't want in the service log).
+        import os as _os
+        _errdst = (open("/tmp/kokoro_worker.err", "a")
+                   if _os.environ.get("CTWIN_KOKORO_DEBUG", "").strip()
+                   else subprocess.DEVNULL)
         _proc = subprocess.Popen(
             [str(py), str(script)],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=_errdst,
             cwd=str(_vera_home()), text=True, bufsize=1,
         )
         # wait for READY (model load can take a few seconds the first time) — but

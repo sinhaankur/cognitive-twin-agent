@@ -59,9 +59,12 @@ class Felt:
 
     @property
     def is_light(self) -> bool:
-        # positive valence + not maxed-out arousal. Ceiling 0.9 so genuine
-        # excitement ("finally shipped it!") still reads as a light moment.
-        return self.valence >= 0.15 and self.arousal <= 0.9
+        # positive valence + not fully-maxed arousal. Ceiling 0.96 so genuine
+        # excitement ("finally shipped it, so excited!") still reads as a light
+        # moment — the richer 4-dim limbic net scores that kind of joy higher on
+        # arousal (~0.95), so the ceiling has to clear it or real delight gets
+        # mislabelled as overwhelm.
+        return self.valence >= 0.15 and self.arousal <= 0.96
 
     @property
     def is_heavy(self) -> bool:

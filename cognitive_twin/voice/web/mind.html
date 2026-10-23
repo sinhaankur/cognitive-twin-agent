@@ -60,7 +60,10 @@ header h1 {
 header p { color: var(--sub); font-size: 13.5px; margin: 6px 0 0; }
 
 /* --- the pipeline rail -------------------------------------------------- */
-.stage-wrap { flex: 1; display: flex; align-items: center; justify-content: center;
+/* align-items:flex-start (was center): vertically centering the rail in a short
+   window pushed the cards down into the ask bar. Top-align + flex:1 keeps the
+   rail just under the net and lets spare height fall ABOVE the ask bar. */
+.stage-wrap { flex: 1; display: flex; align-items: flex-start; justify-content: center;
   padding: 10px 20px 24px; }
 .rail {
   width: 100%; max-width: 980px;
@@ -131,7 +134,7 @@ header p { color: var(--sub); font-size: 13.5px; margin: 6px 0 0; }
 }
 /* the per-step detail card */
 .card {
-  margin-top: 14px; width: 100%; min-height: 128px;
+  margin-top: 14px; width: 100%; min-height: 104px;
   background: var(--card); border: 1px solid var(--card-edge);
   border-radius: 14px; box-shadow: var(--shadow);
   padding: 13px 14px; text-align: left;
@@ -178,8 +181,13 @@ header p { color: var(--sub); font-size: 13.5px; margin: 6px 0 0; }
 .route-tag { font-family: var(--mono); font-size: 10px; color: var(--sub); margin-top: 8px; }
 
 /* --- ask bar ------------------------------------------------------------ */
+/* Flows at the END of the body's flex column (the rail's flex:1 pushes it to
+   the bottom when there's room). It used to be position:sticky, which OVERLAPPED
+   the step cards on a short window — the "brain looks bad" cramming. Letting it
+   sit in normal flow means it never covers the cards; on a tall window the
+   flex:1 stage-wrap still holds it against the bottom edge. */
 .ask {
-  position: sticky; bottom: 0; width: 100%;
+  flex-shrink: 0; width: 100%;
   padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
   background: linear-gradient(to top, var(--bg), transparent);
 }

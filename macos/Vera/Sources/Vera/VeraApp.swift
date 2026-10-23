@@ -983,19 +983,31 @@ final class AppModel: ObservableObject {
     /// Load her neural voices from the server and reflect the current selection.
     func refreshNeuralVoices() {
         Task {
-            let (voices, _current) = await agent.neuralVoices()
+            let (voices, current) = await agent.neuralVoices()
             await MainActor.run {
                 self.neuralVoices = voices.map { NeuralVoiceOption(id: $0.id, label: $0.label) }
-                // Honor ONLY a deliberate saved choice. Otherwise snap to af_heart —
-                // we never auto-adopt the server's "current", which on a fresh state
-                // can be empty or some other voice and would quietly cost the one
-                // good experience. The user can still pick another voice by hand
-                // (that gets saved and honored below).
+                // Source of truth, in order:
+                //   1. this app's deliberate saved choice (the user picked here), else
+                //   2. the SERVER's persisted current (the user may have picked on
+                //      another client, or last run — the server now remembers it on
+                //      disk across restarts), else
+                //   3. the shipped default (af_heart).
+                // The old code forced af_heart whenever THIS install had no saved
+                // choice AND asserted it onto the server — which silently CLOBBERED a
+                // voice the user had chosen (the "it won't keep the voice I selected"
+                // bug). We only assert onto the server when we actually have a local
+                // choice to assert; otherwise we ADOPT what the server already holds.
                 let saved = UserDefaults.standard.string(forKey: "vera.neuralVoiceID")
-                let pick = (saved.flatMap { s in voices.contains(where: { $0.id == s }) ? s : nil })
-                    ?? Self.defaultNeuralVoice
+                    .flatMap { s in voices.contains(where: { $0.id == s }) ? s : nil }
+                let serverCurrent = voices.contains(where: { $0.id == current }) ? current : nil
+                let pick = saved ?? serverCurrent ?? Self.defaultNeuralVoice
                 self.neuralVoiceID = pick
-                Task { await self.agent.setNeuralVoice(pick) }   // assert it on the server
+                // Only push to the server when the choice originates HERE (a local
+                // saved pick, or we're seeding the default because the server had
+                // nothing usable). Never overwrite a good server value we just adopted.
+                if saved != nil || serverCurrent == nil {
+                    Task { await self.agent.setNeuralVoice(pick) }
+                }
             }
         }
     }
