@@ -26,19 +26,41 @@ struct BrainView: View {
                     .ignoresSafeArea()
                     .id("mind")          // stable identity — never recreated on re-render
             } else {
-                VStack(spacing: 10) {
-                    if checking {
-                        ProgressView("Waking the Mind…")
-                    } else {
-                        Text("The Mind isn't awake yet.").font(.headline)
-                        Text("Its engine starts with the app — give it a few seconds.")
-                            .foregroundStyle(.secondary)
-                        Button("Try again") {
-                            checking = true
-                            Task {
-                                _ = await probe()
-                                checking = false
+                // Obsidian-dark waking panel (matches the in-page overlay) so the
+                // app never flashes a bare/mismatched loading state.
+                ZStack {
+                    Color(red: 0.102, green: 0.102, blue: 0.102).ignoresSafeArea()
+                    VStack(spacing: 14) {
+                        if checking {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .tint(Color(red: 0.66, green: 0.33, blue: 0.97))   // Obsidian purple
+                            Text("Waking the Mind")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.9))
+                            Text("Her brain runs on this device — loading her model takes a moment.")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.white.opacity(0.5))
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 320)
+                        } else {
+                            Text("The Mind isn't awake yet.")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.9))
+                            Text("Its engine starts with the app — give it a few seconds.")
+                                .font(.system(size: 13))
+                                .foregroundStyle(.white.opacity(0.5))
+                                .multilineTextAlignment(.center)
+                            Button("Try again") {
+                                checking = true
+                                Task {
+                                    let deadline = Date().addingTimeInterval(120)
+                                    while Date() < deadline { if await probe() { break }
+                                        try? await Task.sleep(nanoseconds: 1_000_000_000) }
+                                    checking = false
+                                }
                             }
+                            .tint(Color(red: 0.66, green: 0.33, blue: 0.97))
                         }
                     }
                 }
@@ -46,19 +68,26 @@ struct BrainView: View {
         }
         .frame(minWidth: 760, minHeight: 560)
         .task {
-            // poll until the viz server answers (the app launches it at start)
-            for _ in 0..<20 {
+            // Poll until the /mind page serves, then hand off to the page itself:
+            // the page has its own Obsidian "Waking the Mind" overlay that waits
+            // for her brain to be model-ready and retries on its own. So here we
+            // only need the static page to load — but her brain's COLD model load
+            // can take 30–100s, far past the old ~14s ceiling (that was the
+            // "doesn't load" dead-end). Poll patiently for ~2 min; the UI shows a
+            // calm spinner the whole time, never a premature failure.
+            let deadline = Date().addingTimeInterval(120)
+            while Date() < deadline {
                 if await probe() { return }
-                try? await Task.sleep(nanoseconds: 700_000_000)
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
-            checking = false
+            checking = false   // only after a genuinely long wait do we offer Try again
         }
     }
 
     @discardableResult
     private func probe() async -> Bool {
         var req = URLRequest(url: mindURL)
-        req.timeoutInterval = 2
+        req.timeoutInterval = 3
         if let (_, resp) = try? await URLSession.shared.data(for: req),
            (resp as? HTTPURLResponse)?.statusCode == 200 {
             serverUp = true

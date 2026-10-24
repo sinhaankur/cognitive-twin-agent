@@ -13,26 +13,33 @@
    is legible. Adapts to dark/light. All data from /api/thought — honest, no
    invented steps. Respects prefers-reduced-motion.
 --------------------------------------------------------------------------- */
+/* ── Obsidian palette ────────────────────────────────────────────────────────
+   Dark-first, like Obsidian itself: deep charcoal base (#1e1e1e), subtly raised
+   panels (#262626), hair-thin dividers, and Obsidian's iconic purple as the
+   one active accent. The neural graph glows purple. A matching light mode keeps
+   parity for users on a light system. */
 :root {
-  /* light */
-  --bg: #f7f5f1; --bg2: #efece5; --ink: #1a1a1c; --sub: #6a6a70;
-  --line: #ddd8ce; --card: #ffffff; --card-edge: #e8e3d9;
-  --accent: #bf8a3c;      /* Vera's warm amber — the "active" colour (app identity) */
-  --accent-soft: #f4ecdd;
-  --warm: #c4a07a;        /* feeling */
-  --dim: #bcb7ac;
-  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 30px rgba(0,0,0,.05);
+  /* dark (default — Obsidian's native mode) */
+  --bg: #1a1a1a; --bg2: #202020; --ink: #dcddde; --sub: #8a8a8f;
+  --line: #2f2f2f; --card: #262626; --card-edge: #363636;
+  --accent: #a855f7;          /* Obsidian purple — the "active" colour */
+  --accent-2: #7c3aed;        /* deeper purple for gradients */
+  --accent-soft: #2a2140;     /* purple-tinted raised fill */
+  --warm: #c084fc;            /* feeling / signal highlight (lighter purple) */
+  --dim: #3a3a3a;
+  --glow: rgba(168,85,247,.45);
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 48px rgba(0,0,0,.5);
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
 }
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
   :root {
-    --bg: #0f0e0b; --bg2: #16140f; --ink: #ece9e3; --sub: #8e8c94;
-    --line: #272319; --card: #18160f; --card-edge: #241f16;
-    --accent: #d6a95f; --accent-soft: #261f12; --warm: #d8b483;
-    --dim: #3a362c;
-    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 10px 40px rgba(0,0,0,.4);
+    --bg: #f6f6f7; --bg2: #ececed; --ink: #27272a; --sub: #6b6b72;
+    --line: #e2e2e5; --card: #ffffff; --card-edge: #e6e6ea;
+    --accent: #7c3aed; --accent-2: #6d28d9; --accent-soft: #efeaff;
+    --warm: #9333ea; --dim: #cfcfd4; --glow: rgba(124,58,237,.3);
+    --shadow: 0 1px 2px rgba(0,0,0,.05), 0 10px 36px rgba(0,0,0,.07);
   }
 }
 * { box-sizing: border-box; }
@@ -50,14 +57,14 @@ header {
   padding: 28px 24px 10px; text-align: center;
 }
 header .eyebrow {
-  font-family: var(--mono); font-size: 11px; letter-spacing: .22em;
-  text-transform: uppercase; color: var(--sub); margin: 0 0 6px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .24em;
+  text-transform: uppercase; color: var(--accent); margin: 0 0 7px;
 }
 header h1 {
-  font-family: var(--serif); font-weight: 500; font-size: 26px;
-  margin: 0; letter-spacing: .01em;
+  font-family: var(--sans); font-weight: 650; font-size: 27px;
+  margin: 0; letter-spacing: -.01em; color: var(--ink);
 }
-header p { color: var(--sub); font-size: 13.5px; margin: 6px 0 0; }
+header p { color: var(--sub); font-size: 13.5px; margin: 7px 0 0; }
 
 /* --- the pipeline rail -------------------------------------------------- */
 /* align-items:flex-start (was center): vertically centering the rail in a short
@@ -171,8 +178,8 @@ header p { color: var(--sub); font-size: 13.5px; margin: 6px 0 0; }
 .metric .track { height: 6px; border-radius: 4px; background: var(--line); margin-top: 3px; overflow: hidden; }
 .metric .track > i { display: block; height: 100%; width: 0%;
   transition: width .7s cubic-bezier(.16,1,.3,1); }
-.m-stress > i { background: linear-gradient(90deg, #86b37a, var(--warm)); }
-.m-energy > i { background: var(--accent); }
+.m-stress > i { background: linear-gradient(90deg, var(--accent-2), var(--warm)); }
+.m-energy > i { background: linear-gradient(90deg, var(--accent), var(--warm)); }
 .stance-chip { display: inline-block; margin-top: 8px; padding: 3px 9px;
   border-radius: 999px; font-size: 11px; background: var(--accent-soft); color: var(--accent); }
 
@@ -225,10 +232,52 @@ header p { color: var(--sub); font-size: 13.5px; margin: 6px 0 0; }
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: .001ms !important; }
   .step.on .node, .step.on .node::before, .rail .flow::after { animation: none !important; }
+  #boot .ring { animation: none !important; }
 }
+
+/* --- boot / waking overlay (the fix for "the brain sometimes doesn't load") --
+   The page used to render into a half-dead state if the brain wasn't ready yet.
+   Now a calm Obsidian-styled overlay sits on top and polls /api/health; the page
+   underneath is only revealed once her brain genuinely answers. It retries on its
+   own — no "try again" dead-end. */
+#boot {
+  position: fixed; inset: 0; z-index: 50;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px; text-align: center; padding: 24px;
+  background: radial-gradient(120% 90% at 50% 35%, var(--bg2), var(--bg) 70%);
+  transition: opacity .6s ease, visibility .6s ease;
+}
+#boot.hide { opacity: 0; visibility: hidden; }
+#boot .ring {
+  width: 54px; height: 54px; border-radius: 50%;
+  border: 3px solid var(--line); border-top-color: var(--accent);
+  box-shadow: 0 0 34px var(--glow);
+  animation: bootspin 1s linear infinite;
+}
+@keyframes bootspin { to { transform: rotate(360deg); } }
+#boot .btitle { font-family: var(--sans); font-weight: 650; font-size: 19px; color: var(--ink); }
+#boot .bsub { font-size: 13.5px; color: var(--sub); max-width: 340px; line-height: 1.5; }
+#boot .bdot { font-family: var(--mono); font-size: 11px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--accent); }
+#boot .retry {
+  margin-top: 4px; border: 1px solid var(--card-edge); background: var(--card);
+  color: var(--ink); font-size: 13px; padding: 8px 18px; border-radius: 999px;
+  cursor: pointer; display: none; transition: border-color .2s ease;
+}
+#boot .retry:hover { border-color: var(--accent); }
+#boot.slow .retry { display: inline-block; }
 </style>
 </head>
 <body>
+  <!-- waking overlay: shown until her brain actually answers /api/health -->
+  <div id="boot">
+    <div class="ring" aria-hidden="true"></div>
+    <div class="btitle">Waking the Mind</div>
+    <div class="bsub">Her brain runs entirely on this device — loading her model takes a moment the first time.</div>
+    <div class="bdot" id="boot-dot">connecting…</div>
+    <button class="retry" id="boot-retry" type="button">Try again</button>
+  </div>
+
   <header>
     <p class="eyebrow">The Mind</p>
     <h1>How she thinks</h1>
@@ -240,8 +289,8 @@ header p { color: var(--sub); font-size: 13.5px; margin: 6px 0 0; }
        Driven by /api/engineflow (the actual trained weights). -->
   <div style="max-width:720px;margin:0 auto 10px;padding:0 20px">
     <canvas id="netfield" style="width:100%;height:280px;border-radius:16px;
-      border:1px solid var(--card-edge);
-      background:radial-gradient(130% 90% at 50% 20%,#0b0a14 0%,#060509 70%,#040407 100%)"></canvas>
+      border:1px solid var(--card-edge); box-shadow:var(--shadow);
+      background:radial-gradient(130% 90% at 50% 18%,#241a38 0%,#161228 55%,#0e0b18 100%)"></canvas>
     <p style="text-align:center;font-family:var(--mono);font-size:8px;letter-spacing:.14em;
       text-transform:uppercase;color:var(--sub);margin-top:4px">
       input cues → hidden neurons → felt output · particles trace the live signal · warm = high activation</p>
@@ -311,6 +360,36 @@ header p { color: var(--sub); font-size: 13.5px; margin: 6px 0 0; }
 (function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
+
+  // ── WAKE: don't show a dead page. Poll /api/health until her brain truly
+  //    answers (model_ready), then reveal. Self-retrying — no dead-end. This is
+  //    the fix for "the brain sometimes doesn't load": the cold model load can
+  //    take 30–100s, far longer than any fixed timeout, so we just keep waiting
+  //    patiently and surface a gentle "try again" only if it's really taking long.
+  (function wake(){
+    const boot = $("boot"), dot = $("boot-dot"), retry = $("boot-retry");
+    if (!boot) return;
+    let tries = 0, done = false;
+    async function ping(){
+      try {
+        const r = await fetch("/api/health", { cache: "no-store" });
+        if (r.ok) {
+          const h = await r.json().catch(() => ({}));
+          // ready = the server answers AND (if it reports model readiness) it's ready
+          if (h.ok !== false && h.model_ready !== false) { reveal(); return; }
+          dot.textContent = h.model_ready === false ? "loading her model…" : "waking…";
+        }
+      } catch (_) { dot.textContent = "connecting…"; }
+      tries++;
+      if (tries === 12) boot.classList.add("slow");   // ~24s in → offer a manual retry
+      if (!done) setTimeout(ping, 2000);
+    }
+    function reveal(){ done = true; boot.classList.add("hide");
+      setTimeout(() => { boot.style.display = "none"; }, 650); }
+    retry && retry.addEventListener("click", () => { boot.classList.remove("slow"); tries = 0; dot.textContent = "retrying…"; ping(); });
+    ping();
+  })();
+
   const steps = { q: $("s-q"), r: $("s-r"), f: $("s-f"), a: $("s-a") };
   const flow = $("flow");
   const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -470,8 +549,10 @@ header p { color: var(--sub); font-size: 13.5px; margin: 6px 0 0; }
     let W=0,H=0, inputs=[],hiddens=[],outputs=[],edges=[],parts=[];
     let data = null;  // latest /api/engineflow active block
 
+    // Obsidian-purple activation ramp: dim indigo (low) → bright purple (mid) →
+    // light lavender (high). Warm = high activation, as the legend says.
     function col(a,al){ a=Math.max(0,Math.min(1,a));
-      const s=[[159,139,255],[154,166,196],[255,210,122]];
+      const s=[[91,74,140],[168,85,247],[221,196,255]];
       const g=a<.5?0:1, f=a<.5?a/.5:(a-.5)/.5, c=s[g].map((v,i)=>Math.round(v+(s[g+1][i]-v)*f));
       return "rgba("+c[0]+","+c[1]+","+c[2]+","+al+")"; }
     function resize(){ const r=cv.getBoundingClientRect(); W=r.width; H=280;
@@ -493,7 +574,7 @@ header p { color: var(--sub); font-size: 13.5px; margin: 6px 0 0; }
     }
     function frame(){
       ctx.clearRect(0,0,W,H);
-      ctx.strokeStyle="rgba(150,160,185,0.12)"; ctx.lineWidth=1; ctx.strokeRect(8,8,W-16,H-16);
+      ctx.strokeStyle="rgba(168,85,247,0.10)"; ctx.lineWidth=1; ctx.strokeRect(8,8,W-16,H-16);
       for(const e of edges){ if(e.w<0.06)continue;
         const cx=(e.a.x+e.b.x)/2;
         ctx.beginPath(); ctx.moveTo(e.a.x,e.a.y);
