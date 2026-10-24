@@ -40,6 +40,7 @@ from .skills import social_skill  # noqa: F401  (registers social: summary/statu
 from .skills import careers_skill  # noqa: F401  (registers careers: job_fit/cover_letter/resumes/track)
 from .skills import watchtower_skill  # noqa: F401  (registers watchtower: status/note — opt-in observability)
 from .skills import rag_skill  # noqa: F401  (registers rag: index/recall/list — answer from your docs)
+from .skills import party_skill  # noqa: F401  (registers party: lights on/off/status — BTK10 laser, opt-in)
 from .skills.base import default_registry
 
 
