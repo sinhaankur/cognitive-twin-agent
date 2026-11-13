@@ -979,14 +979,21 @@ class _Handler(BaseHTTPRequestHandler):
             cloned = False
             if text:
                 import os as _os
-                kokoro_only = _os.environ.get("CTWIN_VOICE_KOKORO_ONLY", "").strip() \
+                # Kokoro af_heart is now Vera's DEFAULT voice everywhere (the same
+                # warm neural voice the website uses) — ONE fast, consistent voice.
+                # The XTTS clone was slow (6–15s renders, cold-probe hangs) and
+                # switched timbre against Kokoro ("voice sucks / two voices"), and
+                # needs a reference recording that most setups don't have. So the
+                # clone is now OPT-IN: set CTWIN_VOICE_USE_CLONE=1 to prefer it when
+                # genuinely set up. Default = Kokoro af_heart, always.
+                use_clone = _os.environ.get("CTWIN_VOICE_USE_CLONE", "").strip() \
                     in {"1", "true", "yes", "on"}
-                # 1) A loved one's CLONED voice (XTTS), ONLY if genuinely set up AND
-                #    not disabled. The XTTS clone is slow (6–15s renders, cold-probe
-                #    hangs) and switches timbre against Kokoro — the "voice sucks /
-                #    two voices" report. KOKORO_ONLY skips it entirely for ONE fast,
-                #    consistent voice everywhere.
-                if not kokoro_only:
+                # Back-compat: the old KOKORO_ONLY=0 meant "allow the clone".
+                if _os.environ.get("CTWIN_VOICE_KOKORO_ONLY", "").strip() in {"0", "false", "no", "off"}:
+                    use_clone = True
+                # 1) A loved one's CLONED voice (XTTS) — only when explicitly opted in
+                #    AND genuinely set up.
+                if use_clone:
                     try:
                         from .. import voice_clone
                         if voice_clone.is_ready():

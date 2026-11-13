@@ -42,10 +42,13 @@ def _embed_model() -> str:
 
 def _default_model() -> str:
     """The right-sized local chat model for this machine (for optional reranking).
-    Device-aware so we never pin a 14B on a laptop; fail-soft to a safe small one."""
+    Device-aware so we never pin a 14B on a laptop; fail-soft to a safe small one.
+    query_ollama=True so this prefers Vera's OWN installed model (vera-tuned) —
+    the SAME one the chat path uses — instead of a generic base. That keeps the
+    app on ONE model rather than loading both vera-tuned and qwen side by side."""
     try:
         from . import device_model
-        return device_model.pick_default()
+        return device_model.pick_default(query_ollama=True)
     except Exception:
         return "qwen2.5:7b"
 

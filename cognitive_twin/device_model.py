@@ -55,7 +55,12 @@ _EMBED_HINTS = ("embed", "embedding", "nomic-embed", "bge-", "mxbai-embed", "sno
 # well on EVERY device, not just roomy ones. This is what makes the app feel like
 # Vera out of the box instead of a generic assistant. Falls through to the RAM
 # tiers below only when none of these are pulled.
-_VERA_MODELS: tuple[str, ...] = ("vera-merged", "vera-tuned", "empathia")
+#
+# ONE MODEL: vera-tuned is the current, best model — the latest LoRA fine-tune
+# (passes 13/13 on the conversation eval). It leads the list so the app runs on
+# this single model, not a sprawl of older/other LLMs. vera-merged (the previous
+# tune) and empathia stay as fallbacks only if vera-tuned isn't pulled.
+_VERA_MODELS: tuple[str, ...] = ("vera-tuned", "vera-merged", "empathia")
 
 # Preferred LOCAL chat models, smallest-capable first within each tier. We pick the
 # largest one that fits the machine's RAM AND is installed. Tool-calling capable
