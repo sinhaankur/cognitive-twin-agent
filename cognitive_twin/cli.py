@@ -55,12 +55,12 @@ def _load_config() -> dict:
 
 
 def _device_default_model() -> str:
-    """The right-sized local model for this machine (see device_model.pick_default).
-    Queries Ollama so it can PREFER Vera's own trained model (vera-merged) when it's
-    installed — that's what makes the app feel like Vera, and it's light (3B) so it
-    suits every device. The query is a short, bounded /api/tags call (the startup
-    hang was fixed separately); fail-soft to a safe small default if anything goes
-    wrong, so Vera always starts."""
+    """Vera's model for this machine (see device_model.pick_default). Queries
+    Ollama so it PREFERS her own trained model (vera-tuned) when it's installed —
+    that's what makes the app feel like Vera, and it's light (3B) so it suits every
+    device. The query is a short, bounded /api/tags call (the startup hang was
+    fixed separately); fail-soft to the one small fallback if anything goes wrong,
+    so Vera always starts."""
     try:
         from . import device_model
         return device_model.pick_default(query_ollama=True)
@@ -967,6 +967,47 @@ def _install_confirm() -> None:
     media.set_confirm(_ask_yn)
 
 
+def _code_command(args: list[str]) -> int:
+    """`ctwin code` — Vera's knowledge of YOUR code (reuses her own RAG).
+
+      ctwin code index               (re)build the code index from your repos
+      ctwin code ask "<question>"    one-shot question about your code
+    """
+    from . import code_sense
+
+    sub = args[0] if args else "help"
+    if sub == "index":
+        print("  indexing your code (this reads your repos, stays on-device)…")
+        info = code_sense.build()
+        print(f"  ✓ indexed {info['chunks']} chunks from {info['dirs']} repos "
+              f"({info['mode']}).")
+        print("  ask about it:  ctwin code ask \"how does X work\"")
+        return 0
+    if sub == "ask":
+        query = " ".join(args[1:]).strip()
+        if not query:
+            print("  usage: ctwin code ask \"<question about your code>\"")
+            return 1
+        if not code_sense.is_ready():
+            print("  no code index yet. Build it first:  ctwin code index")
+            return 1
+        ctx = code_sense.context_for_prompt(query, k=6)
+        if not ctx:
+            print("  nothing in your code matched that. Try other words, or "
+                  "re-index:  ctwin code index")
+            return 0
+        # route to the coding brain, grounded in the retrieved code
+        agent = build_agent(os.environ.get("CTWIN_CODE_MODEL"), route=True)
+        prompt = (
+            f"{ctx}\n\n"
+            f"Using the code above (cite the file), answer concisely:\n{query}"
+        )
+        return 0 if _run_once(agent, prompt, explain=False) else 1
+    # help
+    print(_code_command.__doc__ or "  ctwin code index | ask")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     # subcommands handled before the main parser
     raw = list(sys.argv[1:] if argv is None else argv)
@@ -1018,6 +1059,8 @@ def main(argv: list[str] | None = None) -> int:
         return _viz_command(raw[1:])
     if raw and raw[0] == "vault":
         return _vault_command(raw[1:])
+    if raw and raw[0] == "code":
+        return _code_command(raw[1:])
 
     ap = argparse.ArgumentParser(prog="ctwin", description="Local-first personal AI agent.")
     ap.add_argument("prompt", nargs="*", help="one-shot prompt; omit for an interactive REPL")
