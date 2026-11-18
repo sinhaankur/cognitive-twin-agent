@@ -27,7 +27,7 @@ bootout() {
 }
 
 if [ "${1:-}" = "--uninstall" ]; then
-  echo "Uninstalling $LABEL…"
+  echo "Uninstalling ${LABEL}…"
   bootout
   rm -f "$PLIST_DST"
   echo "Done. (installed brain left in $VERA_HOME; logs in $LOG_DIR)"
