@@ -1,0 +1,41 @@
+# xcodegen spec for the macOS menu-bar app (VeraMenuBar) — Vera's native control
+# surface, mimicking Tailscale. Generate:  cd macos && xcodegen generate
+# Then open VeraMenuBar.xcodeproj, or build with build-macos.sh.
+#
+# It's a MenuBarExtra (NSStatusItem) app: an agent (LSUIElement) with no Dock icon,
+# talking only to the local brain over 127.0.0.1:7878 /api/privacy.
+name: VeraMenuBar
+options:
+  bundleIdPrefix: com.sinhaankur
+  deploymentTarget:
+    macOS: "13.0"           # MenuBarExtra requires macOS 13+
+  createIntermediateGroups: true
+
+targets:
+  VeraMenuBar:
+    type: application
+    platform: macOS
+    sources:
+      - path: VeraMenuBar/Sources
+    info:
+      path: VeraMenuBar/Info.plist
+      properties:
+        CFBundleDisplayName: Vera
+        # Agent app: lives in the menu bar only, no Dock icon (like Tailscale).
+        LSUIElement: true
+        # Reaches the local brain over http on loopback / the tailnet.
+        NSLocalNetworkUsageDescription: "Connects to Vera's brain running on a machine you own — nothing is sent to a third party."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            ts.net:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sinhaankur.vera.menubar
+        MARKETING_VERSION: "0.3.1"
+        # Running the Tailscale CLI from the app needs no special entitlement
+        # (it's a subprocess), but keep the app sandbox OFF so it can read the
+        # tailnet status + open the local UI. This is a personal, local tool.
+        ENABLE_APP_SANDBOX: false
