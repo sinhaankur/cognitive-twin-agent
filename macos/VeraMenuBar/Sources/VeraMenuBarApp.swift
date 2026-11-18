@@ -197,11 +197,12 @@ struct MenuRow: View {
     }
 }
 
-// Brand colors, macOS-native (the shared VeraTokens is UIKit-guarded; this is the
-// AppKit twin, same amber-on-near-black identity from docs/CONTROL-SURFACE-BRAND.md).
+// Brand colors, macOS-native. Mirrors the shared design tokens (tokens.json): a
+// confident Tailscale-grade GREEN accent, with system-native neutrals so the menu
+// feels native-as-hell (panel/ink/muted come straight from AppKit, auto light/dark).
 enum BrandColor {
-    static let accent = Color(red: 0.784, green: 0.600, blue: 0.180)  // #c8992e
-    static let danger = Color(red: 0.753, green: 0.282, blue: 0.290)  // #c0484a
+    static let accent = Color(red: 0.243, green: 0.812, blue: 0.557)  // #3ecf8e
+    static let danger = Color(red: 0.878, green: 0.416, blue: 0.369)  // #e06a5e
     static let panel  = Color(nsColor: .windowBackgroundColor)
     static let ink    = Color(nsColor: .labelColor)
     static let muted  = Color(nsColor: .secondaryLabelColor)

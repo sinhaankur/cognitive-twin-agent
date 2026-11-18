@@ -36,7 +36,14 @@
   }
   setWave(0.25, 0.12); // resting — visible gentle motion
 
-  function setStatus(s) { elStatus.textContent = s; }
+  // A "busy" status (she's doing something: waking, warming, thinking, working,
+  // listening) gets the living green shimmer; a settled status is plain. This is
+  // what makes a waiting moment read as motion, not a stuck label.
+  const BUSY_RE = /(waking|warming|thinking|working|listening|processing|loading|reaching|…)/i;
+  function setStatus(s) {
+    elStatus.textContent = s;
+    elStatus.classList.toggle("busy", BUSY_RE.test(s || ""));
+  }
 
   // --- health: show which model is in play ---------------------------------
   fetch("/api/health").then((r) => r.json()).then((h) => {

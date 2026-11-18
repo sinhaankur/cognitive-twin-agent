@@ -16,21 +16,21 @@ enum VeraTokens {
     }
 
     /// accent — from tokens.json (light/dark).
-    static let accent = dynamic(light: Color(red: 0.749, green: 0.541, blue: 0.235), dark: Color(red: 0.839, green: 0.663, blue: 0.373))
+    static let accent = dynamic(light: Color(red: 0.082, green: 0.722, blue: 0.498), dark: Color(red: 0.243, green: 0.812, blue: 0.557))
     /// accentInk — from tokens.json (light/dark).
-    static let accentInk = dynamic(light: Color(red: 0.541, green: 0.392, blue: 0.125), dark: Color(red: 0.894, green: 0.741, blue: 0.494))
+    static let accentInk = dynamic(light: Color(red: 0.055, green: 0.478, blue: 0.329), dark: Color(red: 0.435, green: 0.890, blue: 0.678))
     /// accentSoft — from tokens.json (light/dark).
-    static let accentSoft = dynamic(light: Color(red: 0.957, green: 0.925, blue: 0.867), dark: Color(red: 0.149, green: 0.122, blue: 0.071))
+    static let accentSoft = dynamic(light: Color(red: 0.902, green: 0.969, blue: 0.941), dark: Color(red: 0.071, green: 0.141, blue: 0.110))
     /// bg — from tokens.json (light/dark).
-    static let bg = dynamic(light: Color(red: 0.965, green: 0.965, blue: 0.961), dark: Color(red: 0.090, green: 0.090, blue: 0.102))
+    static let bg = dynamic(light: Color(red: 0.980, green: 0.980, blue: 0.980), dark: Color(red: 0.078, green: 0.082, blue: 0.094))
     /// panel — from tokens.json (light/dark).
-    static let panel = dynamic(light: Color(red: 1.000, green: 1.000, blue: 1.000), dark: Color(red: 0.122, green: 0.122, blue: 0.137))
+    static let panel = dynamic(light: Color(red: 1.000, green: 1.000, blue: 1.000), dark: Color(red: 0.110, green: 0.114, blue: 0.129))
     /// ink — from tokens.json (light/dark).
-    static let ink = dynamic(light: Color(red: 0.102, green: 0.102, blue: 0.098), dark: Color(red: 0.929, green: 0.929, blue: 0.929))
+    static let ink = dynamic(light: Color(red: 0.086, green: 0.090, blue: 0.102), dark: Color(red: 0.949, green: 0.953, blue: 0.961))
     /// muted — from tokens.json (light/dark).
-    static let muted = dynamic(light: Color(red: 0.420, green: 0.420, blue: 0.400), dark: Color(red: 0.608, green: 0.608, blue: 0.608))
+    static let muted = dynamic(light: Color(red: 0.439, green: 0.443, blue: 0.435), dark: Color(red: 0.604, green: 0.612, blue: 0.631))
     /// line — from tokens.json (light/dark).
-    static let line = dynamic(light: Color(red: 0.925, green: 0.925, blue: 0.918), dark: Color(red: 0.173, green: 0.173, blue: 0.192))
+    static let line = dynamic(light: Color(red: 0.922, green: 0.922, blue: 0.914), dark: Color(red: 0.165, green: 0.169, blue: 0.188))
     /// warn — from tokens.json (light/dark).
     static let warn = dynamic(light: Color(red: 0.690, green: 0.416, blue: 0.000), dark: Color(red: 0.878, green: 0.643, blue: 0.290))
     /// warnSoft — from tokens.json (light/dark).
