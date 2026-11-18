@@ -36,4 +36,27 @@ export PYTHONUNBUFFERED=1
 # the package + policies live right here in VERA_HOME
 export PYTHONPATH="$VERA_HOME:${PYTHONPATH:-}"
 
+# --- UNIFIED SERVICE: one agent does everything (was 3 separate agents) ---------
+# Folded in so there's ONE clean flow instead of a sprawl of launchd agents:
+#
+#   1) OLLAMA_HOST — where the model backend lives. Was a separate `ollama-host`
+#      plist that only ran `launchctl setenv`. Now set right here at startup.
+#      Override by exporting CTWIN_OLLAMA_HOST before launch.
+export OLLAMA_HOST="${CTWIN_OLLAMA_HOST:-${OLLAMA_HOST:-100.91.27.70:11434}}"
+
+#   2) Diagnostics — was a separate `vera.diagnostics` agent that curl'd
+#      /api/diagnose every 30 min. Now a tiny internal loop in this same service,
+#      so health tracking lives WITH the brain (one lifecycle, nothing to forget).
+#      Writes the same trend log; read it with: ctwin diagnose --trends.
+#      Disable with CTWIN_SELF_DIAGNOSE=0.
+if [ "${CTWIN_SELF_DIAGNOSE:-1}" = "1" ]; then
+  (
+    sleep 120  # let the brain fully warm before the first probe
+    while true; do
+      curl -fsS "http://127.0.0.1:${PORT}/api/diagnose" >/dev/null 2>&1 || true
+      sleep 1800  # every 30 min, matching the old agent
+    done
+  ) &
+fi
+
 exec "$PY" -m cognitive_twin.voice.server --no-open --port "$PORT"

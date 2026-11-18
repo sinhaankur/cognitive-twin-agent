@@ -78,7 +78,23 @@ done
 if [ "$ok" = "1" ]; then
   echo "✓ Vera's brain is up (launchd-managed) at http://127.0.0.1:$PORT"
   echo "  logs: $LOG_DIR/brain.out.log  +  brain.err.log"
+
+  # --- UNIFIED SERVICE: retire the old separate agents, now folded into the brain.
+  # Only runs AFTER the unified brain is proven up (health check passed above), so
+  # we never leave Vera without her helpers. The brain's vera-brain.sh now sets
+  # OLLAMA_HOST itself and runs diagnostics on an internal 30-min loop.
+  for OLD in com.sinhaankur.vera.diagnostics com.sinhaankur.ollama-host; do
+    OLD_PLIST="$HOME/Library/LaunchAgents/$OLD.plist"
+    if [ -f "$OLD_PLIST" ] || launchctl list 2>/dev/null | grep -q "$OLD"; then
+      launchctl bootout "gui/$UID_NUM/$OLD" 2>/dev/null || true
+      launchctl unload "$OLD_PLIST" 2>/dev/null || true
+      [ -f "$OLD_PLIST" ] && mv "$OLD_PLIST" "$OLD_PLIST.retired" 2>/dev/null || true
+      echo "  ↳ retired old agent: $OLD (folded into the brain)"
+    fi
+  done
+  echo "✓ One unified Vera service — OLLAMA_HOST + diagnostics now live in the brain."
 else
   echo "✗ Not answering yet. The reason will be in:"
   echo "    tail -40 \"$LOG_DIR/brain.err.log\""
+  echo "  (Old agents were LEFT in place — the unified brain didn't come up.)"
 fi
