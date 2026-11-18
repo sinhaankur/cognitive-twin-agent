@@ -41,8 +41,8 @@
     }
     button:hover { background: #1a1d28; border-color: #3a3f52; }
     button:active { transform: translateY(1px); }
-    button.primary { background: #0a84ff; border-color: #0a84ff; }
-    button.primary:hover { background: #2b95ff; }
+    button.primary { background: #3ecf8e; border-color: #3ecf8e; color: #08140d; font-weight: 600; }
+    button.primary:hover { background: #5cdba2; border-color: #5cdba2; }
     button.listening { background: #ff453a; border-color: #ff453a; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
     .dot.on { background: #30d158; }
@@ -62,7 +62,7 @@
       background: #0e1018; border: 1px solid #2a2e3c; color: #fff; border-radius: 999px;
       padding: 9px 16px; font: inherit; font-size: 14px; width: min(420px, 70vw); outline: none;
     }
-    #typed input:focus { border-color: #0a84ff; }
+    #typed input:focus { border-color: #3ecf8e; box-shadow: 0 0 0 3px rgba(62,207,142,.15); }
   </style>
 </head>
 <body>
@@ -228,14 +228,20 @@
        control, email). Vera stays on-device + dormant until you release it. -->
   <button id="kill" title="Kill switch — halt all outward actions; Vera goes dormant">🛑 Kill switch</button>
   <style>
+    /* Kill switch — QUIET when off (premium restraint: red means active danger,
+       not decoration), loud only when engaged. Matches the Controls link weight
+       so the top corners read as one calm, intentional pair, not scattered noise. */
     #kill {
       position: fixed; top: 14px; left: 18px; z-index: 50;
-      font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px;
-      border: 1px solid #3a2326; background: #1a1012; color: #ff6b6b; cursor: pointer;
+      font-size: 12.5px; font-weight: 500; padding: 5px 11px; border-radius: 999px;
+      border: 1px solid transparent; background: transparent; color: #8b93a7; cursor: pointer;
+      transition: background .2s, color .2s, border-color .2s;
     }
-    #kill.on { background: #ff3b30; border-color: #ff3b30; color: #fff; }
+    #kill:hover { background: rgba(224,106,94,.08); color: #e06a5e; }
+    #kill.on { background: #e0352b; border-color: #e0352b; color: #fff; font-weight: 600; }
     @media (prefers-color-scheme: light) {
-      #kill { background: #fff0f0; border-color: #ffd0d0; color: #d70015; }
+      #kill { color: #86868b; }
+      #kill:hover { background: #fff0f0; color: #d70015; }
       #kill.on { background: #d70015; border-color: #d70015; color: #fff; }
     }
   </style>
