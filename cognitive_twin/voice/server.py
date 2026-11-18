@@ -269,6 +269,31 @@ class _Handler(BaseHTTPRequestHandler):
             return origin
         return own
 
+    def _reach_ok(self) -> bool:
+        """Fail-closed reach gate (the security the user asked about). Loopback —
+        this Mac — is always allowed, same trust as today. An off-box request is
+        allowed ONLY when reach is 'My devices' AND it carries the device token
+        (header X-Vera-Token). Everything else is refused with 403. So widening
+        reach to the tailnet never means 'anyone on the port' — only paired
+        devices. See privacy.request_allowed()."""
+        try:
+            from .. import privacy
+            ip = self.client_address[0] if self.client_address else ""
+            tok = self.headers.get("X-Vera-Token")
+            if privacy.request_allowed(ip, tok):
+                return True
+            self._json(403, {"error": "not paired",
+                             "detail": "This device isn't allowed to reach Vera. "
+                             "Turn on 'My devices' and pair with the device token."})
+            return False
+        except Exception:
+            # any error in the gate = refuse (fail-closed), never fall open
+            try:
+                self._json(403, {"error": "blocked"})
+            except Exception:
+                pass
+            return False
+
     def _send(self, code: int, body: bytes, ctype: str) -> None:
         try:
             self.send_response(code)
@@ -319,6 +344,8 @@ class _Handler(BaseHTTPRequestHandler):
 
     # ---- routes -------------------------------------------------------------
     def do_GET(self) -> None:
+        if not self._reach_ok():
+            return
         if self.path in ("/", "/index.html"):
             self._serve_file("index.html", "text/html; charset=utf-8")
         elif self.path == "/siriwave.js":
@@ -408,6 +435,13 @@ class _Handler(BaseHTTPRequestHandler):
             # Kill-switch status: is Vera dormant (halted from reaching out/acting)?
             from .. import security
             self._json(200, {"locked": security.is_locked()})
+            return
+        elif self.path == "/api/privacy":
+            # The whole control-surface state in one honest payload: reach, safe
+            # mode, kill switch, who-can-reach — for the web /settings panel, the
+            # menu bar, and the phone. See privacy.explain().
+            from .. import privacy
+            self._json(200, privacy.explain())
             return
         elif self.path == "/api/models":
             agent = self.server.agent  # type: ignore[attr-defined]
@@ -627,6 +661,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not found"})
 
     def do_POST(self) -> None:
+        if not self._reach_ok():
+            return
         if self.path == "/api/transcribe":
             # LOCAL speech-to-text (bypasses Apple's SFSpeechRecognizer, which is
             # flaky on free-team / side-loaded builds). The app captures mic audio
@@ -802,6 +838,33 @@ class _Handler(BaseHTTPRequestHandler):
             else:
                 security.release_lockdown()
             self._json(200, {"locked": security.is_locked()})
+            return
+        if self.path == "/api/privacy":
+            # The single control endpoint behind the switch. Body selects the action
+            # (every one is an explicit user choice; all are logged in privacy.py):
+            #   {"reach": "private"|"my_devices"}   set who can reach Vera
+            #   {"safe_mode": true|false}           Safe Mode (asks before acting)
+            #   {"grant": "send_email", "seconds": 300}   authorize one task
+            #   {"rotate_token": true}              mint a new pairing token
+            # Returns the full honest state so the UI reflects it immediately.
+            from .. import privacy
+            data = self._read_json()
+            if "reach" in data:
+                try:
+                    privacy.set_reach(str(data["reach"]))
+                except ValueError:
+                    self._json(400, {"error": "unknown reach state"})
+                    return
+            if "safe_mode" in data:
+                privacy.set_safe_mode(bool(data["safe_mode"]))
+            if data.get("grant"):
+                privacy.grant_task(str(data["grant"]), int(data.get("seconds", 300)))
+            if data.get("rotate_token"):
+                privacy.rotate_token()
+            state = privacy.explain()
+            # if reach changed, the bind only takes effect on restart — tell the UI
+            state["restart_required"] = "reach" in data
+            self._json(200, state)
             return
         if self.path == "/api/thought":
             # "How she thinks": one legible pass — the retrieved docs (RAG across
@@ -1300,7 +1363,12 @@ class _Handler(BaseHTTPRequestHandler):
 
 def make_server(port: int = DEFAULT_PORT, model: str | None = None) -> ThreadingHTTPServer:
     """Build the HTTP server with a shared, routing-enabled agent attached."""
-    httpd = ThreadingHTTPServer((HOST, port), _Handler)
+    # Bind address follows the PRIVACY SWITCH, not a hard-coded host: Private →
+    # loopback (this Mac only); My devices → tailnet (token-gated per request). An
+    # explicit VERA_HOST still overrides (power users / tests). See privacy.py.
+    from .. import privacy
+    bind = privacy.bind_host()
+    httpd = ThreadingHTTPServer((bind, port), _Handler)
     # interactive_confirm=False: the GUI has no terminal y/N; we use _voice_confirm.
     httpd.agent = build_agent(model, route=True, interactive_confirm=False)  # type: ignore[attr-defined]
     control.set_confirm(_voice_confirm)  # ensure our confirm wins after build
@@ -1322,7 +1390,7 @@ def _warm_model(agent) -> None:
     def warm() -> None:
         import time
         # which models a conversation will actually hit: the configured default
-        # (companion, e.g. vera-merged) + the policy's everyday fast-path model.
+        # (vera-tuned) + the policy's everyday fast-path model.
         models: list[str] = []
         cfg = getattr(agent, "configured_model", None)
         if cfg:
