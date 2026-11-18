@@ -15,15 +15,15 @@ import subprocess
 import tempfile
 from PIL import Image, ImageDraw, ImageFilter
 
-# Vera's gold — the identity accent (tokens.json accent.dark #d6a95f, the new
-# natural amber). Keep this in lockstep with tokens.json so the icon and the app
-# are the exact same colour.
-GOLD = (214, 169, 95)          # natural amber, the dot colour
-GOLD_BLOOM = (214, 169, 95)    # bloom behind the sphere
-# Dark ground so the gold glows (a near-black with a faint warm cast). Kept
-# deep so the gold reads as light, not paint — richer than a flat brown.
-GROUND_TOP = (26, 22, 16)
-GROUND_BOTTOM = (6, 5, 4)
+# Vera's green — the identity accent (tokens.json accent.dark #3ecf8e, the
+# Tailscale-grade green). Keep this in lockstep with tokens.json so the icon and
+# the app are the exact same colour. (Was gold; the gold read 'sad' — now green.)
+GOLD = (62, 207, 142)          # #3ecf8e — the dot colour
+GOLD_BLOOM = (62, 207, 142)    # bloom behind the sphere
+# Dark ground so the green glows (a near-black with a faint cool-green cast). Kept
+# deep so the green reads as light, not paint — crisp, premium.
+GROUND_TOP = (16, 26, 22)
+GROUND_BOTTOM = (5, 8, 7)
 
 N_POINTS = 420                  # denser than the live orb — an icon can afford it
 
@@ -72,7 +72,7 @@ def render_orb(size: int) -> Image.Image:
     glow = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     ImageDraw.Draw(glow).ellipse(
         [cx - R * 1.6, cy - R * 1.6, cx + R * 1.6, cy + R * 1.6],
-        fill=(*GOLD_BLOOM, 70))
+        fill=(*GOLD_BLOOM, 90))
     glow = glow.filter(ImageFilter.GaussianBlur(S * 0.05))
     glow = Image.composite(glow, Image.new("RGBA", (S, S), (0, 0, 0, 0)), mask)
     img = Image.alpha_composite(img, glow)
