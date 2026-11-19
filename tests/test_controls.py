@@ -60,6 +60,25 @@ def test_booker_bridge_reads_without_flipping(tmp_path):
     assert isinstance(snap["booker_confirm"]["on"], bool)
 
 
+def test_your_life_sync_group(tmp_path):
+    """Calendar / Mail / Photos / Location are one coherent opt-in sync group,
+    each off by default (places may vary), and the safe ones flip cleanly."""
+    C = _fresh(tmp_path)
+    snap = {c["key"]: c for c in C.snapshot()}
+    life = {"calendar", "mail", "photos", "places"}
+    assert life <= set(snap), f"missing: {life - set(snap)}"
+    # they share ONE group
+    groups = {snap[k]["group"] for k in life}
+    assert len(groups) == 1 and "Your life" in next(iter(groups))
+    # calendar + photos are safe toggles that flip and persist
+    for key in ("calendar", "photos"):
+        assert C.set_control(key, True).get("on") is True
+        assert {c["key"]: c for c in C.snapshot()}[key]["on"] is True
+        assert C.set_control(key, False).get("on") is False
+    # mail is gated on IMAP being configured — unavailable (but listed) with no creds
+    assert snap["mail"]["available"] is False
+
+
 if __name__ == "__main__":
     import tempfile
 

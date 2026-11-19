@@ -231,6 +231,19 @@ def context_for_prompt(max_threads: int = 3) -> str:
         lines = "; ".join(f'"{th["gist"]}"' for th in threads)
         bits.append("things that keep coming up for them: " + lines)
 
+    # TODAY'S SHAPE — if Calendar sync is on, ground her in what's actually on
+    # their day (so "how's your day" isn't generic). Read-only, on-device; silent
+    # when sync is off or the day is clear. This is where the life sync feeds her
+    # understanding of the person, not just the chat.
+    try:
+        from . import calendar as _cal
+        if _cal.is_enabled():
+            nxt = _cal.next_event()
+            if nxt and not nxt.startswith("Nothing") and not nxt.startswith("Calendar sync"):
+                bits.append("on their calendar today: " + nxt.lstrip("Next: ").rstrip("."))
+    except Exception:  # noqa: BLE001 - calendar is best-effort context
+        pass
+
     if not bits:
         return ""
     return ("# WHAT YOU KNOW ABOUT THEM (your own memory — use it gently, never "

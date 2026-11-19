@@ -61,6 +61,42 @@ def _state_path():
     return security.path(STATE)
 
 
+# ── opt-in gate (same contract as places.py / calendar.py / photos.py) ────────
+# Mail sync is OFF until you turn it on (and IMAP must be configured — see the
+# secrets store). Enabling kicks a first incremental sync; the sealed index is
+# what lets Vera actually know your inbox. A sealed flag in Vera's home.
+def _flag_path():
+    return security.home() / "mail.enabled"
+
+
+def is_configured() -> bool:
+    """True once IMAP credentials exist (so the toggle can be meaningfully on)."""
+    try:
+        from .secrets_store import has as _has
+        return bool(_has("IMAP_PASSWORD"))
+    except Exception:  # noqa: BLE001 - no store yet reads as not-configured
+        return False
+
+
+def enable() -> None:
+    _flag_path().write_text("1", encoding="utf-8")
+    # best-effort first sync so turning it on actually does something; silent on
+    # failure (no creds / offline) — the index just stays empty until it can run.
+    if is_configured():
+        try:
+            sync(limit=500)
+        except Exception:  # noqa: BLE001 - sync is best-effort here
+            pass
+
+
+def disable() -> None:
+    _flag_path().unlink(missing_ok=True)
+
+
+def is_enabled() -> bool:
+    return _flag_path().is_file()
+
+
 # ── the record we keep per message (metadata, not bodies) ──────────────────────
 @dataclass
 class MailMeta:

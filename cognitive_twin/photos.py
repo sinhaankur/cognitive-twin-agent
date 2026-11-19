@@ -17,6 +17,28 @@ from __future__ import annotations
 
 from typing import Any
 
+
+# ── opt-in gate (same contract as places.py / calendar.py) ────────────────────
+# The Mac app's "Read my Photos" switch is the primary gate (PhotosReader.swift),
+# but the unified Controls panel needs a server-side flag too, so Photos appears
+# alongside Calendar / Mail / Location in one place. A sealed flag in Vera's home.
+def _flag_path():
+    from . import security
+    return security.home() / "photos.enabled"
+
+
+def enable() -> None:
+    _flag_path().write_text("1", encoding="utf-8")
+
+
+def disable() -> None:
+    _flag_path().unlink(missing_ok=True)
+
+
+def is_enabled() -> bool:
+    return _flag_path().is_file()
+
+
 _KIND_LINE = {
     "birthday":     "a birthday",
     "anniversary":  "an anniversary",

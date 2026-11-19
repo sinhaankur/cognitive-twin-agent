@@ -107,6 +107,47 @@ def _registry() -> list[Control]:
         import importlib
         return importlib.import_module(f"cognitive_twin.{name}")
 
+    # ── Your life — on-device sync ──────────────────────────────────────────
+    # The headline set: personal data sources Vera reads ON THIS MAC to actually
+    # know you (the twin feels generic until it does). Every one is read-only +
+    # opt-in + sealed; nothing is uploaded. Together they feed her understanding of
+    # your days, your people, your work. Listed FIRST — it's the heart of the twin.
+    _LIFE = "Your life — on-device sync"
+    # Calendar — all accounts at once via the macOS Calendar app (iCloud/Google/
+    # Outlook), read-only.
+    controls.append(Control(
+        "calendar", "Calendar", _LIFE,
+        get=lambda: _safe(lambda: _mod("calendar").is_enabled()),
+        set=lambda on: (_mod("calendar").enable() if on else _mod("calendar").disable()),
+        description="Your schedule across every account (iCloud, Google, Outlook), "
+                    "read-only — so she knows what's today, next, and when you're free.",
+    ))
+    # Mail — a sealed, headers-first index of your inbox (needs IMAP configured).
+    controls.append(Control(
+        "mail", "Mail", _LIFE,
+        get=lambda: _safe(lambda: _mod("mail_store").is_enabled()),
+        set=lambda on: (_mod("mail_store").enable() if on else _mod("mail_store").disable()),
+        available=lambda: _safe(lambda: _mod("mail_store").is_configured()),
+        description="A sealed, read-only index of who writes to you and what you "
+                    "signed up for — headers only, never the message bodies. "
+                    "Needs email configured first (Connections).",
+    ))
+    # Photos — life events from album titles + dates (metadata only, never pixels).
+    controls.append(Control(
+        "photos", "Photos", _LIFE,
+        get=lambda: _safe(lambda: _mod("photos").is_enabled()),
+        set=lambda on: (_mod("photos").enable() if on else _mod("photos").disable()),
+        description="Life events learned from album names + dates (birthdays, trips) "
+                    "— metadata only, never the photos themselves.",
+    ))
+    # Location / places — where you go, from your own data, sealed.
+    controls.append(Control(
+        "places", "Location", _LIFE,
+        get=lambda: _safe(lambda: _mod("places").is_enabled()),
+        set=lambda on: (_mod("places").enable() if on else _mod("places").disable()),
+        description="Where you go, from your own data — sealed on this Mac.",
+    ))
+
     # Activity (screen work patterns)
     controls.append(Control(
         "activity", "Activity awareness", "Vera — senses",
@@ -121,13 +162,7 @@ def _registry() -> list[Control]:
         set=lambda on: _mod("mood").set_on(on),
         description="Warmer, reflective replies.",
     ))
-    # Places / location
-    controls.append(Control(
-        "places", "Location tracking", "Vera — senses",
-        get=lambda: _safe(lambda: _mod("places").is_enabled()),
-        set=lambda on: (_mod("places").enable() if on else _mod("places").disable()),
-        description="Where you go, from your own data — sealed on this Mac.",
-    ))
+
     # Social (Meta)
     controls.append(Control(
         "social", "Social (Facebook/Instagram)", "Vera — senses",

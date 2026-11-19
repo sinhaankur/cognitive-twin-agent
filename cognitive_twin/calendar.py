@@ -138,6 +138,8 @@ def _same_day(a: datetime, d: date) -> bool:
 
 def agenda(when: str = "today") -> str:
     """A readable agenda for today / tomorrow / this week — across all calendars."""
+    if not is_enabled():
+        return _OFF_MSG
     when = (when or "today").lower().strip()
     today = datetime.now().date()
     evs = read_events(days_back=0, days_forward=8)
@@ -174,6 +176,8 @@ def agenda(when: str = "today") -> str:
 
 def next_event() -> str:
     """The very next thing on the schedule, from any calendar."""
+    if not is_enabled():
+        return _OFF_MSG
     now = datetime.now()
     evs = [e for e in read_events(days_back=0, days_forward=14) if e.end >= now]
     if not evs:
@@ -193,6 +197,8 @@ def next_event() -> str:
 
 def free_slots(day: str = "", start: str = "09:00", end: str = "18:00") -> str:
     """Whether you're free on a given day/window, and where the gaps are."""
+    if not is_enabled():
+        return _OFF_MSG
     target = _resolve_day(day)
     if target is None:
         return f"Couldn't read the day '{day}'. Try 'Saturday' or a date like 2026-09-12."
@@ -243,6 +249,30 @@ def _resolve_day(s: str) -> date | None:
         except ValueError:
             continue
     return None
+
+
+# ── opt-in gate (same contract as places.py / activity.py) ────────────────────
+# Reading your calendar is personal, so it's OFF until you turn it on. The flag is
+# a sealed file in Vera's home; the agenda/next/free tools and the greeting/nudge
+# check is_enabled() before touching the Calendar app.
+def _flag_path():
+    return security.home() / "calendar.enabled"
+
+
+def enable() -> None:
+    _flag_path().write_text("1", encoding="utf-8")
+
+
+def disable() -> None:
+    _flag_path().unlink(missing_ok=True)
+
+
+def is_enabled() -> bool:
+    return _flag_path().is_file()
+
+
+_OFF_MSG = ("Calendar sync is off. Turn on Calendar under Controls ▸ Your life "
+            "and I'll read your schedule across all your accounts, on-device.")
 
 
 # ── optional sealed cache (for fast "what's next" without a full osascript) ────
