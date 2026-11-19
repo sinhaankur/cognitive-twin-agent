@@ -5,7 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Vera</title>
   <style>
-    :root { color-scheme: dark; }
+    /* Native + mode-adaptive: follow the OS light/dark setting (was forced dark),
+       and take the accent from the OS itself (CSS system AccentColor) so Linux &
+       Windows match the Mac app's native-accent behaviour. Falls back to Apple
+       system blue where AccentColor isn't supported. */
+    :root {
+      color-scheme: light dark;
+      --accent: #0a84ff;          /* fallback */
+      --accent: AccentColor;      /* the user's OS accent, when supported */
+      --accent-fg: AccentColorText;
+    }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; }
     body {
@@ -41,8 +50,8 @@
     }
     button:hover { background: #1a1d28; border-color: #3a3f52; }
     button:active { transform: translateY(1px); }
-    button.primary { background: #3ecf8e; border-color: #3ecf8e; color: #08140d; font-weight: 600; }
-    button.primary:hover { background: #5cdba2; border-color: #5cdba2; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg, #fff); font-weight: 600; }
+    button.primary:hover { filter: brightness(1.08); }
     button.listening { background: #ff453a; border-color: #ff453a; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
     .dot.on { background: #30d158; }
@@ -62,7 +71,7 @@
       background: #0e1018; border: 1px solid #2a2e3c; color: #fff; border-radius: 999px;
       padding: 9px 16px; font: inherit; font-size: 14px; width: min(420px, 70vw); outline: none;
     }
-    #typed input:focus { border-color: #3ecf8e; box-shadow: 0 0 0 3px rgba(62,207,142,.15); }
+    #typed input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
   </style>
 </head>
 <body>
@@ -175,9 +184,9 @@
     .msg.thinking { color: var(--chat-muted); font-style: italic; }
 
     /* ── WORKING / THINKING ANIMATIONS ─────────────────────────────────────────
-       Premium, alive status motion in Vera's green accent (#3ecf8e) — replaces
-       the flat italic "thinking…". A thinking bubble shows three breathing dots;
-       the status word gets a soft travelling shimmer. System-native easing. */
+       Premium, alive status motion in the native OS accent (var(--accent)) —
+       replaces the flat italic "thinking…". A thinking bubble shows three
+       breathing dots; the status word gets a soft travelling shimmer. */
     .msg.thinking { position: relative; min-width: 46px; }
     .msg.thinking::after {
       content: ""; display: inline-block; vertical-align: middle;

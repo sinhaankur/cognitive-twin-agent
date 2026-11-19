@@ -118,15 +118,16 @@ struct ChatPanel: View {
     }
 
     private var headerButtons: some View {
-        HStack(spacing: 2) {
-            iconButton(model.speakReplies ? "speaker.wave.2.fill" : "speaker.slash.fill",
+        // Even rhythm, a little breathing room — native toolbar feel, not crammed.
+        HStack(spacing: 4) {
+            iconButton(model.speakReplies ? "speaker.wave.2" : "speaker.slash",
                        on: model.speakReplies,
                        help: model.speakReplies
                         ? "Speaking replies aloud. Click for text-only."
                         : "Text-only. Click to let her speak aloud. (Voice input always gets a spoken reply.)") {
                 model.speakReplies.toggle()
             }
-            iconButton(model.eyeOn ? "eye.fill" : "eye.slash", on: model.eyeOn,
+            iconButton(model.eyeOn ? "eye" : "eye.slash", on: model.eyeOn,
                        help: model.eyeOn
                         ? "She can see you — face cues only, on-device. Click to stop."
                         : "Let her see you (opt-in): face cues only, on-device.") {
@@ -138,7 +139,7 @@ struct ChatPanel: View {
                         : "Let her hear the room (opt-in): sound types only, never recorded.") {
                 model.ear.toggle()
             }
-            iconButton(model.voiceMode ? "waveform.circle.fill" : "waveform.circle",
+            iconButton("waveform.circle",
                        on: model.voiceMode,
                        help: model.voiceMode
                         ? "Hands-free voice: she listens again after each reply. Click for tap-to-talk."
@@ -146,9 +147,9 @@ struct ChatPanel: View {
                 model.voiceMode.toggle()
             }
             // See how she thinks — her Brain, one tap from the conversation. The
-            // glyph fills + glows gold while she's actively thinking, so you can
-            // SEE her mind working, not just a static icon.
-            iconButton(model.phase == .thinking ? "brain.head.profile.fill" : "brain.head.profile",
+            // soft accent tint (not a loud solid glyph) shows it's active while
+            // she's thinking.
+            iconButton("brain.head.profile",
                        on: model.phase == .thinking,
                        help: "See how she thinks — her Brain") {
                 model.openBrain?()
@@ -159,15 +160,19 @@ struct ChatPanel: View {
         }
     }
 
+    // One calm, native toolbar button. The "on" state is a soft system-accent
+    // wash behind a consistent outline glyph — never a loud solid-colour disc.
+    // Hover gives the subtle fill AppKit toolbar buttons have, so it feels native.
     private func iconButton(_ name: String, on: Bool, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: name)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(on ? Self.gold : Color.secondary)
-                .frame(width: 30, height: 30)
+                .font(.system(size: 13, weight: .regular))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(on ? Color.accentColor : Color.secondary)
+                .frame(width: 28, height: 28)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(on ? Self.gold.opacity(0.14) : Color.clear)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(on ? Color.accentColor.opacity(0.12) : Color.clear)
                 )
                 .contentShape(Rectangle())
         }

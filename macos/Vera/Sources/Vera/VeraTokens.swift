@@ -3,24 +3,46 @@
 import SwiftUI
 #if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
 #endif
 
 enum VeraTokens {
-    /// A Color that resolves light/dark from the system appearance.
+    /// A Color that resolves light/dark from the system appearance — on BOTH
+    /// platforms. (It used to return `light` unconditionally on macOS, so every
+    /// token stayed on its light-mode value even inside a dark panel — which is
+    /// why the greens read harsh/wrong on the dark chat surface.)
     static func dynamic(light: Color, dark: Color) -> Color {
         #if canImport(UIKit)
         return Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light) })
+        #elseif canImport(AppKit)
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return NSColor(isDark ? dark : light)
+        })
         #else
         return light
         #endif
     }
 
-    /// accent — from tokens.json (light/dark).
-    static let accent = dynamic(light: Color(red: 0.082, green: 0.722, blue: 0.498), dark: Color(red: 0.243, green: 0.812, blue: 0.557))
-    /// accentInk — from tokens.json (light/dark).
-    static let accentInk = dynamic(light: Color(red: 0.055, green: 0.478, blue: 0.329), dark: Color(red: 0.435, green: 0.890, blue: 0.678))
-    /// accentSoft — from tokens.json (light/dark).
-    static let accentSoft = dynamic(light: Color(red: 0.902, green: 0.969, blue: 0.941), dark: Color(red: 0.071, green: 0.141, blue: 0.110))
+    // Accent — the NATIVE system accent. On macOS this is whatever the user
+    // picked in System Settings ▸ Appearance ▸ Accent color (blue by default);
+    // on iOS it's the app's tint. It already adapts to light/dark automatically,
+    // so the app feels like it belongs to the OS — no hand-tuned brand hex, no
+    // "off in dark mode" problem. This is the most native possible choice.
+    #if canImport(AppKit) && !canImport(UIKit)
+    /// accent — the user's system accent color (macOS, auto light/dark).
+    static let accent = Color(nsColor: .controlAccentColor)
+    /// accentInk — accent for text/emphasis (slightly stronger).
+    static let accentInk = Color(nsColor: .controlAccentColor)
+    /// accentSoft — a faint wash of the accent for 'on' backgrounds.
+    static let accentSoft = Color(nsColor: .controlAccentColor).opacity(0.14)
+    #else
+    /// accent — the app's tint (iOS, auto light/dark).
+    static let accent = Color.accentColor
+    static let accentInk = Color.accentColor
+    static let accentSoft = Color.accentColor.opacity(0.14)
+    #endif
     /// bg — from tokens.json (light/dark).
     static let bg = dynamic(light: Color(red: 0.980, green: 0.980, blue: 0.980), dark: Color(red: 0.078, green: 0.082, blue: 0.094))
     /// panel — from tokens.json (light/dark).

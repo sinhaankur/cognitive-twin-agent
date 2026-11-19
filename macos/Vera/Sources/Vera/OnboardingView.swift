@@ -48,7 +48,11 @@ struct OnboardingView: View {
                 // telling her who they were. Also finishes onboarding.
                 Button {
                     let n = name.trimmingCharacters(in: .whitespaces)
-                    if !n.isEmpty { model.assistantName = n }
+                    if !n.isEmpty {
+                        model.assistantName = n
+                        // a deliberate choice — never auto-migrate this name later
+                        UserDefaults.standard.set(true, forKey: "nameChosenByUser")
+                    }
                     done()
                     model.openRemember?()
                 } label: {
@@ -57,7 +61,11 @@ struct OnboardingView: View {
                 Spacer()
                 Button("Start") {
                     let n = name.trimmingCharacters(in: .whitespaces)
-                    if !n.isEmpty { model.assistantName = n }
+                    if !n.isEmpty {
+                        model.assistantName = n
+                        // a deliberate choice — never auto-migrate this name later
+                        UserDefaults.standard.set(true, forKey: "nameChosenByUser")
+                    }
                     done()
                 }
                 .keyboardShortcut(.defaultAction)

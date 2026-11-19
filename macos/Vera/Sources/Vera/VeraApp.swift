@@ -1192,11 +1192,22 @@ final class AppModel: ObservableObject {
         }
     }
 
-    // The twin's name — the user's to choose. Defaults to Emma, the companion
-    // as she is today (change it in Settings any time).
-    @Published var assistantName: String =
-        UserDefaults.standard.string(forKey: "assistantName") ?? "Emma" {
+    // The twin's name — the user's to choose. Defaults to Vera, the product name
+    // (docs/BRAND.md: the product is Vera). Change it in Settings any time.
+    // One-time correction: earlier builds defaulted to "Emma", which stuck in
+    // UserDefaults and showed in the header. Migrate that stale default to "Vera"
+    // once — but never touch a name the user deliberately set to anything else.
+    @Published var assistantName: String = AppModel.initialAssistantName() {
         didSet { UserDefaults.standard.set(assistantName, forKey: "assistantName") }
+    }
+    private static func initialAssistantName() -> String {
+        let d = UserDefaults.standard
+        let saved = d.string(forKey: "assistantName")
+        if saved == nil || (saved == "Emma" && !d.bool(forKey: "nameChosenByUser")) {
+            d.set("Vera", forKey: "assistantName")
+            return "Vera"
+        }
+        return saved!
     }
     // Orb size — adapts to screen, user-adjustable (persisted).
     @Published var orbSize: CGFloat = AppModel.defaultOrbSize() {
