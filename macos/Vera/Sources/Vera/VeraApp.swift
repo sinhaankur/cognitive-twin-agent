@@ -65,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var wakeItem: NSMenuItem?    // the Wake-on-name switch (opt-in)
     private var photosItem: NSMenuItem?  // the Read-my-Photos switch (opt-in)
     private var musicItem: NSMenuItem?   // the Hear-my-music switch (opt-in)
+    private var soundCuesItem: NSMenuItem? // the Sound-cues switch (opt-in, off)
     private var ambientItem: NSMenuItem? // the Ambient-presence switch (opt-in, off)
     // ── Controls › (reach · safe mode · kill switch — folded in from VeraMenuBar) ─
     private var reachPrivateItem: NSMenuItem?   // Private — this Mac only
@@ -318,6 +319,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         formOrb.image = symbol("circle.fill"); formOrb.target = self; vl.addItem(formOrb)
         formItemDots = formField; formItemOrb = formOrb
         vl.addItem(.separator())
+        // Sound cues — the little listen/done/notify tones. OFF by default (they
+        // were more annoying than helpful); turn them on here if you want them.
+        soundCuesItem = NSMenuItem(title: "Sound cues", action: #selector(menuSoundCues), keyEquivalent: "")
+        soundCuesItem?.image = symbol("speaker.wave.2"); soundCuesItem?.target = self; vl.addItem(soundCuesItem!)
         // Ambient presence — a near-silent bed so she feels "in the room". Strictly
         // opt-in, off by default (nothing plays until you turn it on).
         ambientItem = NSMenuItem(title: "Ambient presence (quiet)", action: #selector(menuAmbient), keyEquivalent: "")
@@ -369,6 +374,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func menuPhotos() { togglePhotos() }
     @objc private func menuMusic() { toggleMusic() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
+
+    /// Sound cues — the little listen/done/notify tones. Opt-in, off by default.
+    @objc private func menuSoundCues() {
+        let want = !Chime.cuesEnabled
+        Chime.setCuesEnabled(want)
+        soundCuesItem?.state = want ? .on : .off
+        if want { Chime.done.play() }   // a tiny confirm the moment you enable them
+    }
 
     /// Ambient presence — the near-silent bed. Opt-in, off by default; persists.
     @objc private func menuAmbient() {
@@ -532,6 +545,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         wakeItem?.state = model.wakeOn ? .on : .off
         photosItem?.state = UserDefaults.standard.bool(forKey: "photosOn") ? .on : .off
         ambientItem?.state = UserDefaults.standard.bool(forKey: "ambientOn") ? .on : .off
+        soundCuesItem?.state = Chime.cuesEnabled ? .on : .off
         // paint the Controls submenu from the last known state immediately, then
         // re-read the live control-surface state so it's honest a beat later
         syncControlChecks()
@@ -2080,14 +2094,14 @@ final class AppModel: ObservableObject {
     // slightly to a dusk rose, speaking brightens to a warm honey. Mirrors the
     // website's dotted-orb palette so she looks like one person across surfaces.
     var tint: Color {
-        // SUBTLE per-state shifts — all tightly within her warm amber family, so
-        // the feeling reads without the colour ever "jumping". Listening lifts only
-        // slightly, thinking cools a touch, speaking warms a touch; idle rests on
-        // her gold. Quiet, not theatrical.
-        if voice.isListening { return Color(red: 0.868, green: 0.682, blue: 0.360) } // amber, barely lifted — attentive
-        if voice.isSpeaking { return Color(red: 0.882, green: 0.706, blue: 0.396) }  // amber, barely warmed — alive
-        if phase == .thinking { return Color(red: 0.812, green: 0.636, blue: 0.408) } // amber, barely cooled — reflecting
-        return Color(red: 0.839, green: 0.663, blue: 0.373)                            // #D6A95F gold — at rest
+        // A cool, premium palette that HARMONISES with the native blue accent
+        // (the old muddy amber/gold clashed and read as a dull brown blob). Each
+        // state now shifts enough to actually read — but all within one calm
+        // blue→violet→teal family, so it never jumps or looks loud.
+        if voice.isListening { return Color(red: 0.30, green: 0.70, blue: 1.00) }  // bright sky blue — attentive
+        if voice.isSpeaking  { return Color(red: 0.26, green: 0.80, blue: 0.78) }  // teal — alive, speaking
+        if phase == .thinking { return Color(red: 0.56, green: 0.52, blue: 0.98) } // soft violet — reflecting
+        return Color(red: 0.39, green: 0.58, blue: 0.95)                            // calm indigo-blue — at rest
     }
 
     /// Wake on her name (opt-in). Persisted; the watch re-arms whenever idle.

@@ -25,6 +25,17 @@ enum Chime {
     private static var ready = false
     private static var buffers: [String: AVAudioPCMBuffer] = [:]
 
+    /// The master switch for ALL sound cues (listen/done/notify/send/sent — error
+    /// is covered too). OFF by default: the cues were more annoying than helpful,
+    /// so silence is the default and you opt IN from the menu (Voice & look ▸
+    /// "Sound cues"). Persisted; `nil` → default off.
+    static var cuesEnabled: Bool {
+        UserDefaults.standard.object(forKey: "vera.soundCues") as? Bool ?? false
+    }
+    static func setCuesEnabled(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: "vera.soundCues")
+    }
+
     private static func ensureEngine() -> Bool {
         if ready { return true }
         engine.attach(player)
@@ -106,6 +117,8 @@ enum Chime {
     }
 
     func play() {
+        // Opt-in: stay silent unless the user turned sound cues on.
+        guard Chime.cuesEnabled else { return }
         let r = recipe
         guard Chime.ensureEngine() else { return }
         if Chime.buffers[r.key] == nil { Chime.buffers[r.key] = Chime.render(r) }
