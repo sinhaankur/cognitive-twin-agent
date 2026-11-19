@@ -587,6 +587,78 @@ final class AgentClient {
             return BrainGraph(nodes: nodes, edges: edges, thoughtPath: path, state: state)
         } catch { return nil }
     }
+
+    // MARK: - Control surface (reach · safe mode · kill switch)
+    //
+    // The Tailscale-style controls that used to live in the separate VeraMenuBar
+    // app, folded into THIS one app. Everything is loopback → the brain's
+    // /api/privacy (reach + safe_mode) and /api/lockdown (the kill switch).
+
+    /// GET /api/privacy — the live control-surface state. Returns nil if the brain
+    /// is unreachable (menu then shows the controls as "offline").
+    func privacy() async -> PrivacyState? {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/privacy"))
+        req.timeoutInterval = 3
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            return try JSONDecoder().decode(PrivacyState.self, from: data)
+        } catch { return nil }
+    }
+
+    /// POST /api/privacy {reach} — Private (this Mac) ⇄ My devices (tailnet).
+    func setReach(_ reach: String) async { await postPrivacy(["reach": reach]) }
+
+    /// POST /api/privacy {safe_mode} — ask-before-acting on/off.
+    func setSafeMode(_ on: Bool) async { await postPrivacy(["safe_mode": on]) }
+
+    /// POST /api/lockdown {on} — the kill switch (think-only lockdown).
+    func setLockdown(_ on: Bool) async {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/lockdown"))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 3
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["on": on])
+        _ = try? await URLSession.shared.data(for: req)
+    }
+
+    private func postPrivacy(_ body: [String: Any]) async {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/privacy"))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 3
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        _ = try? await URLSession.shared.data(for: req)
+    }
+}
+
+/// The control-surface state, matching privacy.explain() on the server. Folded in
+/// from the retired VeraMenuBar app so this one app carries the Tailscale-style
+/// Reach / Safe Mode / Kill Switch controls.
+struct PrivacyState: Codable, Equatable {
+    var reach: String            // "private" | "my_devices"
+    var reachLabel: String
+    var whoCanReach: String
+    var tokenSet: Bool
+    var locked: Bool
+    var lockdownNote: String
+    var safeMode: Bool
+    var safeModeNote: String
+    var bindHost: String
+
+    enum CodingKeys: String, CodingKey {
+        case reach
+        case reachLabel = "reach_label"
+        case whoCanReach = "who_can_reach"
+        case tokenSet = "token_set"
+        case locked
+        case lockdownNote = "lockdown_note"
+        case safeMode = "safe_mode"
+        case safeModeNote = "safe_mode_note"
+        case bindHost = "bind_host"
+    }
+
+    /// Reachable by your other devices (and not locked down) — Tailscale's "Connected".
+    var connected: Bool { reach == "my_devices" && !locked }
 }
 
 /// One twin's take in a Twin Council round.

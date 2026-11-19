@@ -65,6 +65,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var wakeItem: NSMenuItem?    // the Wake-on-name switch (opt-in)
     private var photosItem: NSMenuItem?  // the Read-my-Photos switch (opt-in)
     private var musicItem: NSMenuItem?   // the Hear-my-music switch (opt-in)
+    // ── Controls › (reach · safe mode · kill switch — folded in from VeraMenuBar) ─
+    private var reachPrivateItem: NSMenuItem?   // Private — this Mac only
+    private var reachDevicesItem: NSMenuItem?   // My devices — tailnet
+    private var safeModeItem: NSMenuItem?       // ask before acting
+    private var killSwitchItem: NSMenuItem?     // lockdown (think only)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self   // so ⌘, / the menu open the real settings window
@@ -118,6 +123,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // music state lives server-side (music.py) — ask once the server is up
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             self.model.refreshMusic { on in self.musicItem?.state = on ? .on : .off }
+        }
+        // control-surface state (reach / Safe Mode / Kill Switch) also lives in the
+        // brain — read it once it's up so the Controls submenu opens honest.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            self.model.refreshPrivacy()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.syncControlChecks() }
         }
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
@@ -259,6 +270,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.setSubmenu(mem, for: memItem)
         menu.addItem(memItem)
 
+        // ── Controls › — reach / Safe Mode / Kill Switch (folded in from the
+        //    retired standalone VeraMenuBar app, so there's ONE Vera app). These
+        //    read/write the brain's /api/privacy + /api/lockdown. ────────────────
+        let controlsItem = NSMenuItem(title: "Controls", action: nil, keyEquivalent: "")
+        controlsItem.image = symbol("slider.horizontal.3")
+        let controls = NSMenu(title: "Controls")
+        reachPrivateItem = NSMenuItem(title: "Private — this Mac only",
+                                      action: #selector(menuReachPrivate), keyEquivalent: "")
+        reachPrivateItem?.image = symbol("lock")
+        reachPrivateItem?.target = self; controls.addItem(reachPrivateItem!)
+        reachDevicesItem = NSMenuItem(title: "My devices — reach over the tailnet",
+                                      action: #selector(menuReachDevices), keyEquivalent: "")
+        reachDevicesItem?.image = symbol("iphone")
+        reachDevicesItem?.target = self; controls.addItem(reachDevicesItem!)
+        controls.addItem(.separator())
+        safeModeItem = NSMenuItem(title: "Safe Mode — ask before acting",
+                                  action: #selector(menuSafeMode), keyEquivalent: "")
+        safeModeItem?.image = symbol("hand.raised")
+        safeModeItem?.target = self; controls.addItem(safeModeItem!)
+        killSwitchItem = NSMenuItem(title: "Kill Switch — lockdown (think only)",
+                                    action: #selector(menuKillSwitch), keyEquivalent: "")
+        killSwitchItem?.image = symbol("xmark.octagon")
+        killSwitchItem?.target = self; controls.addItem(killSwitchItem!)
+        menu.setSubmenu(controls, for: controlsItem)
+        menu.addItem(controlsItem)
+
         // ── Voice & look › — her voice + the orb/field form ─────────────────────
         let voiceItem = NSMenuItem(title: "Voice & look", action: nil, keyEquivalent: "")
         voiceItem.image = symbol("waveform")
@@ -318,6 +355,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func menuPhotos() { togglePhotos() }
     @objc private func menuMusic() { toggleMusic() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
+
+    // ── Controls (reach · Safe Mode · Kill Switch) ──────────────────────────────
+    // Each posts ONE explicit change to the brain, then syncControlChecks() re-reads
+    // the live state so the checkmarks never lie (mirrors the old VeraMenuBar).
+    @objc private func menuReachPrivate() { model.setReach("private");   scheduleControlSync() }
+    @objc private func menuReachDevices() { model.setReach("my_devices"); scheduleControlSync() }
+    @objc private func menuSafeMode() {
+        let want = !(model.privacy?.safeMode ?? true)   // default-on is the safe assumption
+        model.setSafeMode(want); scheduleControlSync()
+    }
+    @objc private func menuKillSwitch() {
+        let want = !(model.privacy?.locked ?? false)
+        model.setLockdown(want); scheduleControlSync()
+    }
+    /// Give the POST a beat to land, then re-read + repaint the control checkmarks.
+    private func scheduleControlSync() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.model.refreshPrivacy()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self?.syncControlChecks() }
+        }
+    }
+    /// Paint the Controls submenu from the live `model.privacy` snapshot.
+    private func syncControlChecks() {
+        let p = model.privacy
+        reachPrivateItem?.state = (p?.reach == "private") ? .on : .off
+        reachDevicesItem?.state = (p?.reach == "my_devices") ? .on : .off
+        safeModeItem?.state = (p?.safeMode ?? false) ? .on : .off
+        killSwitchItem?.state = (p?.locked ?? false) ? .on : .off
+        // offline → the controls can't be trusted; disable so they can't misfire
+        let online = (p != nil)
+        [reachPrivateItem, reachDevicesItem, safeModeItem, killSwitchItem].forEach {
+            $0?.isEnabled = online
+        }
+    }
 
     /// The Hear-my-music switch. Strictly opt-in: nothing reads Now Playing until
     /// this is ON. ON tells the local server to enable music tracking (Apple Music
@@ -438,6 +509,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         earItem?.state = model.ear.on ? .on : .off
         wakeItem?.state = model.wakeOn ? .on : .off
         photosItem?.state = UserDefaults.standard.bool(forKey: "photosOn") ? .on : .off
+        // paint the Controls submenu from the last known state immediately, then
+        // re-read the live control-surface state so it's honest a beat later
+        syncControlChecks()
+        model.refreshPrivacy()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.syncControlChecks()
+        }
         // nudge the SwiftUI header to re-lay its bound state
         headerHost?.needsLayout = true
     }
@@ -1141,6 +1219,26 @@ final class AppModel: ObservableObject {
     private let agent = AgentClient()
     private let appleAI = AppleIntelligence()
     private var serverProcess: Process?
+
+    // ── Control surface (reach · safe mode · kill switch) ───────────────────────
+    // Folded in from the retired standalone VeraMenuBar app so this ONE app carries
+    // the Tailscale-style controls. The menu reads `privacy`; the actions post to
+    // the brain and then re-read, so the checkmarks always tell the truth.
+    @Published var privacy: PrivacyState?
+
+    /// Re-read the live control-surface state (nil when the brain is unreachable).
+    func refreshPrivacy() {
+        Task { @MainActor in self.privacy = await agent.privacy() }
+    }
+    func setReach(_ reach: String) {
+        Task { @MainActor in await agent.setReach(reach); self.privacy = await agent.privacy() }
+    }
+    func setSafeMode(_ on: Bool) {
+        Task { @MainActor in await agent.setSafeMode(on); self.privacy = await agent.privacy() }
+    }
+    func setLockdown(_ on: Bool) {
+        Task { @MainActor in await agent.setLockdown(on); self.privacy = await agent.privacy() }
+    }
 
     // Special model id for the on-device Apple model.
     static let appleModelID = "Apple Intelligence (on-device)"
