@@ -323,7 +323,7 @@ final class VoiceEngine: ObservableObject {
                     Task { @MainActor in
                         guard let self else { return }
                         if ok { self.startListening() }
-                        else { self.permissionNeeded = true; self.isListening = false }
+                        else { self.permissionNeeded = true; self.isListening = false; Chime.error.play() }
                     }
                 }
                 return
@@ -359,6 +359,7 @@ final class VoiceEngine: ObservableObject {
                     // couldn't get the grant from the prompt — surface it calmly;
                     // the UI offers a button, the user decides.
                     self.permissionNeeded = true
+                    Chime.error.play()
                 }
             }
             return

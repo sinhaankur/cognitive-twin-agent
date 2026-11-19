@@ -65,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var wakeItem: NSMenuItem?    // the Wake-on-name switch (opt-in)
     private var photosItem: NSMenuItem?  // the Read-my-Photos switch (opt-in)
     private var musicItem: NSMenuItem?   // the Hear-my-music switch (opt-in)
+    private var ambientItem: NSMenuItem? // the Ambient-presence switch (opt-in, off)
     // ── Controls › (reach · safe mode · kill switch — folded in from VeraMenuBar) ─
     private var reachPrivateItem: NSMenuItem?   // Private — this Mac only
     private var reachDevicesItem: NSMenuItem?   // My devices — tailnet
@@ -120,6 +121,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.syncMenuChecks() }
         photosItem?.state = UserDefaults.standard.bool(forKey: "photosOn") ? .on : .off
         wakeItem?.state = UserDefaults.standard.bool(forKey: "wakeOn") ? .on : .off
+        // restore the ambient bed if it was left on (strictly opt-in, off by default)
+        if UserDefaults.standard.bool(forKey: "ambientOn") {
+            ambientItem?.state = .on
+            AmbientBed.shared.start()
+        }
         // music state lives server-side (music.py) — ask once the server is up
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             self.model.refreshMusic { on in self.musicItem?.state = on ? .on : .off }
@@ -133,7 +139,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.model.shutdownSpawnedServer() }
+            MainActor.assumeIsolated {
+                AmbientBed.shared.stop()
+                self?.model.shutdownSpawnedServer()
+            }
         }
         // first run: one card — name her, see the brain come up, learn the
         // three things that matter. never shown again after Start.
@@ -308,6 +317,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let formOrb = NSMenuItem(title: "Form: Orb", action: #selector(menuFormOrb), keyEquivalent: "")
         formOrb.image = symbol("circle.fill"); formOrb.target = self; vl.addItem(formOrb)
         formItemDots = formField; formItemOrb = formOrb
+        vl.addItem(.separator())
+        // Ambient presence — a near-silent bed so she feels "in the room". Strictly
+        // opt-in, off by default (nothing plays until you turn it on).
+        ambientItem = NSMenuItem(title: "Ambient presence (quiet)", action: #selector(menuAmbient), keyEquivalent: "")
+        ambientItem?.image = symbol("waveform.path"); ambientItem?.target = self; vl.addItem(ambientItem!)
         menu.setSubmenu(vl, for: voiceItem)
         menu.addItem(voiceItem)
 
@@ -355,6 +369,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func menuPhotos() { togglePhotos() }
     @objc private func menuMusic() { toggleMusic() }
     @objc private func menuQuit() { NSApp.terminate(nil) }
+
+    /// Ambient presence — the near-silent bed. Opt-in, off by default; persists.
+    @objc private func menuAmbient() {
+        let want = !UserDefaults.standard.bool(forKey: "ambientOn")
+        UserDefaults.standard.set(want, forKey: "ambientOn")
+        ambientItem?.state = want ? .on : .off
+        if want { AmbientBed.shared.start() } else { AmbientBed.shared.stop() }
+    }
 
     // ── Controls (reach · Safe Mode · Kill Switch) ──────────────────────────────
     // Each posts ONE explicit change to the brain, then syncControlChecks() re-reads
@@ -509,6 +531,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         earItem?.state = model.ear.on ? .on : .off
         wakeItem?.state = model.wakeOn ? .on : .off
         photosItem?.state = UserDefaults.standard.bool(forKey: "photosOn") ? .on : .off
+        ambientItem?.state = UserDefaults.standard.bool(forKey: "ambientOn") ? .on : .off
         // paint the Controls submenu from the last known state immediately, then
         // re-read the live control-surface state so it's honest a beat later
         syncControlChecks()
@@ -1523,6 +1546,8 @@ final class AppModel: ObservableObject {
         let thoughts = await agent.reflections()
         guard !thoughts.isEmpty else { return }
         await MainActor.run {
+            // Unprompted "she has something for you" — a subtle notify, once.
+            Chime.notify.play()
             for t in thoughts.prefix(2) {
                 self.turns.append(ChatTurn(text: "💭 \(t)", isUser: false))
             }
@@ -1829,6 +1854,9 @@ final class AppModel: ObservableObject {
         speakThisTurn = spoken
         transcript = text
         turns.append(ChatTurn(text: text, isUser: true))
+        // A faint tick when YOU send a typed message. Spoken turns already get the
+        // listen/done voice cues, so a tick there would just be noise.
+        if !spoken { Chime.send.play() }
 
         // Twin Council: "/council <question>" asks every twin the same thing and
         // shows each take. Same feature as the CLI's /council, in the app.
@@ -1890,6 +1918,10 @@ final class AppModel: ObservableObject {
                                 self.turns.append(turn)
                                 turnID = turn.id
                                 self.phase = .idle   // dots off; her words are here now
+                                // Soft confirm when her reply lands — but only for a
+                                // text-first turn; a spoken turn gets her actual voice,
+                                // so a cue on top would clutter.
+                                if !self.speakThisTurn { Chime.sent.play() }
                             } else if let id = turnID,
                                       let i = self.turns.firstIndex(where: { $0.id == id }) {
                                 self.turns[i].text = partial
