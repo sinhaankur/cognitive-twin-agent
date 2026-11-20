@@ -62,6 +62,7 @@ def build_index() -> dict[str, Any]:
             moments.append({"text": chunk, "when": str(when)})
 
     vectors: list[list[float]] | None = None
+    embed_model: str | None = None
     if rag.embeddings_available():
         vectors = []
         for m in moments:
@@ -69,13 +70,20 @@ def build_index() -> dict[str, Any]:
                 vectors.append(rag.embed_one(m["text"]))
             except Exception:
                 vectors.append([])
+        embed_model = rag.active_embed_model()
 
     payload = {
-        "version": 1,
+        "version": 2,
         "built": time.time(),
         "count": len(moments),
         "moments": moments,
         "vectors": vectors,
+        # Stamp WHICH embedder built these vectors. A query embedded by a DIFFERENT
+        # model isn't comparable (cosine over two models' spaces is noise), so
+        # retrieve() only uses the vectors when the live model matches this stamp —
+        # otherwise it falls to keyword until the index is rebuilt. Prevents a silent
+        # quality REGRESSION when the default embedder changes.
+        "embed_model": embed_model,
     }
     security.write_state(security.path(_INDEX), payload)  # SEALED at rest
     return {"count": len(moments),
@@ -142,7 +150,13 @@ def retrieve(query: str, k: int = 3, alpha: float = 0.6) -> list[LifeHit]:
     moments = idx["moments"]
     kw = _keyword_scores(moments, query)
     vecs = idx.get("vectors")
-    if vecs and rag.embeddings_available():
+    # Only trust the stored vectors if the LIVE embedder matches the one that built
+    # them — a cross-model cosine is noise and would quietly hurt quality. A mismatch
+    # (e.g. the default embedder was upgraded) falls to keyword until build_index()
+    # re-embeds. A v1 index has no stamp; treat it as matching to preserve old behaviour.
+    stamp = idx.get("embed_model")
+    model_ok = stamp is None or stamp == rag.active_embed_model()
+    if vecs and model_ok and rag.embeddings_available():
         try:
             qv = rag.embed_one(query)
             final = [alpha * _cosine(qv, vecs[i]) + (1 - alpha) * kw[i]

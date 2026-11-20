@@ -54,13 +54,19 @@ GOLD: list[tuple[str, str]] = [
     ("I feel so much guilt and shame about failing", "gentle with yourself"),
 ]
 
-# Candidate on-device embedders, smallest → largest. All run in Ollama.
+# Candidate on-device embedders, smallest → largest. All run in Ollama. MTEB
+# figures are from the Hugging Face MTEB(eng, v2) leaderboard (sub-1B models), the
+# honest yardstick for retrieval quality — we then re-measure on VERA'S OWN corpus
+# below, since leaderboard rank ≠ fit for her wisdom convictions.
 DEFAULT_MODELS = [
-    "nomic-embed-text",        # 274 MB — current default
-    "all-minilm",              # ~45 MB — tiny
-    "bge-m3",                  # ~1.2 GB — strong multilingual
-    "mxbai-embed-large",       # ~670 MB — high quality
+    "all-minilm",              # ~45 MB — tiny baseline
+    "nomic-embed-text",        # 274 MB, 768d, 8K ctx — current default (Apache-2.0)
+    "mxbai-embed-large",       # ~670 MB, 1024d, 512-tok cap — strong on short English
+    "bge-m3",                  # ~1.2 GB, 1024d, 8K ctx — multilingual/hybrid (MIT)
     "snowflake-arctic-embed",  # ~670 MB — retrieval-tuned
+    # ── newer MTEB sub-1B leaders (HF) — candidates to beat nomic ──────────────
+    "embeddinggemma",          # 300M, 768d — Google, MTEB ~69.7 (Gemma license)
+    "qwen3-embedding:0.6b",    # 0.6B, MTEB ~70.5, 32K ctx — strongest <1GB (Apache-2.0)
 ]
 
 OLLAMA = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")

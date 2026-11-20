@@ -36,8 +36,26 @@ def _ollama_host() -> str:
 
 
 def _embed_model() -> str:
-    # a dedicated embedding model if pulled; the switch below handles its absence
+    # The retrieval embedder. Default = nomic-embed-text (Apache-2.0, 768d, 8K ctx).
+    # On Vera's OWN corpus (evals/rag_embed_benchmark.py) it scores hit@1 91.7% /
+    # MRR 0.938 — strong, fast (~24 ms/query), and robust WITHOUT the task-prefix
+    # dance that instruction-tuned embedders (EmbeddingGemma, Qwen3-Embedding)
+    # require. We benchmarked those HF/MTEB leaders too: EmbeddingGemma edged nomic
+    # on paper (hit@3 100%, MRR 0.944) but, UNPREFIXED, its raw cosines run lower
+    # (0.37 vs nomic's 0.44 on a meaning-only match) and real retrieval dropped
+    # matches — so it's a candidate, not the default, until we add its prompt
+    # prefixes. Override with CTWIN_EMBED_MODEL; the fallback chain degrades safely.
     return os.environ.get("CTWIN_EMBED_MODEL", "nomic-embed-text")
+
+
+def _embed_fallbacks() -> list[str]:
+    """Ordered embedders to try if the primary isn't pulled — the chosen default
+    first, then the other strong local option, so retrieval degrades gracefully and
+    never silently drops to keyword when a good embedder IS available."""
+    primary = _embed_model()
+    chain = [primary, "nomic-embed-text", "embeddinggemma", "mxbai-embed-large"]
+    seen: set[str] = set()
+    return [m for m in chain if not (m in seen or seen.add(m))]
 
 
 def _default_model() -> str:
@@ -79,6 +97,15 @@ def _post(url: str, payload: dict, timeout: float = 60.0) -> dict:
         return json.loads(r.read().decode("utf-8") or "{}")
 
 
+_ACTIVE_EMBED: str | None = None  # the first fallback that actually answered
+
+
+def active_embed_model() -> str:
+    """Which embedder is actually answering (after fallback). Used to STAMP an
+    index so a later model change can't silently break cosine matching."""
+    return _ACTIVE_EMBED or _embed_model()
+
+
 def embed_one(text: str, *, timeout: float = 8.0) -> list[float]:
     text = (text or "").strip()
     if not text:
@@ -86,9 +113,24 @@ def embed_one(text: str, *, timeout: float = 8.0) -> list[float]:
     # Short timeout on a PER-TURN embedding call. Embedding runs on EVERY reply;
     # a cold embedding-model load (or Ollama busy with the chat model) must never
     # hang the whole reply — the caller already falls back to keyword retrieval.
-    out = _post(_ollama_host() + "/api/embeddings",
-                {"model": _embed_model(), "prompt": text}, timeout=timeout)
-    return list(out.get("embedding", []))
+    #
+    # Try the primary embedder, then the fallbacks (EmbeddingGemma → nomic), so a
+    # machine that only pulled the old default still gets SEMANTIC retrieval rather
+    # than silently dropping to keyword. The winner is cached for the process so we
+    # don't re-probe a missing model every turn.
+    global _ACTIVE_EMBED
+    models = [_ACTIVE_EMBED] if _ACTIVE_EMBED else _embed_fallbacks()
+    for model in models:
+        try:
+            out = _post(_ollama_host() + "/api/embeddings",
+                        {"model": model, "prompt": text}, timeout=timeout)
+            vec = list(out.get("embedding", []))
+            if vec:
+                _ACTIVE_EMBED = model
+                return vec
+        except Exception:
+            continue
+    return []
 
 
 _EMBED_OK: bool | None = None  # cached availability (probed at most once per run)
