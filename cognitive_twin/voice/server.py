@@ -1006,6 +1006,22 @@ class _Handler(BaseHTTPRequestHandler):
             # a to-do on your plate (the root of the mis-heard "die" bug).
             not_you = data.get("is_you") is False
             record = (not internal) and (not not_you)
+            # GUEST TURN? If a recognised non-owner (or clearly not-you by voice) is
+            # speaking, Vera is warm with THEM but guards HIS private world. We stash
+            # the guest signal on the agent for this turn; loop.py reads it to add the
+            # guest prompt + refuse owner-data tools, then it's cleared.
+            if not internal:
+                try:
+                    from .. import guest as _guest, persona as _persona
+                    owner = getattr(_persona.load(), "name", "") or ""
+                    recognized = data.get("recognized")
+                    if _guest.is_guest(recognized=recognized,
+                                       is_you=data.get("is_you"), owner_name=owner):
+                        agent.guest_turn = {"recognized": recognized, "owner": owner}  # type: ignore[attr-defined]
+                    else:
+                        agent.guest_turn = None  # type: ignore[attr-defined]
+                except Exception:
+                    agent.guest_turn = None  # type: ignore[attr-defined]
             try:
                 # one generation at a time — a burst queues — BUT a user never
                 # waits forever behind background work: bail warmly after 30s.

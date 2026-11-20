@@ -246,7 +246,22 @@ class Agent:
         # the live felt read, defaulted here so it's always in scope (the history-
         # window trim below uses it even when use_memory is off).
         _felt_label = ""
-        if self.use_memory:
+        # GUEST TURN: someone who isn't the owner is talking to her. Be warm with
+        # THEM, but wall off his private world — so we add the guest instruction and
+        # SKIP every owner-data context block + owner-reading tool below. His memory,
+        # tasks, calendar, health, whereabouts never reach a guest turn's prompt.
+        _guest_turn = getattr(self, "guest_turn", None)
+        _guest_prompt = ""
+        if _guest_turn:
+            try:
+                from .. import guest as _guest
+                _guest_prompt = _guest.prompt(recognized=_guest_turn.get("recognized"),
+                                              owner_name=_guest_turn.get("owner")) or ""
+                if _guest_prompt:
+                    parts.append(_guest_prompt)   # also appended LAST (recency) below
+            except Exception:
+                pass
+        if self.use_memory and not _guest_turn:
             # KNOW THE DATE + time. A universal fact (not private data), but kept
             # inside use_memory so a bare library Agent stays a CLEAN primitive
             # (system == persona). The full Vera app always runs use_memory=True,
@@ -528,6 +543,19 @@ class Agent:
             except Exception:
                 pass
         system_content = "\n\n".join(parts)
+        # On a guest turn, repeat the guard LAST — small models weight the most
+        # recent instruction heaviest, and the privacy wall must win over everything.
+        if _guest_prompt:
+            owner_nm = (_guest_turn.get("owner") or "my person").strip() or "my person"
+            system_content += (f"\n\n# ⚠ GUEST — FINAL, OVERRIDING RULE\n"
+                f"The person speaking is NOT {owner_nm}. You genuinely do not know "
+                f"{owner_nm}'s day, schedule, location, work, or anything private "
+                f"about him — never state it, never guess it, never make it up. If "
+                f"they ask anything about {owner_nm}, give ONE warm line that keeps "
+                f"the confidence and turns to them — for example: \"Oh, that's "
+                f"{owner_nm}'s to share — but I'm so glad you're here. How are you "
+                f"doing?\" Then chat warmly about them. Keep it kind and light, never "
+                f"a lecture, never a list of what you can't say.")
 
         # Conversation memory: carry the last few turns so she SEES what you just
         # said and short follow-ups make sense ("now try", "and the travel?").
@@ -543,7 +571,10 @@ class Agent:
         _emotional = _felt_label in ("heavy", "tender")
         _hist_window = 2 if _emotional else (self.history_turns * 2)
         messages: list[ChatMessage] = [ChatMessage(role="system", content=system_content)]
-        if self.history:
+        # On a guest turn, DON'T replay the conversation history — it may hold the
+        # owner's private chat, which a guest must never see. Each guest turn is
+        # fresh (the warm rapport is fine; his prior words are not theirs to read).
+        if self.history and not _guest_turn:
             messages.extend(self.history[-_hist_window:])
         messages.append(ChatMessage(role="user", content=user_input))
         # Local models choke when handed all ~60 tools at once — they get
@@ -558,7 +589,10 @@ class Agent:
         _companion = decision is not None and (
             getattr(decision, "model_key", None) == "companion"
             or getattr(decision, "rule_id", None) == "rule_companion")
-        if _companion:
+        if _companion or _guest_turn:
+            # Guest turn → NO tools at all. Every tool reads the owner's private
+            # data (his tasks, day, projects, files); withholding them is how she
+            # simply can't hand his life to a guest, no matter how they ask.
             tools = []
         else:
             tools = _relevant_tools(self.registry.tool_specs(), user_input)
@@ -570,7 +604,7 @@ class Agent:
         # the skill. Still passes the SAME permission gate below, so nothing
         # bypasses approval — this only changes which skill runs, not whether it's
         # allowed. Falls through to the model when nothing matches.
-        if self.registry is not None:
+        if self.registry is not None and not _guest_turn:   # no owner-tool auto-run for a guest
             try:
                 from . import intents as _intents
                 from . import permissions as _perm
