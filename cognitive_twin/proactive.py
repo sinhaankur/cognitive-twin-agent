@@ -394,52 +394,48 @@ def _pick_companion_line() -> str:
 # ── real current affairs: a genuine headline, through the fenced doorway ───────
 # Ankur's steer: keep POLITICS limited; mostly events that could actually affect
 # him. So we filter heavy political/conflict items down and prefer the things that
-# touch a life — science, tech, space, health, weather/disasters, India, economy.
+# touch a life — science, tech, space, health, weather/disasters, economy.
 _CA_FILE = "proactive_news.json"            # a short cache so she doesn't re-fetch
 _CA_TTL_S = 3 * 3600                         # news is fresh enough for ~3 hours
-# Sources — MULTILATERAL, OWN-VOICE, INDIGENOUS-CENTERED (Ankur's steer). The old
-# single-BBC anchor is gone: colonial-era Western media carries an imperial lens
-# (borders, place-names, whose events "count"), and peoples routinely narrated by
-# outsiders — Hindus in India, indigenous Africans, Native Americans — are shown in
-# a wrong light. The fix is PLURALITY with NO anchor: several outlets across regions,
-# weighted toward the people an event happens TO, told through their OWN press, plus
-# neutral UN/scientific DATA for the hard facts. No single outlet (BBC, Al Jazeera,
-# or any one of these) is ever "the fact" — framing differences are surfaced, not
-# resolved. All keyless RSS, fetched only through net.py's fenced, allow-listed,
-# read-only doorway; hosts are added to the allow-list on first use.
-#
-# Bias is NOT hidden — each source is one voice among many, on purpose:
+# Sources — PLURAL + EVEN-HANDED, no favored region, nation, or people (Ankur's
+# steer: no India/Hindu lean — the world over-focuses there; treat all alike). A
+# balanced spread across continents plus neutral UN/scientific DATA for the hard
+# facts. No single outlet is ever "the fact" — framing differences are surfaced,
+# never resolved by tilting toward or away from any country or group. All keyless
+# RSS through net.py's fenced, allow-listed, read-only doorway; hosts are added to
+# the allow-list on first use. Each source is ONE voice among many, on purpose.
 _CA_HOSTS = [
-    # India — own voice, plural (not foreign desks narrating India)
-    "www.thehindu.com",       # Indian daily; English-liberal lean, but an Indian seat
-    "www.opindia.com",        # Hindu/right-leaning; counters the "Hindus in wrong light"
-                              #   default — partisan, so ONE voice, never the fact
-    # Africa — local / pan-African (not outsiders narrating Africa)
-    "allafrica.com",          # aggregates African outlets themselves, many countries
-    "www.africanews.com",     # pan-African newsroom (Congo desk)
-    # Americas — Native / First Nations (own voice)
-    "ictnews.org",            # Indian Country Today — Native American, Native-run
-    "www.aptnnews.ca",        # APTN — First Nations / Métis / Inuit desk (Canada)
+    # Science / space / tech — a life-touching, low-politics default
+    "www.sciencedaily.com",   # research across fields, plain reporting
+    "feeds.arstechnica.com",  # technology
+    # A geographically balanced international spread — no region privileged
+    "www.africanews.com",     # pan-African newsroom
+    "e.vnexpress.net",        # Vietnam (Asia, English)
+    "www.batimes.com.ar",     # Buenos Aires Times (South America, English)
+    "apnews.com",             # US wire, broad international desk
+    "www.theguardian.com",    # UK/global
     # Neutral primary DATA — the hard facts, minimal framing
     "reliefweb.int",          # UN OCHA humanitarian updates
     "www.gdacs.org",          # Global Disaster Alert system (UN/EC)
     "earthquake.usgs.gov",    # raw seismology, zero narrative
 ]
 _CA_FEEDS = [
-    "https://www.thehindu.com/news/national/feeder/default.rss",
-    "https://www.opindia.com/feed/",
-    "https://allafrica.com/tools/headlines/rdf/latest/headlines.rdf",
+    "https://www.sciencedaily.com/rss/all.xml",
+    "https://feeds.arstechnica.com/arstechnica/index",
     "https://www.africanews.com/feed/rss",
-    "https://ictnews.org/feed/",
-    "https://www.aptnnews.ca/feed/",
+    "https://e.vnexpress.net/rss/news.rss",
+    "https://www.batimes.com.ar/feed",
+    "https://feeds.apnews.com/apnews/topnews",
+    "https://www.theguardian.com/world/rss",
     "https://reliefweb.int/updates/rss.xml",
     "https://www.gdacs.org/xml/rss.xml",
     "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.atom",
 ]
 # a source's OWN channel/branding title is not a headline — drop these self-names.
 _CA_CHANNEL_NOISE = (
-    "allafrica", "africanews", "ict news", "indian country today", "aptn",
-    "the hindu", "opindia", "reliefweb", "gdacs", "usgs", "earthquake feed",
+    "sciencedaily", "ars technica", "africanews", "vnexpress", "buenos aires times",
+    "ap news", "associated press", "the guardian", "guardian",
+    "reliefweb", "gdacs", "usgs", "earthquake feed",
     "latest headlines", "significant earthquakes",
 )
 
