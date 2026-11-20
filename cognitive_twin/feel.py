@@ -204,6 +204,23 @@ def read(text: str, *, apply_tone: bool = True) -> Felt:
             elif t.bluntness <= -0.55:
                 posture = "gentle"
 
+    # GRIEF / LOSS OVERRIDE — the one feeling we refuse to get wrong. The affect
+    # net read "I miss my mom" and "my dad passed away" as STEADY/neutral, so she
+    # answered a death with "what did you make today?". Grief must ALWAYS land as a
+    # heavy, hold-space moment regardless of the net. A small, explicit lexicon of
+    # loss catches it and forces the tender stance + heavy valence.
+    _low = text.lower()
+    _GRIEF = ("passed away", "passed on", "died", "death of", "lost my", "lost her",
+              "lost him", "lost them", "i miss my", "i miss her", "i miss him",
+              "i miss them", "miss my mom", "miss my dad", "miss my mother",
+              "miss my father", "grieving", "funeral", "at the funeral", "my late",
+              "no longer with us", "she's gone", "he's gone", "they're gone",
+              "widow", "widower", "mourning")
+    if any(g in _low for g in _GRIEF):
+        return Felt(valence=min(round(f.valence, 3), -0.5),
+                    arousal=round(max(f.arousal, 0.3), 3),
+                    label="heavy", stance="gentle/hold-space")
+
     return Felt(valence=round(f.valence, 3), arousal=round(f.arousal, 3),
                 label=f.label, stance=f"{posture}/{lead}")
 
@@ -319,8 +336,32 @@ def directive(text: str) -> str:
     if felt.label == "steady" and lead == "engage" and not dial and not acc:
         return ""
 
+    # GRIEF gets an unmistakable, overriding directive — a small model otherwise
+    # follows a loss with a cheerful non-sequitur ("what did you make today?"). This
+    # is the moment that most needs to land right.
+    _low = text.lower()
+    _is_grief = any(g in _low for g in (
+        "passed away", "passed on", "died", "death of", "lost my", "lost her",
+        "lost him", "lost them", "i miss my", "miss my mom", "miss my dad",
+        "miss my mother", "miss my father", "grieving", "funeral", "my late",
+        "she's gone", "he's gone", "they're gone", "mourning", "widow"))
+    grief_line = ""
+    if _is_grief:
+        grief_line = (
+            "\n# THIS IS GRIEF — HANDLE WITH CARE\n"
+            "They are telling you about losing someone they love. First, gently "
+            "acknowledge the loss and their pain in a sentence or two ('I'm so "
+            "sorry — that's a real loss', 'of course you miss them'). Be soft, "
+            "present, and warm. Do NOT change the subject, do NOT ask about their "
+            "day or anything cheerful or trivial, do NOT offer a fix or a silver "
+            "lining, and do NOT invent poetic imagery. If you ask anything, make it "
+            "one tender, caring question about the person or how they're holding up "
+            "('what was she like?', 'how are you doing with it?') — or simply stay "
+            "with them. Never say 'goodnight' or anything unrelated.")
+
     return (
-        "# HOW YOU FEEL RIGHT NOW (decided by your own mind, not the model)\n"
+        grief_line +
+        "\n# HOW YOU FEEL RIGHT NOW (decided by your own mind, not the model)\n"
         # Give the model the LABEL only — never the raw valence number. A small
         # model parrots "valence +0.01" straight into the reply ("Steady — valence
         # +0.01"), which breaks the spell. The feeling should colour the words, not

@@ -54,6 +54,34 @@ def _deflower(text: str) -> str:
     return text
 
 
+# Grief markers (match feel.py) + tone-deaf tells. If the user is grieving and the
+# small model still answered with a cheerful non-sequitur, we replace it with a
+# genuine, tender line — the ONE moment we refuse to get wrong.
+_GRIEF_MARKERS = ("passed away", "passed on", " died", "death of", "lost my",
+                  "lost her", "lost him", "lost them", "i miss my", "miss my mom",
+                  "miss my dad", "miss my mother", "miss my father", "grieving",
+                  "funeral", "my late", "she's gone", "he's gone", "mourning")
+_TONE_DEAF = ("what did you make", "what did you do today", "goodnight",
+              "good night", "did you make today", "last hug", "canvas of stars",
+              "paint", "the sky is", "what are you working on", "cheer up",
+              "look on the bright side", "brighten")
+_GRIEF_FALLBACK = ("I'm so sorry. That's a real loss, and missing them makes "
+                   "sense. I'm right here with you — we can just sit with it. "
+                   "Tell me about them, if you'd like.")
+
+
+def _grief_safeguard(user_input: str, answer: str) -> str:
+    """When the user is grieving, never let a tone-deaf reply through. If the model
+    answered a loss with something cheerful/trivial, swap in a tender line."""
+    low = (user_input or "").lower()
+    if not any(m in low for m in _GRIEF_MARKERS):
+        return answer
+    a = (answer or "").lower()
+    if (not answer.strip()) or any(t in a for t in _TONE_DEAF):
+        return _GRIEF_FALLBACK
+    return answer
+
+
 def _persona_name() -> str:
     """Her name (for an in-character guard reply), best-effort."""
     try:
@@ -701,6 +729,7 @@ class Agent:
                 # model produced a final answer
                 answer = reply.content.strip()
                 answer = _deflower(answer)   # strip invented "I read a poem…" scenery
+                answer = _grief_safeguard(user_input, answer)   # never tone-deaf to loss
                 # remember this exchange so the NEXT turn has context (follow-ups,
                 # "it", "that", "now try"). Trimmed to history_turns pairs.
                 if record and answer:
