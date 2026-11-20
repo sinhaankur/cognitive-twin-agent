@@ -1372,9 +1372,14 @@ final class AppModel: ObservableObject {
         voice.onSpeechEnded = { [weak self] in
             guard let self else { return }
             guard self.voiceMode else { return }
-            // small beat so the speaker fully releases before the mic opens (no echo)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                self?.armVoiceLoop()
+            // ECHO GUARD: on a Mac with speakers, her just-spoken line keeps playing
+            // out of the output buffer + echoing in the room for ~0.7-1s AFTER the
+            // synth reports "done". Re-opening the mic at 0.35s caught that tail and
+            // transcribed it as a USER turn (she "said and heard the same thing").
+            // Wait a real beat so the room goes quiet first, THEN re-arm.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+                guard let self, self.voiceMode, !self.voice.isSpeaking else { return }
+                self.armVoiceLoop()
             }
         }
         // Always-on: a listen turn that ended with no words → re-open the mic, but

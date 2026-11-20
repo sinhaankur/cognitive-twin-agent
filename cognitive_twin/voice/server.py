@@ -65,6 +65,50 @@ _playback_proc: Any = None
 # waits its turn, the model does one generation at a time (which is all it can
 # really do anyway), and a burst degrades to "a bit slower" instead of a crash.
 _llm_lock = threading.Lock()
+
+# ── ECHO GUARD (she must not hear + answer her own voice) ─────────────────────
+# On a Mac with speakers, hands-free listening can capture her OWN just-spoken reply
+# through the mic and send it back as a "user" turn (she "said and heard the same
+# thing"). We remember her last few replies and reject a spoken turn that's really an
+# echo of one of them. A hard safety net independent of the app's mic timing + room
+# noise. Only applies to SPOKEN turns (typed turns are obviously the user's).
+_recent_replies: list[tuple[str, float]] = []   # (normalised text, when)
+_recent_lock = threading.Lock()
+
+
+def _norm_words(s: str) -> set[str]:
+    import re
+    return {w for w in re.findall(r"[a-z']+", (s or "").lower()) if len(w) > 2}
+
+
+def _note_reply(text: str) -> None:
+    if not text:
+        return
+    import time
+    with _recent_lock:
+        _recent_replies.append((text, time.time()))
+        # keep only the last ~6, last 30s — an echo arrives within a second or two
+        cutoff = time.time() - 30
+        del _recent_replies[:-6]
+        while _recent_replies and _recent_replies[0][1] < cutoff:
+            _recent_replies.pop(0)
+
+
+def _is_echo_of_her(text: str) -> bool:
+    """True if this spoken turn is really an echo of something she JUST said."""
+    qw = _norm_words(text)
+    if len(qw) < 2:
+        return False
+    with _recent_lock:
+        recents = list(_recent_replies)
+    for reply, _ in recents:
+        rw = _norm_words(reply)
+        if not rw:
+            continue
+        overlap = len(qw & rw) / len(qw)
+        if overlap >= 0.6:   # most of the "user" words are HER recent words → echo
+            return True
+    return False
 # How long a USER ask will wait for the one model before giving up with a warm
 # line instead of hanging. Background work (warming, the companion check-in) can
 # hold the model briefly; a real person should never wait a minute-and-a-half
@@ -1019,6 +1063,12 @@ class _Handler(BaseHTTPRequestHandler):
             # "internal": scripted prompts (the app's greeting etc.) — answer
             # them, but never learn from them as if the user said it.
             internal = bool(data.get("internal"))
+            # ECHO REJECT: a SPOKEN turn (not typed, not internal) that's really an
+            # echo of her own recent reply → drop it silently, don't answer herself.
+            spoken = bool(data.get("spoken")) or data.get("is_you") is not None
+            if not internal and spoken and _is_echo_of_her(text):
+                self._json(200, {"answer": "", "route": {"rule": "echo"}})
+                return
             # VOICE IDENTITY GATE: if the app says this clip was clearly NOT you
             # (is_you=false, voiceprint enrolled), she'll still respond, but won't
             # LEARN from it or capture tasks — so the TV / another person can't put
@@ -1061,6 +1111,7 @@ class _Handler(BaseHTTPRequestHandler):
             except Exception as e:  # never 500 the UI on an agent hiccup
                 self._json(200, {"answer": _llm_error_message(e), "route": None})
                 return
+            _note_reply(answer)   # remember it so a mic echo of it gets rejected
             self._json(200, {"answer": answer, "route": route})
         elif self.path == "/api/ask/stream":
             # the same ask, streamed: newline-delimited JSON — {"delta": "…"}
