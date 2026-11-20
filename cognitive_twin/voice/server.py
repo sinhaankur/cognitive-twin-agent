@@ -842,22 +842,23 @@ class _Handler(BaseHTTPRequestHandler):
                 ls = float(data.get("length_scale", 1.08))
             except (TypeError, ValueError):
                 ls = 1.08
-            # EXPRESSIVE DELIVERY (the "Her" feeling): let her FELT state shape how
-            # she sounds — slower + warmer when it's heavy, a touch brighter + quicker
-            # when it's glad — instead of one flat read every time. feel.delivery()
-            # already computes this; we just hand its speed to Kokoro. The app's
-            # length_scale is the baseline; emotion nudges it from there. Opt out
-            # with CTWIN_FLAT_VOICE=1.
+            # EXPRESSIVE DELIVERY (the "Her" feeling) via the VOICEBOX engine: every
+            # known emotion has its own voice — grief slow+hushed, stressed slower to
+            # steady you, happy lifted+bright — and the weighty tones get real BREATH
+            # (pauses rendered as punctuation Kokoro honours). One flat read becomes a
+            # living voice. The app's length_scale is the baseline; the tone sets the
+            # pace from there. Opt out with CTWIN_FLAT_VOICE=1.
             base_speed = min(1.3, max(0.6, 1.0 / ls))
             import os as _os
             if text and not _os.environ.get("CTWIN_FLAT_VOICE"):
                 try:
-                    from .. import feel as _feel
-                    d = _feel.delivery(text)
-                    # delivery.speed is centred ~0.97; scale the baseline by how far
-                    # it leans from neutral, clamped so she never races or crawls.
-                    lean = (d.get("speed", 0.97) - 0.97)
-                    base_speed = min(1.15, max(0.78, base_speed + lean))
+                    from .. import voicebox as _vb
+                    tone = _vb.tone_for(text)
+                    # the tone's speed IS the target (centred ~0.96 neutral); blend a
+                    # touch with the app baseline so an explicit length_scale still
+                    # leans it, then clamp so she never races or crawls.
+                    base_speed = min(1.15, max(0.78, 0.8 * tone.speed + 0.2 * base_speed))
+                    text = _vb.breathe(text, tone)   # add gentle breath to weighty tones
                 except Exception:
                     pass
             wav = None
