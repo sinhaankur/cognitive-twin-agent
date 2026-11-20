@@ -21,12 +21,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build Vera.app (ad-hoc signed)
+      - name: Build Vera.app (ad-hoc signed, CI mode)
         run: |
           cd macos/Vera
-          ./build-app.sh
+          ./build-app.sh --ci
       - name: Package the .dmg
-        run: ./scripts/make-dmg.sh "/Applications/Vera.app"
+        run: ./scripts/make-dmg.sh "macos/Vera/Vera.app"
       - uses: actions/upload-artifact@v4
         with:
           name: Vera-macos-dmg

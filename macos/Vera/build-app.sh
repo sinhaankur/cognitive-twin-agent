@@ -24,9 +24,13 @@ BIN_NAME="Vera"
 ARCH_FLAGS=""
 EXTRA_SWIFTC=""
 SHIP=0
+CI=0            # --ci: build + ad-hoc sign, then STOP (no /Applications install,
+               # no relaunch, no Ollama setup). Leaves Vera.app here for packaging
+               # (e.g. the release workflow's make-dmg). Safe on a headless runner.
 for arg in "$@"; do
   case "$arg" in
     --universal) ARCH_FLAGS="--arch arm64 --arch x86_64" ;;
+    --ci)        CI=1 ;;
     --ship)      SHIP=1; ARCH_FLAGS="--arch arm64 --arch x86_64"
                  EXTRA_SWIFTC="-Xswiftc -cross-module-optimization" ;;
   esac
@@ -154,10 +158,16 @@ adhoc_sign() {
 }
 
 # Prefer a real "Apple Development" identity (stable, trusted by TCC). Fall back
-# to stable ad-hoc only if none is installed.
-SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
-  | grep -E 'Apple Development|Developer ID Application' | head -1 \
-  | sed -E 's/.*\) ([A-F0-9]{40}) .*/\1/')"
+# to stable ad-hoc only if none is installed. On CI there's no usable signing
+# identity (and no keychain), so force the ad-hoc path and never let a signing
+# hiccup fail the build — the DMG just ships ad-hoc signed (Gatekeeper right-click
+# → Open), which is exactly what the release notes say.
+SIGN_ID=""
+if [ "$CI" = 0 ]; then
+  SIGN_ID="$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep -E 'Apple Development|Developer ID Application' | head -1 \
+    | sed -E 's/.*\) ([A-F0-9]{40}) .*/\1/')"
+fi
 if [ -n "$SIGN_ID" ]; then
   echo "  using identity: $SIGN_ID"
   codesign --force --deep --options runtime --sign "$SIGN_ID" \
@@ -171,6 +181,14 @@ else
   adhoc_sign
 fi
 rm -f "$ENT"
+
+# CI: stop here — the bundle (Vera.app) stays in THIS folder for the release
+# workflow to package into the .dmg. No /Applications install, no relaunch, no
+# Ollama check (none of which make sense on a headless runner).
+if [ "$CI" = 1 ]; then
+  echo "[ci] built + ad-hoc signed: $(pwd)/$APP (skipping install/relaunch/activate)"
+  exit 0
+fi
 
 # ONE install per device: the app lives in /Applications and nowhere else.
 # The staging bundle is removed so Spotlight/Launchpad never see two copies.
