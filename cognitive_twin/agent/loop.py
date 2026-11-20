@@ -24,6 +24,36 @@ from .. import memory as _memory
 from .. import persona as _persona
 
 
+import re as _re
+
+# Phrases that mark a FABRICATED little experience she didn't have — she doesn't
+# live in a world, so "I read a poem this morning" / "I was looking at the sky" is
+# invented scenery (the persona forbids it, but a small model still slips). We
+# catch the opening sentence that starts with one of these and drop it, keeping
+# the rest of the warm reply. Deterministic, cheap, honest.
+_FABRICATED_OPENERS = _re.compile(
+    r"^\s*(i\s+(just\s+)?(read|saw|was\s+(just\s+)?(reading|looking|watching|thinking)"
+    r"|heard|noticed|came\s+across|found)\b[^.!?]*[.!?]\s*"
+    r"|the\s+(sky|stars|sun|moon|morning|light)\b[^.!?]*[.!?]\s*)",
+    _re.IGNORECASE)
+
+
+def _deflower(text: str) -> str:
+    """Drop an invented-experience opener if the reply still has real substance
+    after it; otherwise leave the text (never return empty). Keeps her grounded
+    without ever eating a genuine reply."""
+    if not text:
+        return text
+    m = _FABRICATED_OPENERS.match(text)
+    if not m:
+        return text
+    rest = text[m.end():].lstrip()
+    # only strip when what remains is a real reply on its own (not a fragment)
+    if len(rest) >= 12 and rest[0].isalpha():
+        return rest[0].upper() + rest[1:]
+    return text
+
+
 def _persona_name() -> str:
     """Her name (for an in-character guard reply), best-effort."""
     try:
@@ -642,6 +672,7 @@ class Agent:
             if not reply.tool_calls:
                 # model produced a final answer
                 answer = reply.content.strip()
+                answer = _deflower(answer)   # strip invented "I read a poem…" scenery
                 # remember this exchange so the NEXT turn has context (follow-ups,
                 # "it", "that", "now try"). Trimmed to history_turns pairs.
                 if record and answer:
