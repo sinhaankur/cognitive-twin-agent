@@ -121,7 +121,19 @@ piece was software that keeps that presence *entirely yours*. That's Vera.
 
 ## Quick start
 
-**New here? Start with the guides — plain language, about five minutes each:**
+**Grab it and go — one step per platform:**
+
+| Platform | Install |
+| --- | --- |
+| **macOS** (native app) | Download `Vera.dmg` from [**Releases**](https://github.com/sinhaankur/cognitive-twin-agent/releases/latest), double-click, drag Vera into Applications. First launch: right-click → Open. |
+| **Anywhere (run from source)** | `./run.sh` — sets up a venv, installs Vera, starts her brain, opens the UI. `./run.sh stop \| logs \| update` too. |
+| **Linux / Windows / server** | `pipx install cognitive-twin-agent` then `vera-app` — or grab the wheel from Releases. |
+| **Docker** | `docker compose up -d` (Vera + Ollama together), then open `http://127.0.0.1:7878`. |
+
+Everything runs on **your** machine — nothing is uploaded. The default persona
+(Anita) is only an example: you build a twin of *your* loved one.
+
+**New here? The guides are plain language, ~five minutes each:**
 
 - 🖥️ **[Install on your Mac](./docs/INSTALL.md)** — one command, the easy path.
 - 📱 **[Connect your iPhone](./docs/IPHONE-SETUP.md)** — reach the model on your Mac,

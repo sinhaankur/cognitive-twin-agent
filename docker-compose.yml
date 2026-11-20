@@ -1,0 +1,33 @@
+# Vera + Ollama, together, in one command — a fully self-contained, on-device
+# stack you can run on any Linux box or server. Nothing leaves the host.
+#
+#   docker compose up -d
+#   docker compose exec ollama ollama pull vera-tuned   # or qwen2.5:3b to start
+#   # open http://127.0.0.1:7878
+#
+# Her sealed state persists in the `vera-data` volume; models in `ollama-models`.
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+
+  vera:
+    build: .
+    depends_on:
+      - ollama
+    ports:
+      - "7878:7878"
+    environment:
+      # She thinks on the sibling Ollama container.
+      CTWIN_OLLAMA_HOST: "http://ollama:11434"
+    volumes:
+      - vera-data:/data
+    restart: unless-stopped
+
+volumes:
+  vera-data:
+  ollama-models:
