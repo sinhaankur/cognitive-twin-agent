@@ -275,12 +275,24 @@ final class WhisperListener {
         guard captured.count > Int(inputSampleRate * 0.25) else { onFinal?(""); return }
         let wav = Self.wav16kMono(from: captured, sourceRate: inputSampleRate)
         Task { [weak self] in
-            let text = await self?.transcribe(wav) ?? ""
-            await MainActor.run { self?.onFinal?(text) }
+            let r = await self?.transcribe(wav) ?? (text: "", isYou: nil)
+            await MainActor.run {
+                // VOICE IDENTITY passes through: the server told us whether this clip
+                // was YOU (a voiceprint match), someone else, or unknown (not enrolled).
+                // The app gates the turn on it (see onFinalWithIdentity) so she only
+                // ACTS on your voice — the robust fix for echo / other people / the TV.
+                self?.lastIsYou = r.isYou
+                self?.onFinal?(r.text)
+            }
         }
     }
 
-    private func transcribe(_ wav: Data) async -> String {
+    /// Whether the LAST transcribed clip was you: true (voiceprint match),
+    /// false (clearly not you), or nil (not enrolled / unknown). Read by the app
+    /// right after onFinal to gate the turn.
+    @MainActor var lastIsYou: Bool? = nil
+
+    private func transcribe(_ wav: Data) async -> (text: String, isYou: Bool?) {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/transcribe"))
         req.httpMethod = "POST"
         req.setValue("audio/wav", forHTTPHeaderField: "Content-Type")
@@ -289,18 +301,16 @@ final class WhisperListener {
         do {
             let (data, _) = try await URLSession.shared.data(for: req)
             let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-            // The server now returns the heard text even for noise words, with a
-            // `heard` flag telling us whether to ACT on it. Only act on real
-            // speech (heard == true); a stray "you"/"thank you" mishearing has
-            // heard == false → treat as an empty turn (no command), so she doesn't
-            // answer phantoms. The display cue for "didn't catch that" is handled
-            // in whisperFinal.
+            let isYou = obj["is_you"] as? Bool    // nil when not enrolled
+            // The server returns the heard text even for noise words, with a `heard`
+            // flag telling us whether to ACT on it. Only act on real speech.
             let heard = (obj["heard"] as? Bool) ?? true
-            guard heard else { return "" }
-            return (obj["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard heard else { return ("", isYou) }
+            let text = (obj["text"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return (text, isYou)
         } catch {
             NSLog("[Vera whisper] transcribe failed: \(error.localizedDescription)")
-            return ""
+            return ("", nil)
         }
     }
 

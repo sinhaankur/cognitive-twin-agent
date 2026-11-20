@@ -1879,6 +1879,15 @@ final class AppModel: ObservableObject {
             rearmVoiceLoopWithBackoff()
             return
         }
+        // VOICE-ID GATE (spoken turns only): if you've enrolled YOUR voice and this
+        // clip was clearly NOT you — someone else, the TV, or her own echo — DON'T
+        // treat it as a turn. nil = not enrolled (behaves as before, opt-in). This
+        // is what makes her respond to YOU, robustly, over room noise + echo.
+        if spoken && voice.lastTurnIsYou == false {
+            NSLog("[Vera] dropped a spoken turn that wasn't your voice")
+            rearmVoiceLoopWithBackoff()
+            return
+        }
         // A real, addressed turn — resume instant listening after it.
         if spoken { resetVoiceBackoff() }
 

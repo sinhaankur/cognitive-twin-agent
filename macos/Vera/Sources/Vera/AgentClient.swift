@@ -513,6 +513,24 @@ final class AgentClient {
         _ = try? await URLSession.shared.data(for: req)
     }
 
+    /// POST /api/voice/enroll — teach the brain YOUR voiceprint from a WAV clip of
+    /// you speaking. After this, transcribe returns is_you so she only acts on your
+    /// voice. Returns the server's friendly status line. Call a few times to improve.
+    func enrollVoice(_ wav: Data) async -> String {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/voice/enroll"))
+        req.httpMethod = "POST"
+        req.setValue("audio/wav", forHTTPHeaderField: "Content-Type")
+        req.httpBody = wav
+        req.timeoutInterval = 20
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (obj["message"] as? String) ?? "Learned a bit of your voice."
+        } catch {
+            return "Couldn't reach the brain to learn your voice."
+        }
+    }
+
     /// POST /api/ask — send a transcript, get the agent's answer + route info.
     /// `internal: true` marks a scripted prompt (our greeting boilerplate, not
     /// the user talking) — the server answers it but won't learn from it.

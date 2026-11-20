@@ -235,9 +235,14 @@ final class VoiceEngine: ObservableObject {
     }()
 
     /// A completed utterance from the local-Whisper path.
+    /// Whether the last spoken turn was YOU (voiceprint match), someone else, or
+    /// nil (not enrolled). Read by the app's handle() to gate on your voice.
+    @Published var lastTurnIsYou: Bool? = nil
+
     private func whisperFinal(_ text: String) {
         isListening = false
         level = 0; brightness = 0
+        lastTurnIsYou = whisper.lastIsYou     // carry the voiceprint verdict through
         let clean = Self.collapseRepeats(text.trimmingCharacters(in: .whitespacesAndNewlines))
         didDeliverFinal = false
         if clean.isEmpty {
