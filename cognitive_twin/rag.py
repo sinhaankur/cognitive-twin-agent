@@ -106,10 +106,20 @@ def active_embed_model() -> str:
     return _ACTIVE_EMBED or _embed_model()
 
 
+_LAST_EMBED: tuple[str, list[float]] | None = None  # (text, vector) — one-entry cache
+
+
 def embed_one(text: str, *, timeout: float = 8.0) -> list[float]:
     text = (text or "").strip()
     if not text:
         return []
+    # ONE-ENTRY CACHE: within a single reply, the SAME query is embedded a few times
+    # (wisdom retrieval, then life-memory retrieval, both embed the user's text).
+    # Caching the last query→vector collapses those to a single network call — a
+    # small but real per-turn speed win with zero behaviour change.
+    global _LAST_EMBED, _ACTIVE_EMBED
+    if _LAST_EMBED is not None and _LAST_EMBED[0] == text:
+        return _LAST_EMBED[1]
     # Short timeout on a PER-TURN embedding call. Embedding runs on EVERY reply;
     # a cold embedding-model load (or Ollama busy with the chat model) must never
     # hang the whole reply — the caller already falls back to keyword retrieval.
@@ -118,7 +128,6 @@ def embed_one(text: str, *, timeout: float = 8.0) -> list[float]:
     # machine that only pulled the old default still gets SEMANTIC retrieval rather
     # than silently dropping to keyword. The winner is cached for the process so we
     # don't re-probe a missing model every turn.
-    global _ACTIVE_EMBED
     models = [_ACTIVE_EMBED] if _ACTIVE_EMBED else _embed_fallbacks()
     for model in models:
         try:
@@ -127,6 +136,7 @@ def embed_one(text: str, *, timeout: float = 8.0) -> list[float]:
             vec = list(out.get("embedding", []))
             if vec:
                 _ACTIVE_EMBED = model
+                _LAST_EMBED = (text, vec)
                 return vec
         except Exception:
             continue
