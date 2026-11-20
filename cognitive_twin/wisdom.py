@@ -62,12 +62,12 @@ class Belief:
 # person's ACTUAL convictions on top (ctwin wisdom), which take precedence.
 _SEED: list[dict[str, str]] = [
     # ── the original six ──────────────────────────────────────────────────────
-    {"text": "Worry is interest paid on a debt that may never come due — meet the day in front of you, not the one you're imagining.", "about": "worry anxiety fear future stress", "kind": "counsel"},
-    {"text": "Rest isn't the reward for finishing; it's part of how the work gets done. Stop before you're empty.", "about": "rest burnout tired overwork exhaustion", "kind": "lesson"},
-    {"text": "The people who love you want your presence, not your performance. Let them see the tired version too.", "about": "family love relationships belonging loneliness", "kind": "belief"},
-    {"text": "A thing done with care, however small, is never wasted. Hurry is what we regret.", "about": "work craft patience quality effort", "kind": "principle"},
-    {"text": "You don't have to have it all figured out to take the next kind step. Clarity usually comes after you move, not before.", "about": "decision stuck confused lost direction uncertain", "kind": "counsel"},
-    {"text": "Be gentle with yourself the way you'd be gentle with someone you love. You're allowed the same patience.", "about": "self-criticism failure mistake guilt shame", "kind": "belief"},
+    {"text": "Worry is interest paid on a debt that may never come due — meet the day in front of you, not the one you're imagining.", "about": "worry anxiety fear future stress catastrophising spiralling worst-case dread what-if overthinking tomorrow", "kind": "counsel"},
+    {"text": "Rest isn't the reward for finishing; it's part of how the work gets done. Stop before you're empty.", "about": "rest burnout tired overwork exhaustion drained break guilty-resting slow-down relax pushing-too-hard earned", "kind": "lesson"},
+    {"text": "The people who love you want your presence, not your performance. Let them see the tired version too.", "about": "family love relationships belonging loneliness performing proving prove yourself earn-love not-good-enough hide perform brave-face", "kind": "belief"},
+    {"text": "A thing done with care, however small, is never wasted. Hurry is what we regret.", "about": "work craft patience quality effort rushing hurry corners sloppy careful details slapdash speed-vs-quality", "kind": "principle"},
+    {"text": "You don't have to have it all figured out to take the next kind step. Clarity usually comes after you move, not before.", "about": "decision stuck confused lost direction uncertain paralysed frozen next-move figure-out whole-plan where-to-begin certainty", "kind": "counsel"},
+    {"text": "Be gentle with yourself the way you'd be gentle with someone you love. You're allowed the same patience.", "about": "self-criticism failure mistake harsh-on-myself beating-myself-up own-worst-critic cruel-to-myself cant-forgive-myself kind-to-self", "kind": "belief"},
     # ── grief, loss, change — the hardest moments a companion meets ────────────
     {"text": "Grief is love with nowhere to go for a while. It doesn't shrink; you grow around it, and the days make room.", "about": "grief loss death mourning missing someone bereavement", "kind": "counsel"},
     {"text": "You're allowed to let go of what you've outgrown without deciding it was a mistake. Some things are right for a season, not forever.", "about": "change letting go endings moving on transition closure", "kind": "belief"},
@@ -77,7 +77,7 @@ _SEED: list[dict[str, str]] = [
     {"text": "You are not behind. There's no real timetable for a life — only the one you borrowed from other people's fear.", "about": "comparison behind timeline age success progress enough", "kind": "belief"},
     {"text": "Your worth was never up for a vote. It isn't earned by output and it can't be lost on a bad day.", "about": "self-worth value worthless failure productivity enough", "kind": "belief"},
     # ── boundaries, people-pleasing, anger ────────────────────────────────────
-    {"text": "No is a complete sentence. You can be kind and still keep the gate — the two were never enemies.", "about": "boundaries no people-pleasing saying no overcommitted guilt", "kind": "counsel"},
+    {"text": "No is a complete sentence. You can be kind and still keep the gate — the two were never enemies.", "about": "boundaries saying-no people-pleasing overcommitted cant-say-no turn-people-down refuse guilty-saying-no selfish protect-my-time take-advantage", "kind": "counsel"},
     {"text": "Anger is often a guard standing in front of a hurt. Ask what it's protecting before you act on it.", "about": "anger frustration rage resentment conflict upset", "kind": "counsel"},
     {"text": "You can forgive someone and still not let them back in. Peace and access are two different gifts.", "about": "forgiveness resentment trust betrayal boundaries hurt", "kind": "belief"},
     # ── loneliness, connection, asking for help ───────────────────────────────

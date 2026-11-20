@@ -1004,6 +1004,13 @@ final class AppModel: ObservableObject {
     /// boundary and carry real length, so she never pauses in a wrong place.
     func speakStreamSentences(_ text: String, final: Bool) {
         let chars = Array(text)
+        // On the FINAL flush, the text is the cleaned full answer, which can be a
+        // little SHORTER or reworded vs. the last streamed partial we counted into
+        // streamSpokenUpTo — if so, the old index would skip or mis-slice the tail
+        // ("she doesn't speak all of it"). Clamp the index into this text, and if it
+        // already covers everything, there's genuinely nothing left; otherwise speak
+        // the true remainder so the last words are never dropped.
+        if final && streamSpokenUpTo > chars.count { streamSpokenUpTo = 0 }  // reworded → re-sync
         guard streamSpokenUpTo < chars.count else { return }
         var boundary = final ? chars.count : -1
         if !final {
