@@ -148,12 +148,31 @@ def read(text: str, *, apply_tone: bool = True) -> Felt:
     If you've set a tone dial (tone.py), it nudges the stance here — YOUR explicit
     control over how blunt/gentle she is, layered on top of her own read. Pass
     ``apply_tone=False`` to see her unbiased read (the UI uses this for 'her own')."""
+    # The external Human Brain Engine's net can, on some machines, stall the FIRST
+    # time it runs under a service (lazy model init) — which would hang the whole
+    # reply (the "doesn't reply to hi" bug). Her feeling must NEVER block the reply,
+    # so we run the engine with a short watchdog and fall back to the built-in read
+    # if it doesn't return promptly. The built-in is honest, pure-Python, instant.
+    _engine_result = None
     if _HAVE_ENGINE:
-        # Run the moment through the brain: parietal `topic` (from Vera's word cues)
-        # → limbic (felt state) → frontal (stance). One shared ruleset, no copy.
-        sig = Signal(text=text, situation=Situation(topic=_topic_for(text)))
-        _LIMBIC.process(sig)
-        _FRONTAL.process(sig)
+        import threading as _th
+        def _run_engine(out):
+            try:
+                sig = Signal(text=text, situation=Situation(topic=_topic_for(text)))
+                _LIMBIC.process(sig)
+                _FRONTAL.process(sig)
+                out.append(sig)
+            except Exception:
+                pass
+        _out: list = []
+        _t = _th.Thread(target=_run_engine, args=(_out,), daemon=True)
+        _t.start()
+        _t.join(timeout=2.5)   # her feeling is cheap; 2.5s is a generous ceiling
+        if _out:
+            _engine_result = _out[0]
+
+    if _engine_result is not None:
+        sig = _engine_result
         f = sig.feeling
         posture, _, rest = sig.stance.partition("/")
         lead = rest.split("/")[0] if rest else "engage"

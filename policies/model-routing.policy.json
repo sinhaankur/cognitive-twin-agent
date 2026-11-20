@@ -1,29 +1,29 @@
 {
   "version": "1.0.0",
   "objective": "Route requests across local models by latency, risk, and reasoning depth.",
-  "comment_one_llm": "ONE MODEL for everything. All keys point to vera-merged — our trained, warm companion model. Rationale: Vera is a COMPANION; a single model is simpler, lighter (only one model ever resident), and PREDICTABLE — no more two models loaded at once (~13 GB), no reply that's warm one turn and generic the next, no mixed behaviour. Every turn is the same her. To change the single model, change all four names below together (or set CTWIN_MODEL to pin one).",
+  "comment_one_llm": "ONE MODEL for everything. All keys point to vera-tuned \u2014 her own LoRA fine-tune (the canonical model per device_model.py). Rationale: Vera is a COMPANION; a single model is simpler, lighter (only one resident), and PREDICTABLE \u2014 every turn is the same her. To change it, change all four names below together (or set CTWIN_MODEL to pin one).",
   "models": {
     "primary": {
       "provider": "ollama",
-      "name": "vera-merged:latest",
+      "name": "vera-tuned:latest",
       "role": "default_reasoning",
       "targetLatencyMs": 2500
     },
     "fastFallback": {
       "provider": "ollama",
-      "name": "vera-merged:latest",
+      "name": "vera-tuned:latest",
       "role": "low_latency_and_battery",
       "targetLatencyMs": 2500
     },
     "deepPlanner": {
       "provider": "ollama",
-      "name": "vera-merged:latest",
+      "name": "vera-tuned:latest",
       "role": "high_complexity_planning",
       "targetLatencyMs": 2500
     },
     "companion": {
       "provider": "ollama",
-      "name": "vera-merged:latest",
+      "name": "vera-tuned:latest",
       "role": "emotional_companion",
       "targetLatencyMs": 2500
     }
@@ -31,17 +31,25 @@
   "routingRules": [
     {
       "id": "rule_companion",
-      "comment": "Emotional / check-in / companionship turns go to the warm Empatheia model — the 'companion' hat. Reasoning, planning, and VS Code drive never route here.",
+      "comment": "Emotional / check-in / companionship turns go to the warm Empatheia model \u2014 the 'companion' hat. Reasoning, planning, and VS Code drive never route here.",
       "when": {
-        "intent": ["companion", "emotional", "check_in", "reflect"]
+        "intent": [
+          "companion",
+          "emotional",
+          "check_in",
+          "reflect"
+        ]
       },
       "useModel": "companion"
     },
     {
       "id": "rule_low_power",
-      "comment": "Device constraints win first — a throttled/low-battery device must not run the big model.",
+      "comment": "Device constraints win first \u2014 a throttled/low-battery device must not run the big model.",
       "when": {
-        "deviceState": ["battery_saver", "thermal_throttle"]
+        "deviceState": [
+          "battery_saver",
+          "thermal_throttle"
+        ]
       },
       "useModel": "fastFallback"
     },
@@ -49,7 +57,9 @@
       "id": "rule_high_risk",
       "comment": "Any high-risk request gets the careful planner, regardless of how short it is.",
       "when": {
-        "riskLevel": ["high"]
+        "riskLevel": [
+          "high"
+        ]
       },
       "useModel": "deepPlanner"
     },
@@ -57,16 +67,24 @@
       "id": "rule_deep_path",
       "comment": "Complex planning, even at lower risk, benefits from the deeper model.",
       "when": {
-        "taskComplexity": ["high"]
+        "taskComplexity": [
+          "high"
+        ]
       },
       "useModel": "deepPlanner"
     },
     {
       "id": "rule_fast_path",
-      "comment": "Everything else — quick, low-risk asks — goes to the default model.",
+      "comment": "Everything else \u2014 quick, low-risk asks \u2014 goes to the default model.",
       "when": {
-        "taskComplexity": ["low", "medium"],
-        "riskLevel": ["low", "medium"]
+        "taskComplexity": [
+          "low",
+          "medium"
+        ],
+        "riskLevel": [
+          "low",
+          "medium"
+        ]
       },
       "useModel": "primary"
     },

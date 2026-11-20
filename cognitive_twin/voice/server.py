@@ -92,6 +92,41 @@ def _acquire_for_user(timeout: float = _USER_ASK_LOCK_WAIT):
     return _cm()
 
 
+# Hard ceiling for a single USER reply. Every component is milliseconds-to-seconds
+# on its own, but a lazy init or a wedged dependency once hung the WHOLE reply with
+# no way out (the "doesn't reply to hi" bug). So a turn runs in a worker thread with
+# a deadline: if it hasn't produced an answer by then, we return a warm line and
+# move on — the handler ALWAYS completes, so the lock is ALWAYS released and the
+# server can never wedge. The abandoned worker is a daemon; it dies with the process.
+_REPLY_DEADLINE = float(os.environ.get("CTWIN_REPLY_DEADLINE", "25"))
+
+
+class _ReplyTimeout(Exception):
+    """A single reply exceeded the hard deadline."""
+
+
+def _run_capture_bounded(agent, text, *, record, on_delta=None, deadline=None):
+    """Run _run_once_capture with a hard wall-clock deadline. Returns (answer, route)
+    or raises _ReplyTimeout — the caller answers warmly so a stuck turn never hangs."""
+    import threading
+    box: dict = {}
+
+    def _work():
+        try:
+            box["result"] = _run_once_capture(agent, text, record=record, on_delta=on_delta)
+        except BaseException as e:  # noqa: BLE001 - surfaced to the caller
+            box["error"] = e
+
+    t = threading.Thread(target=_work, daemon=True)
+    t.start()
+    t.join(timeout=deadline if deadline is not None else _REPLY_DEADLINE)
+    if t.is_alive():
+        raise _ReplyTimeout()
+    if "error" in box:
+        raise box["error"]
+    return box["result"]
+
+
 def _aware_greeting(agent) -> str | None:
     """Phrase a warm, PRESENT hello in her voice from REAL facts + light grounding.
 
@@ -965,11 +1000,18 @@ class _Handler(BaseHTTPRequestHandler):
                 # one generation at a time — a burst queues — BUT a user never
                 # waits forever behind background work: bail warmly after 30s.
                 with _acquire_for_user():
-                    answer, route = _run_once_capture(agent, text, record=record)
+                    answer, route = _run_capture_bounded(agent, text, record=record)
             except _Busy:
                 self._json(200, {
                     "answer": "Give me just a second — finishing a thought. Ask me again?",
                     "route": {"rule": "busy"}})
+                return
+            except _ReplyTimeout:
+                # a turn ran past the hard deadline — answer warmly instead of
+                # hanging, so the person is never left staring at a spinner.
+                self._json(200, {
+                    "answer": "Sorry — I got tangled up for a second there. Say that again?",
+                    "route": {"rule": "timeout"}})
                 return
             except Exception as e:  # never 500 the UI on an agent hiccup
                 self._json(200, {"answer": _llm_error_message(e), "route": None})
