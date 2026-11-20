@@ -668,8 +668,15 @@ class Agent:
                         used.append((name, args))
                         self._audit_tool(name, args, "run")
                         # let the model phrase the result warmly, in her voice —
-                        # feed it back rather than dumping the raw tool string.
-                        messages.append(ChatMessage(role="tool", content=result, tool_name=name))
+                        # feed it back rather than dumping the raw tool string. Small
+                        # models sometimes PARROT a terse status ("REVIEWING → READY")
+                        # verbatim, so we tell it explicitly to translate, never echo.
+                        messages.append(ChatMessage(
+                            role="tool", tool_name=name,
+                            content=(str(result) + "\n\n[Phrase this for the person in your "
+                                     "own warm, natural spoken words — never read raw labels, "
+                                     "arrows, codes, or ALL-CAPS states aloud. If it's empty "
+                                     "or nothing's there, just say so kindly.]")))
                     elif gate is _perm.Decision.ASK:
                         # needs the user's ok — surface that instead of the model
                         # asking "which amenity?"; the UI re-sends approved.
