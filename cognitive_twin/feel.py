@@ -234,14 +234,19 @@ def delivery(text: str) -> dict[str, float]:
     YOUR tone dial (tone.py) shifts warmth (and, via bluntness, pace) — the human
     holds the last knob on how she sounds."""
     f = read(text)
+    # A WIDER expressive range — the "Her" feeling. A flat 6% speed swing was
+    # imperceptible; open it up so a heavy moment genuinely slows and softens and a
+    # glad one lifts and quickens. Still bounded so she never races or crawls.
     speed, warmth, pause = 0.97, 0.5, 0.3
-    speed += (f.arousal - 0.4) * 0.12          # arousal quickens
+    speed += (f.arousal - 0.4) * 0.22          # arousal quickens (more pronounced)
     if f.is_heavy:
-        speed -= 0.05                          # slow down, let it breathe
-        warmth, pause = 0.85, 0.6
+        speed -= 0.12                          # noticeably slower — let it breathe
+        warmth, pause = 0.92, 0.75
     elif f.is_light:
-        warmth = 0.65
-    warmth = min(1.0, warmth + abs(f.valence) * 0.15)
+        speed += 0.06                          # a lift in the step when she's glad
+        warmth = 0.72
+    # valence pushes warmth up (either direction of real feeling reads as caring)
+    warmth = min(1.0, warmth + abs(f.valence) * 0.2)
 
     # speech accommodation: lean the voice toward how you speak (energy → pace,
     # warmth → warmth), bounded so she stays herself. Applied before your dial so
