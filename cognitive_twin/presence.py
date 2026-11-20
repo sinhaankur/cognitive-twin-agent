@@ -92,6 +92,13 @@ def update(sig: dict[str, Any]) -> None:
         "trend_mood": _signed(sig.get("trend_mood")),
         "trend_tension": _signed(sig.get("trend_tension")),
         "trend_energy": _signed(sig.get("trend_energy")),
+        # GAZE — where the eyes actually are (coarse zone), whether that's on the
+        # Mac at all, and how long it's been held. Richer than the binary
+        # "attending": she can tell you're WITH the screen vs. glancing at a second
+        # monitor vs. down at your phone, and wait for you accordingly.
+        "gaze": (sig.get("gaze") if isinstance(sig.get("gaze"), str) and sig.get("gaze") else None),
+        "gaze_on_screen": (bool(sig["gaze_on_screen"]) if sig.get("gaze_on_screen") is not None else None),
+        "gaze_held_s": (float(sig["gaze_held_s"]) if isinstance(sig.get("gaze_held_s"), (int, float)) else None),
         "source": sig.get("source") if sig.get("source") in ("face", "flow") else "flow",
         "ts": time.time(),
     }
@@ -363,7 +370,23 @@ def _face_context() -> str:
         bits.append("mouth downturned")
     if (c.get("blink_rate") or 0) >= 28:
         bits.append("blinking fast")
-    if c.get("attending") is False:
+    # GAZE — prefer the richer zone read over the binary "attending". Tells her
+    # WHERE your eyes are + for how long, so she can be present without hovering.
+    _gaze = c.get("gaze")
+    _held = c.get("gaze_held_s") or 0
+    _GAZE_PHRASE = {
+        "atScreen": "looking right at the screen", "screenTop": "looking up the screen",
+        "screenBottom": "looking down the screen", "offLeft": "glancing off to the left",
+        "offRight": "glancing off to the right", "down": "looking down (phone or desk)",
+        "away": "looking away from the screen",
+    }
+    if _gaze in _GAZE_PHRASE:
+        phrase = _GAZE_PHRASE[_gaze]
+        # once they've been away a while, say so — that's when she should hold back
+        if not c.get("gaze_on_screen", True) and _held >= 4:
+            phrase += f" (for ~{int(_held)}s)"
+        bits.append(phrase)
+    elif c.get("attending") is False:
         bits.append("looking away from the screen")
     if c.get("gesture") == "nod":
         bits.append("just nodded")

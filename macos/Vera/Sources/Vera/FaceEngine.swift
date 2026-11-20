@@ -17,6 +17,36 @@ import Vision
 ///
 /// Threading: all vision + signal state lives on `queue`; only the published
 /// draw-ready values hop to the main thread.
+
+/// Where your eyes are, coarsely — the attention engine's output. Derived from
+/// head pose + pupil offset, so it reads real GAZE, not just whether your head is
+/// pointed at the camera. Deliberately coarse zones (not pixel coordinates): a
+/// webcam can't do eye-tracking-grade precision, so we report honest buckets.
+enum GazeZone: String {
+    case atScreen        // looking at the Mac — she has your attention
+    case screenTop       // upper part of the screen
+    case screenBottom    // lower part (reading / the dock / notes)
+    case offLeft         // turned left — likely another monitor / someone
+    case offRight        // turned right — likely another monitor / someone
+    case down            // looking down — often a phone or notes on the desk
+    case away            // not looking at the Mac at all
+
+    /// A plain, present-tense phrase for the status line / the brain context.
+    var phrase: String {
+        switch self {
+        case .atScreen:     return "looking at the screen"
+        case .screenTop:    return "looking up the screen"
+        case .screenBottom: return "looking down the screen"
+        case .offLeft:      return "glancing to the left"
+        case .offRight:     return "glancing to the right"
+        case .down:         return "looking down (phone or desk)"
+        case .away:         return "looking away"
+        }
+    }
+    /// True only when your attention is actually on the Mac.
+    var onScreen: Bool { self == .atScreen || self == .screenTop || self == .screenBottom }
+}
+
 final class FaceEngine: NSObject, ObservableObject {
     /// One shared eye for the whole app. The EyeView preview drives it (start/stop
     /// with the window), and the voice loop READS its room/addressee signal
@@ -47,6 +77,15 @@ final class FaceEngine: NSObject, ObservableObject {
     @Published var readFrown = 0.0              // mouth downturned (measured, not "sad")
     @Published var readBlink = 0.0              // blinks per minute
     @Published var readAttending = true
+    // ---- GAZE / ATTENTION ENGINE ---------------------------------------------
+    // Beyond the binary "attending", a real read of WHERE you're looking: the
+    // combined head-pose + pupil-offset gaze, mapped to a coarse zone, and how
+    // long you've held it. Lets her know you're with the Mac vs. glancing at a
+    // second screen vs. down at your phone vs. away — and wait for you accordingly.
+    @Published var gazeZone: GazeZone = .atScreen
+    @Published var gazeHeldSeconds = 0.0        // how long the current zone has held
+    @Published var gazeX = 0.0                  // -1 (left) … +1 (right), combined
+    @Published var gazeY = 0.0                  // -1 (down) … +1 (up), combined
     @Published var facePresent = false
     @Published var lowLight = false             // dim room: reads steadier, says so
     // ---- READING THE ROOM -----------------------------------------------------
@@ -83,6 +122,10 @@ final class FaceEngine: NSObject, ObservableObject {
     private static let bufferOrientation: CGImagePropertyOrientation = .up
 
     // ---- state below is touched ONLY on `queue` -----------------------------
+    // gaze engine: smoothed gaze vector + the current zone and how long it's held
+    private var gX = 0.0, gY = 0.0
+    private var gazeHeld = 0.0
+    private var gazeZoneRaw: GazeZone = .atScreen
     // rolling histories (~1.5 s at 30 fps), same signal logic as the page's flow.js
     private var deltas: [(dx: CGFloat, dy: CGFloat)] = []
     private var lastCenter: CGPoint?
@@ -270,6 +313,30 @@ final class FaceEngine: NSObject, ObservableObject {
             CGPoint(x: box.minX + $0.x * box.width, y: box.minY + $0.y * box.height)
         }
     }
+    /// One normalized landmark point mapped into image space (for the single-point
+    /// pupil regions). Mirrors imagePoints for a lone CGPoint.
+    private static func imagePoint(_ p: CGPoint, _ box: CGRect) -> CGPoint {
+        CGPoint(x: box.minX + p.x * box.width, y: box.minY + p.y * box.height)
+    }
+
+    /// Bucket a smoothed gaze vector (x: −left…+right, y: −down…+up) into a coarse
+    /// zone. Thresholds are deliberately forgiving — a webcam's gaze estimate is
+    /// noisy, so we keep a wide "at screen" center and only call "away" on a real
+    /// turn. Honest buckets over false precision.
+    private static func zoneFor(x: Double, y: Double, facePresent: Bool) -> GazeZone {
+        guard facePresent else { return .away }
+        let ax = abs(x), ay = abs(y)
+        // a clear horizontal turn dominates — that's another monitor / someone
+        if x < -0.9 && ax > ay { return .offLeft }
+        if x >  0.9 && ax > ay { return .offRight }
+        // strong downward → phone/desk; strong up+turn → away
+        if y < -0.9 { return .down }
+        if ay > 1.2 || ax > 1.2 { return .away }
+        // on the screen — refine top/bottom only when it's pronounced
+        if y >  0.45 { return .screenTop }
+        if y < -0.45 { return .screenBottom }
+        return .atScreen
+    }
 
     // ---- per-frame reading (on `queue`) ---------------------------------------
 
@@ -347,6 +414,35 @@ final class FaceEngine: NSObject, ObservableObject {
         let proxy = nose.isEmpty ? 0 : Double((Self.centroid(nose).x - mid.x) / iod)
         let yaw = face.yaw?.doubleValue ?? proxy * 2
         attending = abs(yaw) < 0.35
+
+        // ── GAZE: head pose + pupil offset → where the eyes actually point ──────
+        // Head pose tells gross direction; the PUPIL's position inside each eye
+        // tells fine eye direction (you can face the Mac but glance at a 2nd
+        // monitor). Combine both into a gaze vector, smooth it, then bucket it.
+        let pitch = face.pitch?.doubleValue ?? 0            // up(+)/down(−) head tilt
+        // pupil offset within the eye box, in units of eye width, −1(left)…+1(right)
+        // and −1(down)…+1(up). Vision gives leftPupil/rightPupil as single points.
+        func pupilOffset(_ eye: [CGPoint], _ pupil: [CGPoint]) -> (x: Double, y: Double)? {
+            guard eye.count >= 2, let p = pupil.first.map({ Self.imagePoint($0, box) }) else { return nil }
+            let xs = eye.map(\.x), ys = eye.map(\.y)
+            let w = max(0.001, xs.max()! - xs.min()!), h = max(0.001, ys.max()! - ys.min()!)
+            let cx = (xs.max()! + xs.min()!) / 2, cy = (ys.max()! + ys.min()!) / 2
+            return (Double((p.x - cx) / w) * 2, Double((p.y - cy) / h) * 2)
+        }
+        let lPup = Self.imagePoints(marks.leftPupil, box)
+        let rPup = Self.imagePoints(marks.rightPupil, box)
+        var eyeX = 0.0, eyeY = 0.0, nEye = 0.0
+        if let o = pupilOffset(lEye, lPup) { eyeX += o.x; eyeY += o.y; nEye += 1 }
+        if let o = pupilOffset(rEye, rPup) { eyeX += o.x; eyeY += o.y; nEye += 1 }
+        if nEye > 0 { eyeX /= nEye; eyeY /= nEye }
+        // Combined gaze: head pose (weighted, it's the big signal) + pupil nudge.
+        // Scaled so a comfortable screen-glance stays within ±1.
+        let rawGX = max(-2, min(2, yaw * 2.2 + eyeX * 0.9))
+        let rawGY = max(-2, min(2, pitch * 2.2 + eyeY * 0.9))
+        gX = gX * 0.6 + rawGX * 0.4          // smooth (reduce webcam jitter)
+        gY = gY * 0.6 + rawGY * 0.4
+        let zone = Self.zoneFor(x: gX, y: gY, facePresent: true)
+        if zone == gazeZoneRaw { gazeHeld += 1.0 / 30.0 } else { gazeHeld = 0; gazeZoneRaw = zone }
 
         // motion: face-center deltas, same nod/shake/lean logic as flow.js
         let center = CGPoint(x: box.midX, y: box.midY)
@@ -486,6 +582,7 @@ final class FaceEngine: NSObject, ObservableObject {
         // snapshot the queue-side trend so the UI mirror is set on MAIN (never
         // publish an @Published from this background queue — that hangs SwiftUI).
         let tm = qTrendMood, tt = qTrendTension, te = qTrendEnergy, ml = qMoodLine
+        let gz = gazeZoneRaw, gh = gazeHeld, ggx = gX, ggy = gY   // gaze snapshot
         DispatchQueue.main.async {
             self.dots = out
             self.captions = caps
@@ -494,6 +591,8 @@ final class FaceEngine: NSObject, ObservableObject {
             self.readBlink = m.3; self.readAttending = m.4
             self.lowLight = m.5
             self.facePresent = true
+            self.gazeZone = gz; self.gazeHeldSeconds = gh
+            self.gazeX = ggx; self.gazeY = ggy
             self.trendMood = tm; self.trendTension = tt
             self.trendEnergy = te; self.moodLine = ml
             self.frameCenter = fc; self.frameSpan = fs    // let the preview zoom to match
@@ -582,6 +681,13 @@ final class FaceEngine: NSObject, ObservableObject {
                 }
             }
             body["attending"] = attending
+            // GAZE — where your eyes actually are, so her brain knows you're with
+            // the Mac vs. glancing at a second screen vs. down at your phone, and
+            // for how long. She can hold back when you look away and lean in when
+            // you return. Coarse + honest (a webcam isn't an eye-tracker).
+            body["gaze"] = gazeZoneRaw.rawValue
+            body["gaze_on_screen"] = gazeZoneRaw.onScreen
+            body["gaze_held_s"] = (gazeHeld * 10).rounded() / 10
         }
         // Reading the room — always sent (even with no primary face, there may
         // be people in view). Lets the server/agent know the social context so a
