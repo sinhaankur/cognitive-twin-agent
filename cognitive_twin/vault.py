@@ -103,9 +103,27 @@ def _pad16(b: bytes) -> bytes:
     return b"\x00" * ((16 - len(b) % 16) % 16)
 
 
+# FAST PATH: the stdlib `cryptography` package ships a native (C/OpenSSL)
+# ChaCha20-Poly1305 that is byte-for-byte compatible with the pure-Python
+# implementation below (same RFC 8439 construction, same nonce(12)+ct+tag(16)
+# layout). The pure-Python cipher is correct but SLOW — decrypting a few-hundred-KB
+# sealed index in Python pegs a core for seconds, which both STALLED the first
+# reply (several sealed stores decrypt per turn) and taxed the machine. When the
+# native cipher is present we use it (100–1000× faster, light on CPU); otherwise we
+# fall back to the pure-Python path so the vault still works with zero dependencies.
+try:
+    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305 as _NativeAEAD
+    _HAVE_NATIVE = True
+except Exception:  # noqa: BLE001 — no cryptography wheel → pure-Python path
+    _HAVE_NATIVE = False
+
+
 def seal(key: bytes, plaintext: bytes, aad: bytes = _AAD) -> bytes:
     """nonce(12) + ciphertext + tag(16) — a fresh random nonce every time."""
     nonce = secrets.token_bytes(12)
+    if _HAVE_NATIVE:
+        # native encrypt returns ct+tag; prepend the nonce for our on-disk layout.
+        return nonce + _NativeAEAD(key).encrypt(nonce, plaintext, aad)
     ct = _chacha20(key, 1, nonce, plaintext)
     otk = _block(key, 0, nonce)[:32]
     mac = _poly1305(otk, aad + _pad16(aad) + ct + _pad16(ct)
@@ -114,6 +132,12 @@ def seal(key: bytes, plaintext: bytes, aad: bytes = _AAD) -> bytes:
 
 
 def open_sealed(key: bytes, blob: bytes, aad: bytes = _AAD) -> bytes:
+    if _HAVE_NATIVE:
+        nonce, ct_tag = blob[:12], blob[12:]
+        try:
+            return _NativeAEAD(key).decrypt(nonce, ct_tag, aad)
+        except Exception as e:  # noqa: BLE001 — surface as the vault's own error
+            raise ValueError("vault: authentication failed (wrong key or tampered data)") from e
     nonce, ct, tag = blob[:12], blob[12:-16], blob[-16:]
     otk = _block(key, 0, nonce)[:32]
     mac = _poly1305(otk, aad + _pad16(aad) + ct + _pad16(ct)
@@ -203,12 +227,26 @@ def _derived_key() -> bytes:
                                salt, 200_000)
 
 
+import threading as _threading
+_key_lock = _threading.Lock()
+
+
 def key() -> bytes:
     """The at-rest key: Keychain-held (device+account bound by the OS) when
-    possible, derived from device identity otherwise. Cached per process."""
+    possible, derived from device identity otherwise. Cached per process.
+
+    THREAD-SAFE: the fetch (a `security` Keychain subprocess) must happen exactly
+    ONCE. Without the lock, a burst of concurrent sealed reads (the threaded voice
+    server builds its prompt from several sealed stores at once) each spawned the
+    Keychain subprocess simultaneously — and concurrent `security` calls under a
+    launchd service contend and stall, which froze the whole reply. The lock makes
+    the first caller fetch and the rest reuse the cached key instantly."""
     global _key_cache
-    if _key_cache is None:
-        _key_cache = _keychain_read() or _keychain_create() or _derived_key()
+    if _key_cache is not None:
+        return _key_cache
+    with _key_lock:
+        if _key_cache is None:   # re-check inside the lock
+            _key_cache = _keychain_read() or _keychain_create() or _derived_key()
     return _key_cache
 
 

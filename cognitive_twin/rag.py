@@ -79,22 +79,40 @@ def _post(url: str, payload: dict, timeout: float = 60.0) -> dict:
         return json.loads(r.read().decode("utf-8") or "{}")
 
 
-def embed_one(text: str) -> list[float]:
+def embed_one(text: str, *, timeout: float = 8.0) -> list[float]:
     text = (text or "").strip()
     if not text:
         return []
+    # Short timeout on a PER-TURN embedding call. Embedding runs on EVERY reply;
+    # a cold embedding-model load (or Ollama busy with the chat model) must never
+    # hang the whole reply — the caller already falls back to keyword retrieval.
     out = _post(_ollama_host() + "/api/embeddings",
-                {"model": _embed_model(), "prompt": text})
+                {"model": _embed_model(), "prompt": text}, timeout=timeout)
     return list(out.get("embedding", []))
+
+
+_EMBED_OK: bool | None = None  # cached availability (probed at most once per run)
 
 
 def embeddings_available() -> bool:
     """True iff the local embedding model answers with a real vector. Decides
-    semantic vs keyword retrieval — never a hard failure either way."""
-    try:
-        return len(embed_one("probe")) > 0
-    except Exception:
+    semantic vs keyword retrieval — never a hard failure either way.
+
+    The probe result is CACHED for the process: a cold embed-model load costs a
+    second or two, and re-probing it on every turn (several retrievals per reply)
+    needlessly reloaded the embedder and taxed the machine. One probe, then reuse.
+    Opt OUT with CTWIN_SEMANTIC=0 for the lightest possible footprint (keyword
+    only, zero embedding-model load)."""
+    global _EMBED_OK
+    if os.environ.get("CTWIN_SEMANTIC", "").strip() in {"0", "false", "no", "off"}:
         return False
+    if _EMBED_OK is not None:
+        return _EMBED_OK
+    try:
+        _EMBED_OK = len(embed_one("probe")) > 0
+    except Exception:
+        _EMBED_OK = False
+    return _EMBED_OK
 
 
 # ---- ingest: folder -> citable chunks --------------------------------------

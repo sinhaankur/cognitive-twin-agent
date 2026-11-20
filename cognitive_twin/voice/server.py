@@ -23,6 +23,16 @@ import json
 import os
 import threading
 import webbrowser
+
+# Diagnostic: on SIGUSR1, dump EVERY thread's Python traceback to stderr (the
+# brain.err.log). Lets us see exactly where a stuck reply thread is frozen — no
+# root, no py-spy. Harmless in production (only fires on an explicit signal).
+try:
+    import faulthandler as _fh
+    import signal as _sig
+    _fh.register(_sig.SIGUSR1, all_threads=True)
+except Exception:
+    pass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -1403,6 +1413,51 @@ class _Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": f"missing {name}"})
 
 
+def _preimport_hot_modules() -> None:
+    """Import, ONCE in the main thread at startup, every module that ``agent.run``
+    pulls in LAZILY per turn (``from .. import feel`` etc.).
+
+    Why this is load-bearing: ``feel`` imports the external Human Brain Engine
+    (``from brain import …``), which is a slow, multi-file import. The FIRST turn
+    triggered that import INSIDE a request-handler thread — and if a background
+    warm thread was importing the same package at that moment, the two threads
+    deadlocked on Python's import lock: the request thread froze forever in
+    ``importlib`` reading a module file, holding the LLM lock, wedging every reply.
+    (It reproduced ONLY under the live threaded server — never standalone — which
+    is exactly the signature of an import-lock race.) Doing all these imports here,
+    serially, before a single request is served, means every later ``from .. import``
+    is an instant cache hit with no lock contention. Fail-soft: a missing optional
+    module (e.g. the external brain) just isn't pre-imported; its own try/except
+    handles absence as before."""
+    _hot = (
+        "feel", "life_story", "wisdom", "mental_model", "life_memory",
+        "brain_flow", "mirror", "proactive", "soul", "rhythms", "personality",
+        "voice_profile", "keepsake", "photos", "health", "task_chain", "mood",
+        "shadow", "presence", "activity", "crisis", "prompt_guard",
+    )
+    import importlib
+    for _m in _hot:
+        try:
+            importlib.import_module(f"..{_m}", __package__)
+        except Exception:  # noqa: BLE001 — optional/absent modules handle themselves
+            pass
+    # The external Human Brain Engine (brain) is the slow one feel pulls in; import
+    # it directly too so it's fully resident before any turn.
+    try:
+        import brain  # noqa: F401
+        import brain.regions  # noqa: F401
+    except Exception:  # noqa: BLE001 — absent → feel uses its built-in fallback
+        pass
+    # Fetch the at-rest sealing KEY once now (main thread), so the first turn's
+    # sealed reads don't each spawn a Keychain `security` subprocess concurrently
+    # (which stalled under the service). After this it's cached for the process.
+    try:
+        from .. import vault
+        vault.key()
+    except Exception:  # noqa: BLE001 — keyless/derived path handles itself
+        pass
+
+
 def make_server(port: int = DEFAULT_PORT, model: str | None = None) -> ThreadingHTTPServer:
     """Build the HTTP server with a shared, routing-enabled agent attached."""
     # Bind address follows the PRIVACY SWITCH, not a hard-coded host: Private →
@@ -1414,6 +1469,7 @@ def make_server(port: int = DEFAULT_PORT, model: str | None = None) -> Threading
     # interactive_confirm=False: the GUI has no terminal y/N; we use _voice_confirm.
     httpd.agent = build_agent(model, route=True, interactive_confirm=False)  # type: ignore[attr-defined]
     control.set_confirm(_voice_confirm)  # ensure our confirm wins after build
+    _preimport_hot_modules()  # MUST run before serving — see the function's note
     _warm_voice_clone()  # preload engine detection + the XTTS model in the background
     _warm_kokoro()       # preload the neural voice so the FIRST reply isn't a 15s wait
     _warm_stt()          # preload Whisper so the FIRST spoken turn isn't a 20–30s load
