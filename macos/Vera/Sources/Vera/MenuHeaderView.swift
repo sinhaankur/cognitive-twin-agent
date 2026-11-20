@@ -19,10 +19,22 @@ struct MenuHeaderView: View {
         Host.current().localizedName ?? "This Mac"
     }
 
-    // Her presence colour: calm gold when present, dimmed when paused/private.
-    private var dotColor: Color {
-        if model.activityPrivate { return VeraTokens.warn }
-        return model.serverUp ? VeraTokens.accent : VeraTokens.warn
+    // Her presence colour, Tailscale-style: the accent when she's up + present,
+    // muted when private, warn while still waking. Used for BOTH the dot and the
+    // status word, so the one line reads its state at a glance (Tailscale's green
+    // "Connected" is the model — the status colour IS the status).
+    private var statusColor: Color {
+        if !model.serverUp { return VeraTokens.warn }     // still waking her mind
+        if model.activityPrivate { return VeraTokens.muted }  // private, at rest
+        return VeraTokens.accent                           // here with you
+    }
+
+    // One honest status WORD — crisp, present-tense, never a frozen blank. Mirrors
+    // Tailscale's single "Connected" line.
+    private var statusText: String {
+        if !model.serverUp { return "waking…" }
+        if model.activityPrivate { return "private — this Mac only" }
+        return model.statusLine.isEmpty ? "here with you" : model.statusLine
     }
 
     var body: some View {
@@ -34,11 +46,10 @@ struct MenuHeaderView: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.primary)
                     HStack(spacing: 5) {
-                        Circle().fill(dotColor).frame(width: 6, height: 6)
-                        Text(model.activityPrivate ? "private — not observing"
-                                                   : model.statusLine)
+                        Circle().fill(statusColor).frame(width: 6, height: 6)
+                        Text(statusText)
                             .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(statusColor)   // the status colour IS the status
                             .lineLimit(1)
                     }
                 }

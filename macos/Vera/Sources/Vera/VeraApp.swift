@@ -522,11 +522,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         privacyItem?.state = model.activityPrivate ? .on : .off
         learnItem?.state = model.activityEnabled ? .on : .off
         syncFormChecks()
-        // when private, dim/slash the menu-bar icon so you can SEE she's paused
+        // The menu-bar GLYPH conveys her state at a glance (Tailscale's icon-level
+        // status), kept as a native template so it adapts to light/dark + the menu
+        // bar automatically: waking → a hollow ring, present → the filled orb,
+        // private → the moon. One look tells you what she's doing.
         if let b = statusItem?.button {
-            let sym = model.activityPrivate ? "moon.zzz.fill" : "circle.hexagongrid.fill"
+            let sym: String
+            if !model.serverUp { sym = "circle.dotted" }          // waking her mind
+            else if model.activityPrivate { sym = "moon.zzz.fill" } // private, at rest
+            else { sym = "circle.hexagongrid.fill" }               // here with you
             b.image = NSImage(systemSymbolName: sym, accessibilityDescription: model.assistantName)
             b.image?.isTemplate = true
+            b.toolTip = model.serverUp
+                ? (model.activityPrivate ? "\(model.assistantName) · private" : "\(model.assistantName) · here")
+                : "\(model.assistantName) · waking…"
         }
     }
 
