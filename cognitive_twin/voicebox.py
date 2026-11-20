@@ -121,3 +121,38 @@ def breathe(text: str, tone: Tone) -> str:
     if tone.pause >= 0.8:
         t = t.replace(" — ", "… ").replace(" - ", "… ")
     return t
+
+
+# ── laughs & breath texture (the truest "Her" grain) ──────────────────────────
+# Kokoro voices soft human tokens naturally ("Ha,", "Mm,", "Aw,", "Heh,"). Used
+# SPARINGLY and only when the moment genuinely fits — a warm laugh when she's
+# delighted, a soft breath when it's tender — so it reads as real, never sprinkled.
+# She already leads many replies with "Oh"/"Hey"; we only add a beat when she
+# hasn't, and never on a heavy/serious tone (a laugh there would be jarring).
+_ALREADY_LED = re.compile(r"^(oh|hey|mm+|aw+|ha+|heh|well|ooh|yay|haha)\b[,!. ]", re.IGNORECASE)
+_TEXTURE: dict[str, tuple[str, ...]] = {
+    # a soft laugh / glad breath — only when she's genuinely lifted
+    "happy":    ("Oh, ", "Aw, ", "Ha, "),
+    "excited":  ("Oh, ", "Yay, ", "Ha, "),
+    "grateful": ("Aw, ", "Oh, "),
+    # a warm, intimate breath for tender moments (never a laugh here)
+    "tender":   ("Mm, ", "Oh, "),
+}
+
+
+def texture(text: str, tone: Tone, *, allow: bool = True) -> str:
+    """Optionally lead a reply with a soft, fitting human beat (a warm 'Aw,' when
+    she's touched, an 'Oh,' of delight) — the little grain that makes a voice feel
+    alive. Only when the tone fits, she hasn't already led with one, and allow is
+    set. Deterministic choice (hash of text) so a given line is stable, not random."""
+    if not allow or not text:
+        return text
+    t = text.lstrip()
+    if _ALREADY_LED.match(t):
+        return text
+    opts = _TEXTURE.get(tone.name)
+    if not opts:
+        return text
+    lead = opts[hash(t) % len(opts)]
+    # lower-case the first letter so "Aw, " + "That's lovely" reads naturally
+    return lead + (t[0].lower() + t[1:] if t[:1].isupper() and not t[:2].isupper() else t)

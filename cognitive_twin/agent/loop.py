@@ -70,6 +70,25 @@ _GRIEF_FALLBACK = ("I'm so sorry. That's a real loss, and missing them makes "
                    "Tell me about them, if you'd like.")
 
 
+def _add_texture(user_input: str, answer: str) -> str:
+    """Add a soft human beat (a warm 'Aw,'/'Oh,' of delight, a tender 'Mm,') to a
+    reply when the moment is genuinely light or tender — the little grain that makes
+    her voice feel alive. NEVER on a heavy/distressed moment: if the USER'S message
+    is sad/stressed/grieving/angry, she stays plain and present, no laugh. Keyed on
+    HER reply's tone so a glad reply gets a glad beat."""
+    try:
+        from .. import voicebox as _vb
+        # if the person is in a hard place, no texture at all — just be with them
+        user_tone = _vb.detect(user_input)
+        if user_tone in ("grief", "sad", "stressed", "anxious", "upset", "angry", "tired"):
+            return answer
+        reply_tone = _vb.tone_for(answer)
+        return _vb.texture(answer, reply_tone, allow=reply_tone.name in
+                           ("happy", "excited", "grateful", "tender"))
+    except Exception:
+        return answer
+
+
 def _grief_safeguard(user_input: str, answer: str) -> str:
     """When the user is grieving, never let a tone-deaf reply through. If the model
     answered a loss with something cheerful/trivial, swap in a tender line."""
@@ -730,6 +749,7 @@ class Agent:
                 answer = reply.content.strip()
                 answer = _deflower(answer)   # strip invented "I read a poem…" scenery
                 answer = _grief_safeguard(user_input, answer)   # never tone-deaf to loss
+                answer = _add_texture(user_input, answer)   # a soft laugh/breath when it fits
                 # remember this exchange so the NEXT turn has context (follow-ups,
                 # "it", "that", "now try"). Trimmed to history_turns pairs.
                 if record and answer:
