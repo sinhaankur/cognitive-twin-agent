@@ -32,6 +32,19 @@ def _keep_alive() -> str:
         return "5m"
 
 
+def _num_predict() -> int:
+    """Max tokens in a reply. Default 220 ≈ a few warm spoken sentences — tight for
+    the ear and quicker to generate. CTWIN_NUM_PREDICT overrides (−1 = uncapped)."""
+    import os
+    raw = os.environ.get("CTWIN_NUM_PREDICT", "").strip()
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            pass
+    return 220
+
+
 @dataclass
 class ChatMessage:
     role: str                       # "system" | "user" | "assistant" | "tool"
@@ -104,7 +117,13 @@ class OllamaClient:
             "model": self.model,
             "messages": [m.to_api() for m in messages],
             "stream": False,
-            "options": {"temperature": self.temperature},
+            # num_predict caps the reply length. Vera is a SPOKEN companion — her
+            # replies should be a couple of warm sentences, not an essay. Capping
+            # keeps them tight (better to listen to) AND faster (generation is
+            # token-by-token, so fewer tokens = quicker). Generous enough for a real
+            # thought; override per machine with CTWIN_NUM_PREDICT.
+            "options": {"temperature": self.temperature,
+                        "num_predict": _num_predict()},
             # Don't leave a big model resident after the reply — unload it when
             # idle so the machine breathes (device_model.KEEP_ALIVE, default 5m).
             "keep_alive": _keep_alive(),
