@@ -51,10 +51,13 @@
   <key>StandardErrorPath</key>
   <string>__LOGDIR__/brain.err.log</string>
 
-  <!-- a background service: nice to the machine so it's a catalyst, not a drag -->
+  <!-- INTERACTIVE, not Background: Vera is a companion you talk to in real time,
+       so she must get responsive CPU scheduling. As a Background/LowPriorityIO
+       task she was STARVED whenever the machine was busy (Chrome, Spotlight) —
+       replies timed out at 20-35s. Interactive tells macOS she's foreground-class,
+       so a busy machine no longer makes her hang. (She's still one small process;
+       this is about RESPONSIVENESS, not hogging.) -->
   <key>ProcessType</key>
-  <string>Background</string>
-  <key>LowPriorityIO</key>
-  <true/>
+  <string>Interactive</string>
 </dict>
 </plist>
