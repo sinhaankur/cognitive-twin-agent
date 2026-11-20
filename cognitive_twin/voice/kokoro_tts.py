@@ -281,9 +281,20 @@ _EMOJI_RE = re.compile(
 
 def _speakable(text: str) -> str:
     """What she should actually SAY: the words, without emoji/pictographs that the
-    engine would otherwise read aloud by their Unicode name. Also drops any leftover
-    symbol-category codepoints, then tidies whitespace."""
+    engine would otherwise read aloud by their Unicode name, and without MARKDOWN
+    formatting marks (**bold**, *italic*, `code`, # headers, [links]) which a small
+    model sometimes emits despite the 'no markdown' rule — spoken literally they
+    sound wrong ('star star you'). Strip the marks, keep the words, tidy whitespace."""
     text = _EMOJI_RE.sub("", text or "")
+    # strip markdown emphasis/structure, keeping the inner words
+    import re as _re
+    text = _re.sub(r"\*\*(.+?)\*\*", r"\1", text)      # **bold**
+    text = _re.sub(r"(?<!\w)\*(.+?)\*(?!\w)", r"\1", text)  # *italic*
+    text = _re.sub(r"(?<!\w)_(.+?)_(?!\w)", r"\1", text)    # _italic_
+    text = _re.sub(r"`([^`]+)`", r"\1", text)          # `code`
+    text = _re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)   # [text](url) → text
+    text = _re.sub(r"^#{1,6}\s*", "", text, flags=_re.MULTILINE)  # # headers
+    text = text.replace("**", "").replace("*", "").replace("`", "")  # any stragglers
     # belt-and-braces: remove any remaining 'So' (Symbol, other) codepoints
     text = "".join(ch for ch in text if unicodedata.category(ch) != "So")
     return " ".join(text.split())

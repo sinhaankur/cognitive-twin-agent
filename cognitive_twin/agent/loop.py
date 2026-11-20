@@ -511,13 +511,34 @@ class Agent:
             # mental model + RAG life-memory) → frontal (stance, folded into feel) →
             # cortex (the LLM below, which writes WITHIN this, never as its source).
             # All deterministic + on-device; the model is the last, smallest step.
-            try:
-                from .. import brain_flow as _brain
-                flow = _brain.compose(user_input).as_prompt()
-                if flow:
-                    parts.append(flow)
-            except Exception:
-                pass
+            # RECENCY GATE: when the user asks about the IMMEDIATE conversation
+            # ("what did I just say / tell you", "the name I just mentioned"), the
+            # last few turns above are the ONLY truth — recalled/retrieved memories
+            # are about OTHER times and must not be mistaken for right-now. Without
+            # this the small model pulled a stale RAG hit ("Pixel"/"1729") and
+            # presented it as what you just said. So on a recency question we skip
+            # the retrieved-memory block and tell her to read the conversation.
+            _recency = bool(_re.search(
+                r"\b(just (said|told|mentioned|asked)|did i (just )?(say|tell|mention)"
+                r"|what.{0,12}\bname\b.{0,20}\b(said|told|mentioned|gave)"
+                r"|a (moment|second|minute) ago|earlier (just )?now)\b",
+                user_input, _re.IGNORECASE))
+            if _recency:
+                parts.append(
+                    "# RIGHT-NOW RECALL\n"
+                    "They're asking about THIS conversation — the messages just above "
+                    "are the only source. Read what they actually said in the recent "
+                    "turns and answer from that. Do NOT pull a name, number or fact "
+                    "from any older memory, and if it isn't in the recent messages, "
+                    "say you're not sure rather than guessing.")
+            else:
+                try:
+                    from .. import brain_flow as _brain
+                    flow = _brain.compose(user_input).as_prompt()
+                    if flow:
+                        parts.append(flow)
+                except Exception:
+                    pass
             # what's on their plate today (the day shadow — local task ledger)
             try:
                 from .. import shadow as _shadow
