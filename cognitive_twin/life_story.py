@@ -204,6 +204,13 @@ def save(ls: LifeStory) -> None:
         security.write_state(_file(), asdict(ls))
     except Exception:
         pass
+    # INHERITANCE CORE: a life-story memory is the irreplaceable part — back it up
+    # to a durable, off-Mac place the moment it's added (debounced, fail-soft).
+    try:
+        from . import backup
+        backup.maybe_run_after_capture()
+    except Exception:
+        pass
 
 
 def to_prompt(include_sayings: bool = True) -> str:

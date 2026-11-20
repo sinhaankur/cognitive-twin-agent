@@ -73,6 +73,12 @@ def keep(text: str, *, title: str = "", about: str = "", for_whom: str = "",
         ts=_dt.datetime.now().isoformat(timespec="seconds"),
     )
     security.append_line(_path(), ks.to_dict())
+    # a keepsake is kept WHOLE, forever — back it up off-Mac the moment it's added.
+    try:
+        from . import backup
+        backup.maybe_run_after_capture()
+    except Exception:
+        pass
     return ks
 
 

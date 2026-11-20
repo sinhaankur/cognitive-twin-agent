@@ -596,6 +596,32 @@ def _rhythms_command(rest: list[str]) -> int:
     return 0
 
 
+def _backup_command(rest: list[str]) -> int:
+    """`ctwin backup` — keep the vault safe, off this Mac.
+
+      ctwin backup            → status (where, when, how many)
+      ctwin backup now        → make a fresh sealed backup right now
+      ctwin backup key        → print the restore key (keep it SAFE — a new Mac needs it)
+    """
+    from . import backup
+    sub = (rest[0].lower() if rest else "status")
+    if sub == "now":
+        r = backup.run()
+        if r.get("ok"):
+            where = "iCloud (off this Mac)" if r.get("offsite") else r.get("dir")
+            print(f"✔ Backed up {r.get('files')} items → {where}")
+        else:
+            print(f"Backup failed: {r.get('error')}")
+        return 0 if r.get("ok") else 1
+    if sub == "key":
+        print("Your backup restore key (keep this somewhere safe — you need it to "
+              "restore on a NEW Mac):\n")
+        print("   " + backup.backup_key())
+        return 0
+    print(backup.status())
+    return 0
+
+
 def _remember_command(rest: list[str]) -> int:
     """`ctwin remember` — two ways to remember them:
 
@@ -1049,6 +1075,8 @@ def main(argv: list[str] | None = None) -> int:
         return _voiceprofile_command(raw[1:])
     if raw and raw[0] == "remember":
         return _remember_command(raw[1:])
+    if raw and raw[0] == "backup":
+        return _backup_command(raw[1:])
     if raw and raw[0] == "wisdom":
         return _wisdom_command(raw[1:])
     if raw and raw[0] == "rhythms":
