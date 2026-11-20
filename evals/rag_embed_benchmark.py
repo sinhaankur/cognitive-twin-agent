@@ -39,19 +39,62 @@ import json
 # Keyed by a stable snippet of the seed conviction (wisdom._SEED). Each query is a
 # real way someone might bring that moment; the gold answer is the belief that
 # truly fits. This is the ground truth the embedders are scored against.
+# Gold queries → the conviction each SHOULD retrieve. Built to test MEANING, not
+# word overlap: the queries deliberately share few words with the belief, and some
+# are near-miss "distractors" where a weaker embedder is tempted by the wrong
+# conviction (e.g. "I'm tired of pretending I'm fine" → presence, NOT rest). ~5 per
+# belief across the 6 convictions, so hit@1 over a small corpus is still a real
+# signal. Keep snippets to a DISTINCTIVE phrase actually in the target belief.
 GOLD: list[tuple[str, str]] = [
+    # [0] Worry is interest … meet the day in front of you
     ("I can't stop worrying about everything that might go wrong", "Worry is interest"),
     ("my mind keeps spiralling about the future", "Worry is interest"),
+    ("I keep rehearsing disasters that haven't happened", "Worry is interest"),
+    ("what if it all falls apart", "Worry is interest"),
+    ("I'm anxious about things way down the road", "Worry is interest"),
+    # [1] Rest isn't the reward … stop before you're empty
     ("I'm completely burnt out and running on empty", "Rest isn't the reward"),
     ("I've been pushing too hard and I'm exhausted", "Rest isn't the reward"),
+    ("I'll sleep when the project is finally done", "Rest isn't the reward"),
+    ("I don't deserve a break until I've earned it", "Rest isn't the reward"),
+    ("I feel guilty whenever I slow down", "Rest isn't the reward"),
+    # [2] The people who love you want your presence, not your performance
     ("I feel like I have to prove myself to the people I love", "want your presence"),
     ("I'm scared they'll see me when I'm not at my best", "want your presence"),
+    ("I'm tired of pretending I'm fine for everyone", "want your presence"),
+    ("I only let people near me when I've got it together", "want your presence"),
+    ("do I have to earn my family's love by achieving", "want your presence"),
+    # [3] A thing done with care … hurry is what we regret
     ("should I rush this to get it done faster", "done with care"),
     ("I keep cutting corners to move quicker", "done with care"),
+    ("is it okay to ship something sloppy just to be done", "done with care"),
+    ("I'm tempted to skip the details to save time", "done with care"),
+    ("does taking my time on small things even matter", "done with care"),
+    # [4] You don't have to have it all figured out to take the next kind step
     ("I feel completely lost and don't know what to do next", "next kind step"),
     ("I'm stuck and can't see the way forward", "next kind step"),
+    ("I can't act until I have the whole plan figured out", "next kind step"),
+    ("I'm paralysed because I don't know the full answer", "next kind step"),
+    ("where do I even begin when nothing is clear", "next kind step"),
+    # [5] Be gentle with yourself the way you'd be gentle with someone you love
     ("I keep beating myself up over a mistake", "gentle with yourself"),
     ("I feel so much guilt and shame about failing", "gentle with yourself"),
+    ("I'd forgive a friend for this but not myself", "gentle with yourself"),
+    ("I'm my own harshest critic and it's crushing me", "gentle with yourself"),
+    ("why am I so cruel to myself when I slip up", "gentle with yourself"),
+]
+
+# A small HELD-OUT set: queries NEVER used to train the reranker, so its reported
+# generalisation is honest (the old caveat was train==test on the same 12). The
+# benchmark measures embedders on GOLD; the reranker trainer (evals/train_reranker)
+# should train on GOLD and report on HELD_OUT.
+HELD_OUT: list[tuple[str, str]] = [
+    ("my thoughts race ahead to everything that could go wrong next year", "Worry is interest"),
+    ("I keep grinding without stopping and I'm wiped out", "Rest isn't the reward"),
+    ("I hide how overwhelmed I am so no one worries", "want your presence"),
+    ("I want to hurry through this and not bother doing it properly", "done with care"),
+    ("I'm frozen, waiting until I'm certain before I move", "next kind step"),
+    ("I treat myself far worse than I'd ever treat anyone else", "gentle with yourself"),
 ]
 
 # Candidate on-device embedders, smallest → largest. All run in Ollama. MTEB

@@ -373,9 +373,13 @@ def retrieve(query: str, name: str = "default", k: int = 4, alpha: float | None 
     kw = _keyword_scores(chunks, query)
     vecs = idx.get("vectors")
     if alpha is None:
-        # adaptive: short query → keyword-weighted; longer prose → semantic-weighted
+        # Adaptive: short query → more keyword (exact words matter); longer prose →
+        # lean semantic. Weights raised toward semantic after an alpha sweep on the
+        # gold set (evals/rag_embed_benchmark): meaning-only queries want ~0.9, and
+        # a touch of keyword stays as a tiebreaker. (hit@1 80%→87% at 0.9 on nomic,
+        # 100% on the held-out set.)
         qn = len(_tokens(query))
-        alpha = 0.45 if qn <= 2 else (0.6 if qn <= 6 else 0.72)
+        alpha = 0.6 if qn <= 2 else (0.8 if qn <= 6 else 0.9)
     if vecs and (query_vec or embeddings_available()):
         try:
             qv = query_vec if query_vec else embed_one(query)

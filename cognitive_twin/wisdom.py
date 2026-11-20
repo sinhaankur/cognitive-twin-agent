@@ -155,7 +155,7 @@ def _cosine(a: list[float], c: list[float]) -> float:
     return dot / (na * nc) if na and nc else 0.0
 
 
-def retrieve(query: str, k: int = 2, alpha: float = 0.6) -> list[Belief]:
+def retrieve(query: str, k: int = 2, alpha: float = 0.85) -> list[Belief]:
     """The convictions most relevant to THIS moment. Scored by the TRAINED reranker
     when its weights are present + embeddings exist (learned fusion over semantic,
     keyword, topic-tag + exact overlap); otherwise the hand-tuned semantic+keyword
@@ -207,7 +207,7 @@ def retrieve(query: str, k: int = 2, alpha: float = 0.6) -> list[Belief]:
     return [w.beliefs[i] for i in ranked[:k] if _keep(i)]
 
 
-def retrieve_scored(query: str, k: int = 4, alpha: float = 0.6) -> dict:
+def retrieve_scored(query: str, k: int = 4, alpha: float = 0.85) -> dict:
     """Same retrieval as :func:`retrieve`, but RETURNS THE SCORES — for showing how
     RAG works in the Mind view. Read-only; never changes what she says. Reports the
     method actually used (hybrid semantic+keyword, or keyword-only when no embedder),

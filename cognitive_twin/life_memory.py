@@ -139,7 +139,7 @@ def _keyword_scores(moments: list[dict[str, Any]], query: str) -> list[float]:
     return out
 
 
-def retrieve(query: str, k: int = 3, alpha: float = 0.6) -> list[LifeHit]:
+def retrieve(query: str, k: int = 3, alpha: float = 0.85) -> list[LifeHit]:
     """Recall the moments most relevant to this turn. Hybrid cosine+keyword when
     embeddings exist, else keyword-only. Empty list when there's no history —
     honest silence, never a fabricated memory."""
