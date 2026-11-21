@@ -383,13 +383,26 @@ def readiness(rep: Report | None = None) -> str:
     v = flat.get("voice (Kokoro)", (None, ""))[0]
     lines.append(_line(v, "Voice", "on — she speaks in her Kokoro voice.",
                        "warming or off — give her a moment, or check Settings."))
-    # hearing — the STT model that turns your speech into words
+    # hearing — the STT that turns your speech into words. Ask the running BRAIN
+    # (/api/health stt_local), not this CLI's interpreter — the service may have
+    # faster-whisper even when the shell python doesn't.
+    hear_on = None
     try:
-        from .voice import stt
-        hear_on = stt.is_available()
-        model = stt._default_model()
+        import json as _json
+        import urllib.request as _u
+        with _u.urlopen("http://127.0.0.1:7878/api/health", timeout=3) as r:
+            hear_on = bool(_json.loads(r.read()).get("stt_local"))
     except Exception:
-        hear_on, model = False, "?"
+        try:
+            from .voice import stt
+            hear_on = stt.is_available()
+        except Exception:
+            hear_on = False
+    try:
+        from .voice import stt as _stt
+        model = _stt._default_model()
+    except Exception:
+        model = "small.en"
     lines.append(_line(hear_on, "Hearing",
                        f"on — understands you via {model} (tuned for background music).",
                        "off — install local speech (pip install faster-whisper)."))
