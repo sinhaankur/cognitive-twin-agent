@@ -51,13 +51,22 @@ def _load(model_size: str) -> tuple[str, Any]:
 
 
 def _default_model() -> str:
-    """Model size for live dictation. `small.en` is the accuracy/noise sweet spot —
-    it understands you through background music and catches short phrases that
-    `base.en`/`tiny.en` dropped or turned to garble. Still fine on CPU for a
-    conversational turn. Override with CTWIN_STT_MODEL (base.en = faster/less sure,
-    tiny.en = lowest latency, small.en = default/best)."""
+    """Model for live dictation. Default `small` (MULTILINGUAL, not small.en) so it
+    understands Indian-accented English AND Hindi — and code-switching between them
+    ("Vera, light on karo"), which the English-only models can't. Still fine on CPU.
+    Override with CTWIN_STT_MODEL (small.en = English-only/faster, medium = most
+    accurate/slower, tiny = lowest latency)."""
     import os
-    return (os.environ.get("CTWIN_STT_MODEL") or "small.en").strip()
+    return (os.environ.get("CTWIN_STT_MODEL") or "small").strip()
+
+
+def _language() -> str | None:
+    """Which language to decode. Default 'en' keeps latency low, but set
+    CTWIN_STT_LANG=hi for Hindi, or CTWIN_STT_LANG=auto to let Whisper detect it
+    per utterance (best for mixing English + Hindi freely). None = auto-detect."""
+    import os
+    v = (os.environ.get("CTWIN_STT_LANG") or "en").strip().lower()
+    return None if v in ("auto", "detect", "") else v
 
 
 def warm(model_size: str | None = None) -> None:
@@ -68,41 +77,47 @@ def warm(model_size: str | None = None) -> None:
         pass
 
 
+def _decode_opts() -> dict:
+    """The tuned faster-whisper options, shared by both transcribe paths. Tuned for:
+      • understanding you THROUGH background music + catching short phrases
+        (beam_size=5, VAD with short min-silence + speech-pad, no cross-chunk
+        conditioning so music doesn't make it loop/hallucinate), AND
+      • YOUR way of speaking — Indian English + Hindi + code-switching
+        (multilingual model + the language setting) with a PERSONAL hint of your
+        own words/names (initial_prompt) so it hears them right."""
+    import os
+    opts: dict = {
+        "beam_size": int(os.environ.get("CTWIN_STT_BEAM", "5") or "5"),
+        "vad_filter": True,
+        "vad_parameters": {
+            "threshold": float(os.environ.get("CTWIN_STT_VAD", "0.5") or "0.5"),
+            "min_silence_duration_ms": 300,
+            "speech_pad_ms": 200,
+        },
+        "language": _language(),            # None = auto-detect (English+Hindi mix)
+        "condition_on_previous_text": False,
+        "temperature": [0.0, 0.2, 0.4],
+        "no_speech_threshold": 0.6,
+    }
+    try:
+        from .. import pronounce
+        hint = pronounce.prompt()
+        if hint:
+            opts["initial_prompt"] = hint   # bias toward your names + Hindi/EN words
+    except Exception:
+        pass
+    return opts
+
+
 def transcribe(audio_path: str, *, model_size: str | None = None) -> str:
     """Transcribe an audio file to text using local Whisper. Raises if no
     backend is installed (callers should check is_available() first or catch)."""
     backend, model = _load(model_size or _default_model())
     if backend == "faster_whisper":
-        import os
-        # Tuned for understanding you THROUGH background music + catching short
-        # phrases — the real-world failures ("it doesn't understand me", "when I
-        # say few words it doesn't understand", "or the background music"):
-        #   • beam_size=5 — a real search, markedly more accurate than greedy=1.
-        #   • condition_on_previous_text=False — stops Whisper looping/hallucinating
-        #     on noisy audio (the classic "garble" with music underneath).
-        #   • VAD tuned: a firmer speech-probability threshold rejects music/hum,
-        #     but short min-silence + small speech-pad keep brief utterances intact
-        #     (aggressive VAD was eating "few words").
-        #   • temperature fallback — if a chunk decodes as junk, retry hotter.
-        beam = int(os.environ.get("CTWIN_STT_BEAM", "5") or "5")
-        vad_params = {
-            "threshold": float(os.environ.get("CTWIN_STT_VAD", "0.5") or "0.5"),
-            "min_silence_duration_ms": 300,   # don't chop between words
-            "speech_pad_ms": 200,             # keep the edges of short phrases
-        }
-        segments, _info = model.transcribe(
-            audio_path,
-            beam_size=beam,
-            vad_filter=True,
-            vad_parameters=vad_params,
-            language="en",
-            condition_on_previous_text=False,
-            temperature=[0.0, 0.2, 0.4],
-            no_speech_threshold=0.6,
-        )
+        segments, _info = model.transcribe(audio_path, **_decode_opts())
         return " ".join(seg.text for seg in segments).strip()
     # openai-whisper
-    result = model.transcribe(audio_path, language="en",
+    result = model.transcribe(audio_path, language=_language() or "en",
                               condition_on_previous_text=False)
     return str(result.get("text", "")).strip()
 
@@ -118,14 +133,7 @@ def transcribe_detail(audio_path: str, *, model_size: str | None = None) -> dict
         txt = transcribe(audio_path, model_size=model_size)
         return {"text": txt, "no_speech_prob": 0.0, "avg_logprob": 0.0,
                 "music_like": False}
-    import os
-    beam = int(os.environ.get("CTWIN_STT_BEAM", "5") or "5")
-    vad_params = {"threshold": float(os.environ.get("CTWIN_STT_VAD", "0.5") or "0.5"),
-                  "min_silence_duration_ms": 300, "speech_pad_ms": 200}
-    segs = list(model.transcribe(
-        audio_path, beam_size=beam, vad_filter=True, vad_parameters=vad_params,
-        language="en", condition_on_previous_text=False,
-        temperature=[0.0, 0.2, 0.4], no_speech_threshold=0.6)[0])
+    segs = list(model.transcribe(audio_path, **_decode_opts())[0])
     text = " ".join(s.text for s in segs).strip()
     if not segs:
         # VAD found no speech at all → almost certainly background, not you.

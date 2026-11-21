@@ -802,6 +802,15 @@ class _Handler(BaseHTTPRequestHandler):
             # background vs in-frame: if it reads as music/noise (low speech
             # confidence), she HEARD something but it isn't you talking TO her.
             heard = bool(text) and _low not in _noise and len(_low) >= 2 and not music_like
+            # LEARN YOUR WORDS: a real heard turn gently reinforces your own
+            # vocabulary (names, Hindi/English terms), so the recogniser hears them
+            # better next time. Passive, on-device, never from noise.
+            if heard:
+                try:
+                    from .. import pronounce
+                    pronounce.note_accepted(text)
+                except Exception:
+                    pass
             # VOICE IDENTITY: if a voiceprint is enrolled, is this clip YOU or someone
             # else (the TV, another person)? When it's clearly not you, she HEARD it
             # but shouldn't act on it as a command. `is_you` is None when not enrolled

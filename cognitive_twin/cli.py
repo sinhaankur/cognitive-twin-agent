@@ -1104,6 +1104,9 @@ def main(argv: list[str] | None = None) -> int:
         return _backup_command(raw[1:])
     if raw and raw[0] in ("home", "homeaway"):
         return _homeaway_command(raw[1:])
+    if raw and raw[0] in ("words", "pronounce"):
+        from . import pronounce
+        return pronounce._main(raw)
     if raw and raw[0] == "music":
         from . import music
         rest = raw[1:]

@@ -157,7 +157,7 @@ def check_core() -> list[Check]:
 _SUBSYSTEMS = [
     "memory", "places", "music", "presence", "persona",
     "health", "rhythms", "soul", "mental_model", "media",
-    "homeaway", "voice_id",
+    "homeaway", "voice_id", "pronounce",
 ]
 
 
@@ -403,9 +403,20 @@ def readiness(rep: Report | None = None) -> str:
         model = _stt._default_model()
     except Exception:
         model = "small.en"
+    multiling = not model.endswith(".en")
+    lang_note = "English + Hindi" if multiling else "English"
     lines.append(_line(hear_on, "Hearing",
-                       f"on — understands you via {model} (tuned for background music).",
+                       f"on — {lang_note} via {model} (tuned for background music + your accent).",
                        "off — install local speech (pip install faster-whisper)."))
+    # your words — the personal lexicon of names + Hindi/English terms
+    try:
+        from . import pronounce
+        n_words = len(pronounce._terms())
+    except Exception:
+        n_words = 0
+    lines.append(_line(n_words > 0 or None, "Your words",
+                       f"learning your vocabulary ({n_words} words — names, Hindi/English).",
+                       "none yet — she'll pick up your words as you talk, or `ctwin words add`."))
     # does she know your voice?
     try:
         from . import voice_id

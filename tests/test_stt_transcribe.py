@@ -20,11 +20,30 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from cognitive_twin.voice import stt
 
 
-def test_default_model_is_accurate_english():
-    # small.en: understands you through background music + catches short phrases
-    # that base.en/tiny.en dropped. Override via CTWIN_STT_MODEL for speed.
+def test_default_model_is_multilingual():
+    # `small` (multilingual, not small.en): understands Indian English + Hindi +
+    # code-switching. Override via CTWIN_STT_MODEL.
     os.environ.pop("CTWIN_STT_MODEL", None)
-    assert stt._default_model() == "small.en"
+    assert stt._default_model() == "small"
+
+
+def test_language_default_and_auto(monkeypatch):
+    monkeypatch.delenv("CTWIN_STT_LANG", raising=False)
+    assert stt._language() == "en"              # default keeps latency low
+    monkeypatch.setenv("CTWIN_STT_LANG", "hi")
+    assert stt._language() == "hi"              # Hindi
+    monkeypatch.setenv("CTWIN_STT_LANG", "auto")
+    assert stt._language() is None              # auto-detect (English+Hindi mix)
+
+
+def test_decode_opts_include_personal_hint(monkeypatch):
+    # when the lexicon has words, they ride in as the Whisper initial_prompt
+    import tempfile
+    monkeypatch.setenv("CTWIN_MEMORY_DIR", tempfile.mkdtemp())
+    from cognitive_twin import pronounce
+    pronounce.add("Vera", "Shweta")
+    opts = stt._decode_opts()
+    assert "Vera" in opts.get("initial_prompt", "")
 
 
 def test_default_model_env_override():
