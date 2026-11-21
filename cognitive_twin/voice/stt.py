@@ -51,12 +51,13 @@ def _load(model_size: str) -> tuple[str, Any]:
 
 
 def _default_model() -> str:
-    """Model size for live dictation. `base.en` is the sweet spot — markedly more
-    accurate than `tiny.en` (which mis-heard words and turned real speech into
-    garble), still fast enough for a conversational turn on CPU. Override with
-    CTWIN_STT_MODEL (e.g. small.en for best accuracy, tiny.en for lowest latency)."""
+    """Model size for live dictation. `small.en` is the accuracy/noise sweet spot —
+    it understands you through background music and catches short phrases that
+    `base.en`/`tiny.en` dropped or turned to garble. Still fine on CPU for a
+    conversational turn. Override with CTWIN_STT_MODEL (base.en = faster/less sure,
+    tiny.en = lowest latency, small.en = default/best)."""
     import os
-    return (os.environ.get("CTWIN_STT_MODEL") or "base.en").strip()
+    return (os.environ.get("CTWIN_STT_MODEL") or "small.en").strip()
 
 
 def warm(model_size: str | None = None) -> None:
@@ -72,15 +73,75 @@ def transcribe(audio_path: str, *, model_size: str | None = None) -> str:
     backend is installed (callers should check is_available() first or catch)."""
     backend, model = _load(model_size or _default_model())
     if backend == "faster_whisper":
-        # beam_size=1 + a tight VAD filter = fast, and it ignores non-speech noise
-        # so a silent/clipped chunk returns "" instead of hallucinated words.
+        import os
+        # Tuned for understanding you THROUGH background music + catching short
+        # phrases — the real-world failures ("it doesn't understand me", "when I
+        # say few words it doesn't understand", "or the background music"):
+        #   • beam_size=5 — a real search, markedly more accurate than greedy=1.
+        #   • condition_on_previous_text=False — stops Whisper looping/hallucinating
+        #     on noisy audio (the classic "garble" with music underneath).
+        #   • VAD tuned: a firmer speech-probability threshold rejects music/hum,
+        #     but short min-silence + small speech-pad keep brief utterances intact
+        #     (aggressive VAD was eating "few words").
+        #   • temperature fallback — if a chunk decodes as junk, retry hotter.
+        beam = int(os.environ.get("CTWIN_STT_BEAM", "5") or "5")
+        vad_params = {
+            "threshold": float(os.environ.get("CTWIN_STT_VAD", "0.5") or "0.5"),
+            "min_silence_duration_ms": 300,   # don't chop between words
+            "speech_pad_ms": 200,             # keep the edges of short phrases
+        }
         segments, _info = model.transcribe(
-            audio_path, beam_size=1, vad_filter=True, language="en",
+            audio_path,
+            beam_size=beam,
+            vad_filter=True,
+            vad_parameters=vad_params,
+            language="en",
+            condition_on_previous_text=False,
+            temperature=[0.0, 0.2, 0.4],
+            no_speech_threshold=0.6,
         )
         return " ".join(seg.text for seg in segments).strip()
     # openai-whisper
-    result = model.transcribe(audio_path)
+    result = model.transcribe(audio_path, language="en",
+                              condition_on_previous_text=False)
     return str(result.get("text", "")).strip()
+
+
+def transcribe_detail(audio_path: str, *, model_size: str | None = None) -> dict:
+    """Like transcribe(), but also reports how SURE it was it was speech — so a
+    caller can reject background music / a TV bleeding in ('background vs in-frame').
+    Returns {text, no_speech_prob, avg_logprob, music_like}. music_like=True means
+    'this looks like noise/music, not you talking to me' — don't act on it."""
+    backend, model = _load(model_size or _default_model())
+    if backend != "faster_whisper":
+        # openai-whisper path has no cheap per-segment speech prob → text only.
+        txt = transcribe(audio_path, model_size=model_size)
+        return {"text": txt, "no_speech_prob": 0.0, "avg_logprob": 0.0,
+                "music_like": False}
+    import os
+    beam = int(os.environ.get("CTWIN_STT_BEAM", "5") or "5")
+    vad_params = {"threshold": float(os.environ.get("CTWIN_STT_VAD", "0.5") or "0.5"),
+                  "min_silence_duration_ms": 300, "speech_pad_ms": 200}
+    segs = list(model.transcribe(
+        audio_path, beam_size=beam, vad_filter=True, vad_parameters=vad_params,
+        language="en", condition_on_previous_text=False,
+        temperature=[0.0, 0.2, 0.4], no_speech_threshold=0.6)[0])
+    text = " ".join(s.text for s in segs).strip()
+    if not segs:
+        # VAD found no speech at all → almost certainly background, not you.
+        return {"text": text, "no_speech_prob": 1.0, "avg_logprob": -5.0,
+                "music_like": True}
+    nsp = sum(getattr(s, "no_speech_prob", 0.0) for s in segs) / len(segs)
+    alp = sum(getattr(s, "avg_logprob", 0.0) for s in segs) / len(segs)
+    # no_speech_prob is the TRUSTWORTHY music/noise signal — real speech (even a
+    # mis-decoded short phrase like "Hey Vera"→"Tevira") sits at 0.01–0.07, while
+    # music/silence spikes it high. avg_logprob is NOT reliable here: genuine short
+    # or unusual words dip to −1.0, so gating on it was eating real "few words".
+    # Only call it music when the model itself is fairly sure there's no speech,
+    # OR the text collapsed to almost nothing with a high no-speech prob.
+    music_like = (nsp >= 0.6) or (nsp >= 0.4 and len(text) < 2)
+    return {"text": text, "no_speech_prob": round(nsp, 3),
+            "avg_logprob": round(alp, 3), "music_like": music_like}
 
 
 def status() -> str:

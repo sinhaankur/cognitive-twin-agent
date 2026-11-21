@@ -769,6 +769,7 @@ class _Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0) or 0)
             raw = self.rfile.read(length) if length > 0 else b""
             text = ""
+            music_like = False
             if raw[:4] == b"RIFF" and stt.is_available():
                 f = _tf.NamedTemporaryFile(suffix=".wav", delete=False, dir="/tmp")
                 try:
@@ -776,7 +777,11 @@ class _Handler(BaseHTTPRequestHandler):
                     f.flush()
                     f.close()
                     try:
-                        text = stt.transcribe(f.name) or ""
+                        # detail = text + how sure it was speech (not background
+                        # music / a TV). Lets us drop noise before it's a 'turn'.
+                        det = stt.transcribe_detail(f.name)
+                        text = (det.get("text") or "")
+                        music_like = bool(det.get("music_like"))
                     except Exception as e:  # never 500 the mic — return empty
                         import sys as _sys
                         print(f"[transcribe] {e}", file=_sys.stderr)
@@ -794,7 +799,9 @@ class _Handler(BaseHTTPRequestHandler):
             _low = text.lower().strip(" .!,")
             _noise = {"", "you", "thank you", "thanks", "bye", "bye.", "okay", "ok",
                       "uh", "um", "hmm", "mm", "yeah", ".", "the", "so"}
-            heard = bool(text) and _low not in _noise and len(_low) >= 2
+            # background vs in-frame: if it reads as music/noise (low speech
+            # confidence), she HEARD something but it isn't you talking TO her.
+            heard = bool(text) and _low not in _noise and len(_low) >= 2 and not music_like
             # VOICE IDENTITY: if a voiceprint is enrolled, is this clip YOU or someone
             # else (the TV, another person)? When it's clearly not you, she HEARD it
             # but shouldn't act on it as a command. `is_you` is None when not enrolled
@@ -823,7 +830,8 @@ class _Handler(BaseHTTPRequestHandler):
             # nothing" complaint). `heard` still tells the app whether to ACT on it
             # as a command — so stray "you"/"thank you" mishearings don't trigger a
             # turn, but the user still gets honest feedback that she's hearing.
-            self._json(200, {"text": text, "heard": heard, "is_you": is_you})
+            self._json(200, {"text": text, "heard": heard, "is_you": is_you,
+                             "music_like": music_like})
             return
         if self.path == "/api/voice/enroll":
             # teach her YOUR voice: POST a WAV of your speech; it folds into your

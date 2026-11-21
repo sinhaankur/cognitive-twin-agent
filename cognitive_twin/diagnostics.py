@@ -383,6 +383,16 @@ def readiness(rep: Report | None = None) -> str:
     v = flat.get("voice (Kokoro)", (None, ""))[0]
     lines.append(_line(v, "Voice", "on — she speaks in her Kokoro voice.",
                        "warming or off — give her a moment, or check Settings."))
+    # hearing — the STT model that turns your speech into words
+    try:
+        from .voice import stt
+        hear_on = stt.is_available()
+        model = stt._default_model()
+    except Exception:
+        hear_on, model = False, "?"
+    lines.append(_line(hear_on, "Hearing",
+                       f"on — understands you via {model} (tuned for background music).",
+                       "off — install local speech (pip install faster-whisper)."))
     # does she know your voice?
     try:
         from . import voice_id
