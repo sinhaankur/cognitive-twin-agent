@@ -50,6 +50,19 @@ She thinks on a local model via [Ollama](https://ollama.com): `ollama pull qwen2
 - A **kill switch**, reach control (this Mac / your devices), and a built-in security audit.
 - Opt-in senses (camera, mic, Photos, Calendar, Mail, Location) — off until you turn them on, nothing uploaded.
 
+## Tech stack
+
+Every piece runs on your machine — no cloud service in the critical path.
+
+| Layer | Built with |
+| --- | --- |
+| **Thinking** | Local LLM via [**Ollama**](https://ollama.com) (`vera-tuned` / `qwen2.5:3b`), a hybrid semantic + keyword **RAG** (numpy, `nomic-embed-text`) with a learned reranker, and a numpy **affect net** (backprop-trained) for how she feels. |
+| **Voice (out)** | On-device **Kokoro** TTS (`af_heart`) + a `voicebox` emotion→tone engine — a distinct delivery for grief, stress, tenderness, joy. No samples, no streaming. |
+| **Voice (in)** | Local **Whisper** STT + **voice identity**: a sealed voiceprint that learns *your* voice over time (pure-numpy MFCC by default; optional **ECAPA-TDNN via ONNX Runtime** for best, noise-robust accuracy) so she answers you, not the TV. |
+| **Memory** | Sealed vault — **ChaCha20-Poly1305**, key device-bound in the **macOS Keychain**; durable auto-backup to iCloud Drive. Nothing leaves unless you allow it. |
+| **Apps** | Native **macOS** app (SwiftUI + AVFoundation + Vision gaze), **iOS** app (Rust core → Ollama), a **web UI**, and an **MCP** server — all talking to one Python brain. |
+| **Runtime** | **Python** brain as a `launchd`/`systemd` service; distributed as a signed `.dmg`, `pipx` install, or `docker compose`. Runs on bare Python — heavy deps (ONNX, embeddings) are all optional, with graceful fallbacks. |
+
 ## More
 
 - **[Roadmap](ROADMAP.md)** — what's built, what's missing, what's next.

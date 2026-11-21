@@ -148,8 +148,9 @@ struct VoiceEnrollView: View {
         VStack(spacing: 18) {
             Text("Teach me your voice")
                 .font(.system(size: 18, weight: .semibold))
-            Text("So I know it's you — and don't answer the TV, other voices, or myself. "
-                 + "Read this out loud, naturally:")
+            Text("So I learn you — not the TV, not another person, not my own voice. "
+                 + "Read this out loud, naturally. I'll keep getting surer every time "
+                 + "we talk:")
                 .font(.system(size: 12.5))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

@@ -796,7 +796,19 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 from .. import voice_id
                 if voice_id.is_enrolled():
-                    is_you = voice_id.is_you(raw)
+                    vid = voice_id.identify(raw)
+                    is_you = vid.get("is_you")
+                    # HUMAN LEARNING: only learn from clips that ALSO carry real
+                    # speech (heard) and are decided with margin — never from a
+                    # shaky guess. Confident "you" strengthens your print; confident
+                    # "not you" seeds the others gallery so the line stays sharp.
+                    if heard:
+                        ysim = float(vid.get("you_sim", 0.0))
+                        osim = float(vid.get("other_sim", 0.0))
+                        if is_you is True and ysim >= 0.82 and (ysim - osim) >= 0.08:
+                            voice_id.learn_you(raw)
+                        elif is_you is False and ysim <= 0.60:
+                            voice_id.note_other(raw)
             except Exception:
                 is_you = None
             # Return the heard text EVEN when it's in the noise set, so the app can

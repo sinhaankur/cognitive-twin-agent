@@ -60,3 +60,68 @@ def test_voiceprint_is_sealed(monkeypatch, tmp_path):
     if f.exists():
         raw = f.read_bytes()
         assert not raw.lstrip().startswith(b"{")   # sealed, not plaintext
+
+
+def test_store_records_embedder_kind(monkeypatch):
+    _fresh(monkeypatch)
+    me = _wav("Tagging which ear built this print, honestly.")
+    if not me:
+        return
+    voice_id.enroll(me)
+    d = voice_id._load()
+    assert d.get("kind") in {"mfcc", "ecapa-onnx"}
+    # with no ONNX model installed in CI, it's the always-available numpy ear
+    assert voice_id.active_kind() == "mfcc"
+
+
+def test_human_learning_adds_samples(monkeypatch):
+    _fresh(monkeypatch)
+    a = _wav("Learning my voice a little more each time I speak to her.")
+    b = _wav("Here is a second clip of me talking, so she grows surer.")
+    if not a or not b:
+        return
+    voice_id.enroll(a)
+    n1 = voice_id._load().get("samples", 0)
+    voice_id.learn_you(b)                     # a confident "that was you" turn
+    n2 = voice_id._load().get("samples", 0)
+    assert n2 == n1 + 1                        # she folded it in → surer over time
+    assert voice_id.is_you(a) is True          # still clearly you
+
+
+def test_others_gallery_sharpens_the_line(monkeypatch):
+    _fresh(monkeypatch)
+    me = _wav("This is me enrolling my own voice for the twin.", voice="af_heart")
+    other = _wav("And this is a different person's voice entirely.", voice="am_michael")
+    if not me or not other:
+        return
+    voice_id.enroll(me)
+    before = voice_id.identify(me)
+    assert before["is_you"] is True
+    # she hears a stranger and remembers it as NOT-you
+    voice_id.note_other(other)
+    d = voice_id._load()
+    assert len(d.get("others", [])) >= 1       # gallery seeded
+    # CORE GUARANTEE: the contrast class must NEVER lock the owner out of their
+    # own twin — you still read as you after strangers are remembered.
+    assert voice_id.is_you(me) is True
+    # The stranger must never out-score the owner on their own print. (With the
+    # coarse numpy ear two synthetic voices can look alike — exactly why ECAPA
+    # exists — so we assert the safe invariant, not a hard reject the fallback
+    # ear can't honestly deliver.)
+    owner = voice_id.identify(me)
+    stranger = voice_id.identify(other)
+    assert owner["you_sim"] >= stranger["you_sim"]
+
+
+def test_duplicate_strangers_are_not_hoarded(monkeypatch):
+    _fresh(monkeypatch)
+    me = _wav("Enrolling the owner before testing the gallery cap.")
+    other = _wav("A stranger says the very same line, the very same line.",
+                 voice="am_michael")
+    if not me or not other:
+        return
+    voice_id.enroll(me)
+    for _ in range(5):
+        voice_id.note_other(other)             # same clip 5×
+    # near-duplicates are skipped → not five copies of the one voice
+    assert len(voice_id._load().get("others", [])) <= 2
