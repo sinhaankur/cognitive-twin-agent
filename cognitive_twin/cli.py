@@ -622,6 +622,26 @@ def _backup_command(rest: list[str]) -> int:
     return 0
 
 
+def _homeaway_command(rest: list[str]) -> int:
+    """`ctwin home` — she senses when you come home and when you leave.
+
+      ctwin home                → status (home/away, how she knows)
+      ctwin home set-wifi       → use the Wi-Fi you're on RIGHT NOW as home
+      ctwin home where          → the full fused reading (all signals)
+    """
+    from . import homeaway
+    sub = (rest[0].lower() if rest else "status")
+    if sub in ("set-wifi", "setwifi", "here"):
+        print(homeaway.use_current_wifi_as_home())
+        return 0
+    if sub == "where":
+        import json
+        print(json.dumps(homeaway.current(), indent=2))
+        return 0
+    print(homeaway.status())
+    return 0
+
+
 def _remember_command(rest: list[str]) -> int:
     """`ctwin remember` — two ways to remember them:
 
@@ -1077,6 +1097,8 @@ def main(argv: list[str] | None = None) -> int:
         return _remember_command(raw[1:])
     if raw and raw[0] == "backup":
         return _backup_command(raw[1:])
+    if raw and raw[0] in ("home", "homeaway"):
+        return _homeaway_command(raw[1:])
     if raw and raw[0] == "wisdom":
         return _wisdom_command(raw[1:])
     if raw and raw[0] == "rhythms":

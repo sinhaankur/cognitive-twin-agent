@@ -35,6 +35,10 @@ targets:
         # She reaches an Ollama you run on a machine YOU own, over your local
         # network / tailnet.
         NSLocalNetworkUsageDescription: "Connects to the model running on a machine you own on your local network or tailnet — so she can think. Nothing is sent to a third party."
+        # Optional, off until you turn it on: lets her know when you come home and
+        # when you leave, to greet you and go quiet while you're out. Coarse only,
+        # sent only to YOUR Mac, no trail kept.
+        NSLocationWhenInUseUsageDescription: "Lets Vera tell when you come home and when you leave, so she can greet you and stay quiet while you're out. Coarse location, only to your own Mac, never a third party."
         # App Transport Security: allow cleartext HTTP ONLY for local networking
         # (Ollama is http-only, reached on your tailnet). This is NOT a blanket
         # NSAllowsArbitraryLoads — public internet still requires TLS.

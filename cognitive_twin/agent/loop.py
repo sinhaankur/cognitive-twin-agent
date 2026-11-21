@@ -640,6 +640,16 @@ class Agent:
                     parts.append(seen)
             except Exception:
                 pass
+            # home/away — whether they just got in / are out. Private: only on an
+            # owner turn (a guest must never learn if the owner is home or away).
+            if not _guest_prompt:
+                try:
+                    from .. import homeaway as _homeaway
+                    coming = _homeaway.context_for_prompt()
+                    if coming:
+                        parts.append(coming)
+                except Exception:
+                    pass
         system_content = "\n\n".join(parts)
         # On a guest turn, repeat the guard LAST — small models weight the most
         # recent instruction heaviest, and the privacy wall must win over everything.

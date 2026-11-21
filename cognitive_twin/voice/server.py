@@ -690,6 +690,13 @@ class _Handler(BaseHTTPRequestHandler):
                 "paused": music.is_paused(),
                 "status": music.status(),
             })
+        elif self.path == "/api/homeaway":
+            # Home/away — does she know you've come home or gone out? Any of your
+            # devices can read this (shared, sealed, on-device). GET = current state.
+            from .. import homeaway
+            c = homeaway.current()
+            c["status"] = homeaway.status()
+            self._json(200, c)
         elif self.path == "/api/portrait/status":
             # "See a loved one in 3D": is a face built, and is the pipeline ready?
             # Includes a "building" flag so the app can show progress while the
@@ -1403,6 +1410,33 @@ class _Handler(BaseHTTPRequestHandler):
                 for t in result.takes
             ]
             self._json(200, {"question": result.question, "takes": takes})
+        elif self.path == "/api/homeaway/report":
+            # OTHER DEVICES report in: { device, home: true|false, lat, lon }. This
+            # is how your iPhone tells her you've arrived/left even when the Mac
+            # can't see the network. Sealed; stale reports (>15min) stop counting.
+            d = self._read_json() or {}
+            from .. import homeaway
+            homeaway.report(
+                device=str(d.get("device") or "device"),
+                home=d.get("home") if isinstance(d.get("home"), bool) else None,
+                lat=d.get("lat"), lon=d.get("lon"),
+            )
+            # report immediately refreshes the fused state so the greeter can react.
+            ev = homeaway.tick() if homeaway.is_configured() else None
+            self._json(200, {"ok": True, "state": homeaway.current(), "event": ev})
+        elif self.path == "/api/homeaway/set-home":
+            # Onboarding: set what "home" is — { ssids: [...], lat, lon, radius_m }
+            # or { use_current_wifi: true } to grab whatever network you're on now.
+            d = self._read_json() or {}
+            from .. import homeaway
+            if d.get("use_current_wifi"):
+                msg = homeaway.use_current_wifi_as_home()
+            else:
+                msg = homeaway.set_home(
+                    ssids=d.get("ssids"), lat=d.get("lat"), lon=d.get("lon"),
+                    radius_m=float(d.get("radius_m", 150.0)),
+                )
+            self._json(200, {"ok": True, "detail": msg, "configured": homeaway.is_configured()})
         elif self.path == "/api/presence":
             # derived MOTION facts from the opt-in camera page (no frames,
             # no images — see presence.py). Ephemeral: latest reading only.
@@ -1711,19 +1745,40 @@ def _start_companion_loop() -> None:
         from .. import proactive
         # a gentle delay so she doesn't greet the instant the service boots
         time.sleep(120)
+        last_companion = 0.0
         while True:
+            # HOME/AWAY — tick fast (~20s) so "welcome home" feels immediate. On a
+            # confirmed transition she says a warm hello / soft goodbye; while you're
+            # out she goes quiet (the companion check-in below is skipped).
             try:
-                # if a previous check-in went unanswered, learn a gentle "not now"
-                # for that context BEFORE maybe reaching out again.
-                proactive.note_ignored()
+                from .. import homeaway
+                ev = homeaway.tick()
+                if ev and homeaway.is_configured():
+                    line = homeaway.greeting_for(ev["event"])
+                    # greet on arrival; on leaving, only a soft word (never nag).
+                    if ev["event"] in ("arrived", "left"):
+                        proactive._speak_aloud(line)
             except Exception:
                 pass
-            try:
-                proactive.companion_checkin(speak=True)  # no-op unless due + enabled
-            except Exception:
-                pass
-            # check every ~3 min; proactive.py decides if a line is actually due
-            time.sleep(180)
+
+            now = time.time()
+            if now - last_companion >= 180:
+                last_companion = now
+                try:
+                    from .. import homeaway
+                    away = homeaway.is_away()
+                except Exception:
+                    away = False
+                if not away:                 # don't talk to an empty room
+                    try:
+                        proactive.note_ignored()
+                    except Exception:
+                        pass
+                    try:
+                        proactive.companion_checkin(speak=True)
+                    except Exception:
+                        pass
+            time.sleep(20)
     threading.Thread(target=loop, daemon=True).start()
 
 
