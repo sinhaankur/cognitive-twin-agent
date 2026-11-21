@@ -1104,6 +1104,15 @@ def main(argv: list[str] | None = None) -> int:
         return _backup_command(raw[1:])
     if raw and raw[0] in ("home", "homeaway"):
         return _homeaway_command(raw[1:])
+    if raw and raw[0] == "music":
+        from . import music
+        rest = raw[1:]
+        # friendly aliases: `ctwin music on/off` → enable/disable
+        if rest and rest[0] in ("on", "enable"):
+            rest = ["enable"]
+        elif rest and rest[0] in ("off", "disable"):
+            rest = ["disable"]
+        return music._main(rest)
     if raw and raw[0] == "wisdom":
         return _wisdom_command(raw[1:])
     if raw and raw[0] == "rhythms":

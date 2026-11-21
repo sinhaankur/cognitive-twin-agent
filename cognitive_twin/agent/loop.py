@@ -518,6 +518,15 @@ class Agent:
                     parts.append(body)
             except Exception:
                 pass
+            # the music they actually listen to (opt-in; YouTube / SoundCloud /
+            # Apple Music / Spotify) — so she knows their taste, like a friend
+            try:
+                from .. import music as _music
+                tune = _music.context_for_prompt()
+                if tune:
+                    parts.append(tune)
+            except Exception:
+                pass
             # a plan in progress — so a multi-step chain stays coherent (she knows
             # the goal + the current step, helps with THIS one, moves on when done)
             try:

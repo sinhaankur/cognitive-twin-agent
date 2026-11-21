@@ -414,6 +414,17 @@ def readiness(rep: Report | None = None) -> str:
     lines.append(_line(sees or None, "Senses",
                        "on — she can tell when you're at the Mac.",
                        "off — turn on in Senses when you want her to notice you."))
+    # music taste — does she know what you listen to?
+    try:
+        from . import music
+        m_on = music.is_enabled()
+        plays = len(music.read_all()) if m_on else 0
+    except Exception:
+        m_on, plays = False, 0
+    lines.append(_line(m_on, "Music",
+                       f"on — she knows your taste ({plays} plays logged).",
+                       "off — she can't tell what you listen to.",
+                       todo="run `ctwin music on` (reads YouTube / SoundCloud / Apple Music / Spotify)"))
     # memory depth
     mem = flat.get("status · memory", (None, ""))[1]
     import re as _re

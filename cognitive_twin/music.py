@@ -9,10 +9,11 @@ side, opt-in and explicit: when you turn it on, Vera reads macOS **Now Playing**
 a sealed local log of the tracks you play. From that she can tell you your top
 artists, your most-played tracks, and how your listening shifts over time.
 
-YouTube too: macOS 26 gates the system Now-Playing framework for third parties,
-so for music the app-scripting can't see (YouTube / YouTube Music in a browser) we
-read the frontmost browser tab title ("Artist - Track - YouTube") and parse it —
-only YouTube tabs, only while that tab is frontmost, never other browsing.
+YouTube AND SoundCloud too — the sites most people actually listen on. macOS 26
+gates the system Now-Playing framework for third parties, so for browser music we
+read the frontmost browser tab title and parse it: "Artist - Track - YouTube" and
+"Track by Artist | … SoundCloud". Only recognised media tabs, only while that tab
+is frontmost, never other browsing.
 
 It mirrors places.py exactly — one sealed log, the same opt-in + pause/snooze
 gates, the same device-bound sealing:
@@ -179,36 +180,57 @@ def _now_playing_browser() -> Play | None:
     app, title = app.strip(), title.strip()
     if app not in _BROWSERS or not title:
         return None
-    parsed = _parse_youtube_title(title)
+    parsed = _parse_browser_title(title)
     if not parsed:
         return None
-    track, artist = parsed
+    track, artist, via = parsed
     return Play(title=track, artist=artist, album="", app=app,
                 at=_dt.datetime.now().isoformat(timespec="seconds"),
-                meta={"via": "browser-title"})
+                meta={"via": via})
 
 
+# Back-compat alias — older callers/tests used the YouTube-only name.
 def _parse_youtube_title(title: str) -> tuple[str, str] | None:
-    """Pull (track, artist) out of a browser title. Returns None when the tab
-    isn't a YouTube media page (so we never log random browsing as 'music')."""
+    p = _parse_browser_title(title)
+    return (p[0], p[1]) if p else None
+
+
+def _parse_browser_title(title: str) -> tuple[str, str, str] | None:
+    """Pull (track, artist, source) out of a browser tab title. Handles the sites
+    you actually listen on — YouTube / YouTube Music AND SoundCloud. Returns None
+    when the tab isn't a media page, so we never log random browsing as 'music'."""
     import re
 
     t = title.strip()
-    # Only treat YouTube tabs as plays — other sites' titles aren't music.
-    if not re.search(r"-\s*YouTube(\s+Music)?\s*$", t, re.I):
-        return None
-    # Drop the trailing " - YouTube" / " - YouTube Music"
-    t = re.sub(r"\s*-\s*YouTube(\s+Music)?\s*$", "", t, flags=re.I).strip()
-    # Drop a leading unread/notification count like "(3) " Chrome adds
+    # Drop a leading unread/notification count like "(3) " Chrome prepends, and a
+    # leading play glyph "▶ " SoundCloud adds while a track is playing.
     t = re.sub(r"^\(\d+\)\s*", "", t).strip()
-    if not t:
+    t = re.sub(r"^[▶⏵►]\s*", "", t).strip()
+
+    # ── SoundCloud ── "Track by Artist | Listen online for free on SoundCloud"
+    #   (also "Stream Track by Artist | Listen online …" for a stream page)
+    if re.search(r"SoundCloud\s*$", t, re.I) or " | Listen " in t:
+        head = re.split(r"\s*\|\s*", t, maxsplit=1)[0].strip()
+        head = re.sub(r"^Stream\s+", "", head, flags=re.I).strip()
+        m = re.match(r"^(.*?)\s+by\s+(.+)$", head, re.I)
+        if m:
+            return (m.group(1).strip(), m.group(2).strip(), "soundcloud")
+        if head:
+            return (head, "", "soundcloud")
         return None
-    # "Artist - Track" is the common music convention on YouTube; split on the
-    # FIRST " - ". If there's no dash, we keep the whole thing as the track.
-    if " - " in t:
-        left, _, right = t.partition(" - ")
-        return (right.strip(), left.strip())   # (track, artist)
-    return (t, "")
+
+    # ── YouTube / YouTube Music ── title ends in " - YouTube"
+    if re.search(r"-\s*YouTube(\s+Music)?\s*$", t, re.I):
+        t = re.sub(r"\s*-\s*YouTube(\s+Music)?\s*$", "", t, flags=re.I).strip()
+        if not t:
+            return None
+        # "Artist - Track" is the common convention; split on the FIRST " - ".
+        if " - " in t:
+            left, _, right = t.partition(" - ")
+            return (right.strip(), left.strip(), "youtube")   # (track, artist)
+        return (t, "", "youtube")
+
+    return None
 
 
 # ── append (sealed) + change-detection ─────────────────────────────────────────
@@ -321,6 +343,35 @@ def summarize_taste(*, since_days: int | None = None, top: int = 8) -> str:
         for i, (t, n) in enumerate(tracks, 1):
             lines.append(f"  {i}. {t} — {n}×")
     return "\n".join(lines)
+
+
+def context_for_prompt() -> str:
+    """A short, honest line about your music for her prompt — what's on right now
+    and who you listen to most — so she KNOWS your taste, not just that sound plays.
+    Empty when music tracking is off or there's nothing to say (never guesses)."""
+    if not is_enabled() or is_paused():
+        return ""
+    bits: list[str] = []
+    try:
+        np = now()
+    except Exception:
+        np = None
+    if np:
+        who = f"{np.artist} — {np.title}" if np.artist else np.title
+        src = (np.meta or {}).get("via", np.app)
+        bits.append(f"Right now they're listening to {who} (on {src}).")
+    try:
+        arts = top_artists(3)
+    except Exception:
+        arts = []
+    if arts:
+        names = ", ".join(a for a, _ in arts)
+        bits.append(f"Their most-played artists lately: {names}.")
+    if not bits:
+        return ""
+    # a light steer so she uses it naturally, never as a recited stat sheet
+    return ("# Their music\n" + " ".join(bits) +
+            " Mention it only if it fits — like a friend who knows your taste.")
 
 
 def status() -> str:
