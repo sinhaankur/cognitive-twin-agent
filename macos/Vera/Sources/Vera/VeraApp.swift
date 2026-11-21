@@ -258,6 +258,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         photosItem?.image = symbol("photo.on.rectangle"); photosItem?.target = self; senses.addItem(photosItem!)
         musicItem = NSMenuItem(title: "Hear my music", action: #selector(menuMusic), keyEquivalent: "")
         musicItem?.image = symbol("music.note"); musicItem?.target = self; senses.addItem(musicItem!)
+        senses.addItem(.separator())
+        // Learn YOUR voice (the voiceprint) → she responds only to you, not the TV,
+        // other voices, or her own echo. Opt-in; off until you teach it.
+        let learnVoice = NSMenuItem(title: "Learn my voice…", action: #selector(menuVoiceEnroll), keyEquivalent: "")
+        learnVoice.image = symbol("waveform.and.person.filled"); learnVoice.target = self; senses.addItem(learnVoice)
         menu.setSubmenu(senses, for: sensesItem)
         menu.addItem(sensesItem)
 
@@ -576,6 +581,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         present(w)
         voiceLearnWindow = w
     }
+
+    private var voiceEnrollWindow: NSWindow?
+    /// Teach Vera YOUR voice (the voiceprint) so she only responds to you.
+    private func showVoiceEnroll() {
+        if let w = voiceEnrollWindow { present(w); return }
+        let w = makeWindow(title: "Learn my voice",
+                           root: VoiceEnrollView(), model: model,
+                           size: NSSize(width: 440, height: 360),
+                           minSize: NSSize(width: 440, height: 340),
+                           autosave: "vera.window.voiceEnroll")
+        present(w)
+        voiceEnrollWindow = w
+    }
+    @objc private func menuVoiceEnroll() { showVoiceEnroll() }
 
     /// Open the Brain — a graph of how the twin thinks and learns.
     private func showBrain() {
