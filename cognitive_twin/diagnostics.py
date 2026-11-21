@@ -157,6 +157,7 @@ def check_core() -> list[Check]:
 _SUBSYSTEMS = [
     "memory", "places", "music", "presence", "persona",
     "health", "rhythms", "soul", "mental_model", "media",
+    "homeaway", "voice_id",
 ]
 
 
@@ -352,12 +353,100 @@ def trends(n: int = 14) -> str:
     return "\n".join(lines)
 
 
+# ── understanding: what's ready, in plain words ───────────────────────────────
+#
+# The raw report proves each PART works. This turns that into what a person
+# actually wants to know: is she ready, what can she do right now, and the one
+# next thing to make her better. "It has to work — and surface understanding."
+
+def _line(ok: bool | None, label: str, on: str, off: str, todo: str = "") -> str:
+    """One readiness line. ok True → on; False → off (+ optional 'to do' nudge)."""
+    mark = {True: "✓", False: "·", None: "?"}[ok]
+    tail = f"  → {todo}" if (ok is not True and todo) else ""
+    return f"  {mark} {label:<14} {(on if ok else off)}{tail}"
+
+
+def readiness(rep: Report | None = None) -> str:
+    """A plain-English 'is she ready, and what's on' summary — the human layer over
+    the raw checks. Safe to call anytime; each probe guards itself."""
+    rep = rep or run(log=False)
+    flat = {label: (ok, detail) for ok, label, detail in rep._flat()}
+
+    core_ok = flat.get("brain reachable", (False, ""))[0] and \
+        flat.get("LLM answers", (False, ""))[0]
+    headline = ("She's ready — she's awake and thinking." if core_ok
+                else "She's not fully up yet — start her brain (./scripts/up.sh).")
+
+    lines = [headline, ""]
+
+    # voice out
+    v = flat.get("voice (Kokoro)", (None, ""))[0]
+    lines.append(_line(v, "Voice", "on — she speaks in her Kokoro voice.",
+                       "warming or off — give her a moment, or check Settings."))
+    # does she know your voice?
+    try:
+        from . import voice_id
+        enrolled = voice_id.is_enrolled()
+    except Exception:
+        enrolled = False
+    lines.append(_line(enrolled, "Your voice",
+                       "learned — she answers you, not the TV.",
+                       "not learned yet — she'll reply to any voice.",
+                       todo="say “learn my voice,” or Senses › Learn my voice…"))
+    # home / away
+    try:
+        from . import homeaway
+        ha_on = homeaway.is_configured()
+        where = homeaway.current().get("home")
+    except Exception:
+        ha_on, where = False, None
+    where_txt = {True: " (you're home now)", False: " (you're out now)"}.get(where, "")
+    lines.append(_line(ha_on, "Home/away",
+                       f"set — she greets you home + stays quiet when you're out{where_txt}.",
+                       "not set — she can't tell when you come and go.",
+                       todo="run `ctwin home set-wifi`, or Senses › Know when I'm home…"))
+    # senses (camera/mic presence)
+    try:
+        from . import presence
+        sees = bool(presence.current())
+    except Exception:
+        sees = False
+    lines.append(_line(sees or None, "Senses",
+                       "on — she can tell when you're at the Mac.",
+                       "off — turn on in Senses when you want her to notice you."))
+    # memory depth
+    mem = flat.get("status · memory", (None, ""))[1]
+    import re as _re
+    m = _re.search(r"(\d+)\s+interaction", mem)
+    turns = m.group(1) if m else "0"
+    lines.append(_line(True, "Memory",
+                       f"{turns} moments remembered, sealed on this Mac.", ""))
+
+    # the one next thing
+    todos = [ln.split("→", 1)[1].strip() for ln in lines if "→" in ln]
+    if not core_ok:
+        nxt = "start her brain: ./scripts/up.sh"
+    elif todos:
+        nxt = todos[0]
+    else:
+        nxt = "nothing — she's set up. Just talk to her."
+    lines += ["", f"Next: {nxt}"]
+    return "\n".join(lines)
+
+
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
 def _main(argv: list[str]) -> int:
     if argv and argv[0] == "--trends":
         print(trends(int(argv[1]) if len(argv) > 1 else 14))
         return 0
+    if argv and argv[0] in ("--plain", "--ready", "doctor"):
+        # lead with the plain-English understanding, then the full detail below.
+        rep = run()
+        print(readiness(rep))
+        print("\n" + "─" * 60 + "\n")
+        print(rep.render())
+        return 0 if rep.ok else 1
     rep = run()
     if argv and argv[0] == "--json":
         print(json.dumps(rep.as_dict(), indent=2))

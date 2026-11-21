@@ -58,3 +58,24 @@ def test_tone_wav_is_valid_riff():
     wav = D._tone_wav(seconds=0.1)
     assert wav[:4] == b"RIFF" and wav[8:12] == b"WAVE"
     assert len(wav) > 44   # header + some samples
+
+
+def test_readiness_surfaces_understanding(monkeypatch):
+    """The human layer: a plain-English summary with a headline and a single
+    'Next:' line that never crashes — even when the brain is down."""
+    monkeypatch.setattr(D, "run",
+                        lambda log=True: D.Report(ts="t", sections={"core": [
+                            (False, "brain reachable", "down"),
+                            (False, "LLM answers", "down")]}))
+    out = D.readiness()
+    assert out.splitlines()[0]                 # a headline
+    assert "Next:" in out                      # always one next action
+    for word in ("Voice", "Your voice", "Home/away", "Memory"):
+        assert word in out                     # real features, human words
+    assert "status · homeaway" not in out       # NOT the raw check labels
+
+
+def test_homeaway_and_voiceid_are_health_checked():
+    """The new features must be in the report, not invisible."""
+    assert "homeaway" in D._SUBSYSTEMS
+    assert "voice_id" in D._SUBSYSTEMS

@@ -1073,6 +1073,11 @@ def main(argv: list[str] | None = None) -> int:
     if raw and raw[0] == "diagnose":
         from . import diagnostics
         return diagnostics._main(raw[1:])
+    if raw and raw[0] in ("doctor", "ready"):
+        # the human view: is she ready, what's on, what's the one next thing —
+        # then the full technical report below it.
+        from . import diagnostics
+        return diagnostics._main(["doctor"])
     if raw and raw[0] == "twin":
         return _twin_command(raw[1:])
     if raw and raw[0] == "council":

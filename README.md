@@ -43,6 +43,8 @@ She thinks on a local model via [Ollama](https://ollama.com): `ollama pull qwen2
   voice for every emotion.
 - **Your people can meet her** — recognised guests get a warm chat; your private world stays yours.
 - **Drop a PDF** into the chat and she'll read and discuss it.
+- **Is she working?** — `./scripts/up.sh` syncs, (re)builds, and prints a plain-English
+  readiness report; `ctwin doctor` shows it anytime (what's on, what's off, the one next thing).
 
 ## Private by design
 
