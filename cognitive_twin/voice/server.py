@@ -802,6 +802,23 @@ class _Handler(BaseHTTPRequestHandler):
             # background vs in-frame: if it reads as music/noise (low speech
             # confidence), she HEARD something but it isn't you talking TO her.
             heard = bool(text) and _low not in _noise and len(_low) >= 2 and not music_like
+            # UNDERSTAND LIKE A FRIEND: she can't read your lips, so she reads what
+            # she KNOWS of you — repairing a misheard word against your people /
+            # places / projects / learned vocabulary ("remind mugger" → "Munger")
+            # BEFORE she answers. Voice path only (chat is already exact). If she's
+            # genuinely unsure, `clarify` is a short "did you mean …?" to ask instead
+            # of guessing.
+            clarify = ""
+            if heard:
+                try:
+                    from .. import voice_understand
+                    u = voice_understand.understand(text)
+                    if u.changed:
+                        text = u.text
+                        _low = text.lower().strip(" .!,")
+                    clarify = voice_understand.clarify_question(u)
+                except Exception:
+                    clarify = ""
             # LEARN YOUR WORDS: a real heard turn gently reinforces your own
             # vocabulary (names, Hindi/English terms), so the recogniser hears them
             # better next time. Passive, on-device, never from noise.
@@ -840,7 +857,7 @@ class _Handler(BaseHTTPRequestHandler):
             # as a command — so stray "you"/"thank you" mishearings don't trigger a
             # turn, but the user still gets honest feedback that she's hearing.
             self._json(200, {"text": text, "heard": heard, "is_you": is_you,
-                             "music_like": music_like})
+                             "music_like": music_like, "clarify": clarify})
             return
         if self.path == "/api/voice/enroll":
             # teach her YOUR voice: POST a WAV of your speech; it folds into your

@@ -157,7 +157,7 @@ def check_core() -> list[Check]:
 _SUBSYSTEMS = [
     "memory", "places", "music", "presence", "persona",
     "health", "rhythms", "soul", "mental_model", "media",
-    "homeaway", "voice_id", "pronounce",
+    "homeaway", "voice_id", "pronounce", "voice_understand",
 ]
 
 
