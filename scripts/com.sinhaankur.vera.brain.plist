@@ -40,6 +40,9 @@
     <key>CTWIN_WEB</key>    <string>1</string>
     <key>COQUI_TOS_AGREED</key><string>1</string>
     <key>CTWIN_VOICE_KOKORO_ONLY</key><string>1</string>
+    <!-- Hindi + English: detect the language per utterance so code-switching
+         ("Vera, lights on karo") is understood. -->
+    <key>CTWIN_STT_LANG</key><string>auto</string>
     <key>PYTHONUNBUFFERED</key><string>1</string>
     <key>PYTHONPATH</key><string>__VERA_HOME__</string>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
