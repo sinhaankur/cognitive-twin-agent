@@ -263,6 +263,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // other voices, or her own echo. Opt-in; off until you teach it.
         let learnVoice = NSMenuItem(title: "Learn my voice…", action: #selector(menuVoiceEnroll), keyEquivalent: "")
         learnVoice.image = symbol("waveform.and.person.filled"); learnVoice.target = self; senses.addItem(learnVoice)
+        let knowHome = NSMenuItem(title: "Know when I'm home…", action: #selector(menuHomeSetup), keyEquivalent: "")
+        knowHome.image = symbol("house.fill"); knowHome.target = self; senses.addItem(knowHome)
         menu.setSubmenu(senses, for: sensesItem)
         menu.addItem(sensesItem)
 
@@ -595,6 +597,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         voiceEnrollWindow = w
     }
     @objc private func menuVoiceEnroll() { showVoiceEnroll() }
+
+    private var homeSetupWindow: NSWindow?
+    /// Teach Vera where home is, so she greets you on arrival + goes quiet when out.
+    private func showHomeSetup() {
+        if let w = homeSetupWindow { present(w); return }
+        let w = makeWindow(title: "Know when I'm home",
+                           root: HomeSetupView(), model: model,
+                           size: NSSize(width: 440, height: 380),
+                           minSize: NSSize(width: 440, height: 360),
+                           autosave: "vera.window.homeSetup")
+        present(w)
+        homeSetupWindow = w
+    }
+    @objc private func menuHomeSetup() { showHomeSetup() }
 
     /// Open the Brain — a graph of how the twin thinks and learns.
     private func showBrain() {

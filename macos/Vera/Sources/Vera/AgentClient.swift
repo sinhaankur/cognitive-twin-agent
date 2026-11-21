@@ -203,6 +203,41 @@ final class AgentClient {
         } catch { return 0 }
     }
 
+    // ── Home / away ──────────────────────────────────────────────────────────
+    struct HomeState { var configured = false; var home: Bool?; var status = "" }
+
+    /// GET /api/homeaway — does she know where home is, and are you home right now.
+    func homeState() async -> HomeState {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/homeaway"))
+        req.timeoutInterval = 5
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let o = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return HomeState(configured: (o["configured"] as? Bool) ?? false,
+                             home: o["home"] as? Bool,
+                             status: (o["status"] as? String) ?? "")
+        } catch { return HomeState() }
+    }
+
+    /// POST /api/homeaway/set-home — teach her home. `useCurrentWifi` grabs whatever
+    /// network you're on now; otherwise pass explicit SSIDs. Returns a warm detail.
+    @discardableResult
+    func setHome(useCurrentWifi: Bool, ssids: [String] = []) async -> String {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/homeaway/set-home"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = [:]
+        if useCurrentWifi { body["use_current_wifi"] = true }
+        else { body["ssids"] = ssids }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        req.timeoutInterval = 10
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            let o = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+            return (o["detail"] as? String) ?? "Home set."
+        } catch { return "Couldn't reach her brain to set home — is she running?" }
+    }
+
     struct ActivityState { var enabled = false; var isPrivate = false }
 
     /// GET /api/activity/status — is she observing your device + privacy state.
