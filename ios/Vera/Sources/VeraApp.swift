@@ -6,14 +6,23 @@ import SwiftUI
 @main
 struct VeraApp: App {
     @StateObject private var model = TwinModel()
+    // Your phone is what travels with you, so it's what tells her you've come home
+    // or gone out. Off until you enable it in Settings; reports only to YOUR Mac.
+    @StateObject private var homeAway = HomeAwayReporter()
     var body: some Scene {
         WindowGroup {
             TwinView()
                 .environmentObject(model)
+                .environmentObject(homeAway)
                 // Vera's one shared accent (Tailscale-quality green from
                 // design/tokens.json) — tints toggles, buttons, and controls
                 // app-wide so iOS matches the web settings and the booker.
                 .tint(VeraTokens.accent)
+                .onAppear {
+                    // point the reporter at the same Mac the model talks to, so it
+                    // posts home/away to her brain (:7878) on that host.
+                    homeAway.hostProvider = { model.modelHost }
+                }
         }
     }
 }

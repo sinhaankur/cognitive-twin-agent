@@ -11,6 +11,7 @@ struct SettingsView: View {
     @EnvironmentObject var model: TwinModel
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var voice = Voice.shared
+    @EnvironmentObject private var homeAway: HomeAwayReporter
     // Vera's orb form — shared with TwinView via the same key.
     @AppStorage("vera.orbForm") private var orbForm: String = "dots"
 
@@ -106,6 +107,25 @@ struct SettingsView: View {
                 Section {
                     Toggle("Speak her replies aloud", isOn: $voice.enabled)
                     Toggle("Show her in 3D", isOn: $model.portrait3DEnabled)
+                    // Let the phone tell her when you come home / head out.
+                    Toggle("Let her know when I'm home", isOn: $homeAway.enabled)
+                    if homeAway.enabled {
+                        HStack(spacing: 8) {
+                            Image(systemName: homeAway.lastBelief == true ? "house.fill"
+                                : homeAway.lastBelief == false ? "figure.walk" : "house")
+                                .foregroundStyle(homeAway.lastBelief == true
+                                    ? VeraTokens.accent : .secondary)
+                            Text(homeAway.lastBelief == true ? "You're home right now."
+                                : homeAway.lastBelief == false ? "You're out right now."
+                                : "Figuring out where you are…")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                        Button {
+                            homeAway.enableLocation()
+                        } label: {
+                            Label("Confirm with location (optional)", systemImage: "location")
+                        }
+                    }
                     // Vera's visual form — the dotted point-cloud (default) or her
                     // original iridescent orb. Both react the same to her state.
                     Picker("Her form", selection: $orbForm) {
@@ -120,7 +140,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Presence")
                 } footer: {
-                    Text("Her voice is spoken on this phone, entirely on-device — no audio ever leaves it. “Field” shows her as a point-cloud that says what she's doing; “Orb” is her warm iridescent sphere. The 3D likeness is built on your Mac and arrives with the memory vault. “Who she is” is the persona that shapes how she speaks.")
+                    Text("Her voice is spoken on this phone, entirely on-device — no audio ever leaves it. “Field” shows her as a point-cloud that says what she's doing; “Orb” is her warm iridescent sphere. The 3D likeness is built on your Mac and arrives with the memory vault. “Who she is” is the persona that shapes how she speaks. **Let her know when I'm home** uses your phone's Wi-Fi (on your home network = home) to welcome you back and stay quiet while you're out — coarse only, sent to your own Mac, never a third party.")
                 }
 
                 // ── Privacy ───────────────────────────────────────────────
