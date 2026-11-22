@@ -816,6 +816,15 @@ class _Handler(BaseHTTPRequestHandler):
                     if u.changed:
                         text = u.text
                         _low = text.lower().strip(" .!,")
+                        # CLOSE THE LOOP: a confident repair teaches the lexicon the
+                        # correct word (weighted up), so it rises in the Whisper hint
+                        # and the SAME mishearing fades at the source — learn once.
+                        try:
+                            from .. import pronounce
+                            for _heard, _fixed in u.repairs:
+                                pronounce.learn_correction(_heard, _fixed)
+                        except Exception:
+                            pass
                     clarify = voice_understand.clarify_question(u)
                 except Exception:
                     clarify = ""
