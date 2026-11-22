@@ -141,6 +141,28 @@ def transcribe_detail(audio_path: str, *, model_size: str | None = None) -> dict
                 "music_like": True}
     nsp = sum(getattr(s, "no_speech_prob", 0.0) for s in segs) / len(segs)
     alp = sum(getattr(s, "avg_logprob", 0.0) for s in segs) / len(segs)
+    # SECOND PASS when she's unsure: a SHORT utterance that's clearly speech (low
+    # no-speech prob) but decoded shakily (low avg_logprob) is the "few words she
+    # doesn't understand" case. Re-decode ONCE harder — wider beam + no VAD (so a
+    # brief clip isn't trimmed) — and keep it only if it's more confident. Cheap:
+    # only fires on the rare shaky-short clip, not normal turns.
+    import os as _os
+    if (len(text) < 24 and nsp < 0.4 and alp < -0.85
+            and _os.environ.get("CTWIN_STT_SECOND_PASS", "1") != "0"):
+        try:
+            opts2 = _decode_opts()
+            opts2["beam_size"] = max(opts2.get("beam_size", 5), 8)
+            opts2["vad_filter"] = False               # don't trim a short clip
+            opts2["temperature"] = [0.0, 0.2, 0.4, 0.6, 0.8]
+            segs2 = list(model.transcribe(audio_path, **opts2)[0])
+            if segs2:
+                alp2 = sum(getattr(s, "avg_logprob", 0.0) for s in segs2) / len(segs2)
+                text2 = " ".join(s.text for s in segs2).strip()
+                if text2 and alp2 > alp:              # genuinely more confident
+                    segs, text, alp = segs2, text2, alp2
+                    nsp = sum(getattr(s, "no_speech_prob", 0.0) for s in segs2) / len(segs2)
+        except Exception:
+            pass
     # no_speech_prob is the TRUSTWORTHY music/noise signal — real speech (even a
     # mis-decoded short phrase like "Hey Vera"→"Tevira") sits at 0.01–0.07, while
     # music/silence spikes it high. avg_logprob is NOT reliable here: genuine short
