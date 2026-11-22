@@ -29,8 +29,11 @@ _HERE = Path(__file__).resolve().parent
 _DATA = _HERE / "data"
 _ADAPTERS = _HERE / "adapters"
 
-# Small enough to train on a 32 GB M-series Mac; same family as empathia (qwen2.5).
-DEFAULT_MODEL = "Qwen/Qwen2.5-3B-Instruct"
+# The base Vera's voice is fine-tuned onto. Qwen3-4B-Instruct (2026): decisively
+# better reasoning than the old Qwen2.5-3B — a 4B that rivals Qwen2.5-7B — MLX-
+# native, and fine-tunes comfortably on a 32 GB M-series Mac. Same Qwen family, so
+# the LoRA + her persona transfer cleanly. Override with --model for a different base.
+DEFAULT_MODEL = "mlx-community/Qwen3-4B-Instruct-2507-bf16"
 
 
 def _run(cmd: list[str]) -> int:

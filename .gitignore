@@ -39,3 +39,6 @@ life_story.json
 persona.json
 .cognitive-twin/
 ios/Vera/Info.plist
+.venv-train/
+training/adapters-v2/
+training/vera-tuned-qwen3*/
