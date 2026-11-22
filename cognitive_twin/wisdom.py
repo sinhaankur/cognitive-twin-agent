@@ -227,14 +227,30 @@ def retrieve(query: str, k: int = 2, alpha: float = 0.85) -> list[Belief]:
         pass
     ranked = sorted(range(len(w.beliefs)), key=lambda i: scores[i], reverse=True)
 
+    # Semantic safety-net threshold (raw cosine). It's embedder-specific: nomic and
+    # qwen3-embedding put real meaning-matches on different scales (measured: a true
+    # money-belief match sits ~0.44 on nomic but ~0.40 on qwen3, with noise a clear
+    # step below each). Key it off the active embedder so switching models doesn't
+    # silently drop the right conviction. Env override for tuning.
+    import os as _os
+    _net = _os.environ.get("CTWIN_WISDOM_SEM_NET")
+    if _net:
+        sem_net = float(_net)
+    else:
+        try:
+            from . import rag as _rag
+            em = _rag.active_embed_model()
+        except Exception:
+            em = ""
+        sem_net = 0.38 if "qwen3" in em else 0.45
+
     def _keep(i: int) -> bool:
         # clears the relevance floor, OR is a genuine semantic match (a meaning-match
         # the reranker compressed when there are no shared words) — so she never drops
-        # the right conviction just because it's phrased differently. 0.45 sits above
-        # measured noise (~0.38) and below real matches (~0.46+).
+        # the right conviction just because it's phrased differently.
         if scores[i] > floor:
             return True
-        return sem is not None and sem[i] >= 0.45
+        return sem is not None and sem[i] >= sem_net
     return [w.beliefs[i] for i in ranked[:k] if _keep(i)]
 
 
