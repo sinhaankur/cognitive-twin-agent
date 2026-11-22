@@ -61,3 +61,29 @@ def test_list_and_missing_index(tmp_path, monkeypatch):
     assert rag.list_indexes() == []
     # answering with no index is graceful, not a crash
     assert "index" in rag.answer("anything", name="nope").lower()
+
+
+def test_index_records_embed_model(tmp_path, monkeypatch):
+    monkeypatch.setattr(rag, "_rag_dir", lambda: str(tmp_path / "idx"))
+    os.makedirs(str(tmp_path / "idx"), exist_ok=True)
+    _corpus(tmp_path)
+    # force keyword-only (no embeddings) → no embed_model recorded, not stale
+    monkeypatch.setattr(rag, "embeddings_available", lambda: False)
+    rag.build_index(str(tmp_path), name="k")
+    idx = rag._load_index("k")
+    assert idx["embed_model"] is None
+    assert rag.index_is_stale("k") is False      # keyword-only can't be stale
+
+
+def test_index_stale_on_embedder_change(tmp_path, monkeypatch):
+    monkeypatch.setattr(rag, "_rag_dir", lambda: str(tmp_path / "idx"))
+    os.makedirs(str(tmp_path / "idx"), exist_ok=True)
+    _corpus(tmp_path)
+    # pretend embeddings exist and the index was built by a DIFFERENT model
+    monkeypatch.setattr(rag, "embeddings_available", lambda: True)
+    monkeypatch.setattr(rag, "embed_one", lambda t, **k: [0.1, 0.2, 0.3])
+    monkeypatch.setattr(rag, "active_embed_model", lambda: "model-A")
+    rag.build_index(str(tmp_path), name="s")
+    assert rag.index_is_stale("s") is False       # same model → fresh
+    monkeypatch.setattr(rag, "active_embed_model", lambda: "model-B")
+    assert rag.index_is_stale("s") is True         # changed model → must rebuild

@@ -36,16 +36,16 @@ def _ollama_host() -> str:
 
 
 def _embed_model() -> str:
-    # The retrieval embedder. Default = nomic-embed-text (Apache-2.0, 768d, 8K ctx).
-    # On Vera's OWN corpus (evals/rag_embed_benchmark.py) it scores hit@1 91.7% /
-    # MRR 0.938 — strong, fast (~24 ms/query), and robust WITHOUT the task-prefix
-    # dance that instruction-tuned embedders (EmbeddingGemma, Qwen3-Embedding)
-    # require. We benchmarked those HF/MTEB leaders too: EmbeddingGemma edged nomic
-    # on paper (hit@3 100%, MRR 0.944) but, UNPREFIXED, its raw cosines run lower
-    # (0.37 vs nomic's 0.44 on a meaning-only match) and real retrieval dropped
-    # matches — so it's a candidate, not the default, until we add its prompt
-    # prefixes. Override with CTWIN_EMBED_MODEL; the fallback chain degrades safely.
-    return os.environ.get("CTWIN_EMBED_MODEL", "nomic-embed-text")
+    # The retrieval embedder. Default = qwen3-embedding:0.6b (Apache-2.0, 1024d,
+    # 32K ctx, MULTILINGUAL — 100+ langs incl. Hindi). Why it's the default over
+    # nomic (English-only): on a measured A/B over Vera's real queries the two tie
+    # on plain English (sep gap +0.41 vs +0.40), but on a HINDI-MIXED query
+    # ("Vera light on karo") qwen3 separates related/unrelated 3× better (+0.27 vs
+    # nomic's near-blind +0.08). Since the owner mixes Hindi + English, multilingual
+    # retrieval matters. Works well UNPREFIXED (we tested); nomic stays next in the
+    # fallback chain so English retrieval never regresses if qwen3 is absent.
+    # Override with CTWIN_EMBED_MODEL=nomic-embed-text for English-only/fastest.
+    return os.environ.get("CTWIN_EMBED_MODEL", "qwen3-embedding:0.6b")
 
 
 def _embed_fallbacks() -> list[str]:
@@ -283,6 +283,12 @@ def build_index(folder: str, name: str = "default", prose_first: bool = True) ->
     payload = {
         "version": 1,
         "folder": os.path.abspath(os.path.expanduser(folder)),
+        # record WHICH embedder built these vectors — vectors from different models
+        # live in different spaces (and different dims) and can't be compared, so a
+        # later model change (nomic→qwen3) must trigger a rebuild, not a silent
+        # keyword-only fallback. index_is_stale() checks this.
+        "embed_model": active_embed_model() if vectors else None,
+        "embed_dim": len(next((v for v in (vectors or []) if v), [])) or None,
         "chunks": [{"source": c.source, "ordinal": c.ordinal, "text": c.text} for c in chunks],
         "vectors": vectors,
     }
@@ -302,6 +308,30 @@ def _load_index(name: str = "default") -> dict | None:
             return json.load(f)
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def index_is_stale(name: str = "default") -> bool:
+    """True when a saved index was built by a DIFFERENT embedder than the current
+    one — its vectors are in the wrong space, so retrieval would silently degrade
+    to keyword-only. Callers rebuild when this is True. False for keyword-only
+    indexes (no vectors to mismatch) and when embeddings aren't available."""
+    if not embeddings_available():
+        return False
+    idx = _load_index(name)
+    if not idx or not idx.get("vectors"):
+        return False
+    built_with = idx.get("embed_model")
+    if built_with and built_with != active_embed_model():
+        return True
+    # older indexes predate the tag → infer from dimensionality
+    dim = idx.get("embed_dim")
+    if dim:
+        try:
+            if len(embed_one("probe")) != dim:
+                return True
+        except Exception:
+            return False
+    return False
 
 
 def list_indexes() -> list[str]:
