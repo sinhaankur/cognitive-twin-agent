@@ -313,6 +313,108 @@ def _play_wav_bytes(wav: bytes) -> None:
             pass
 
 
+# A generation counter so a NEW utterance (or a stop) cancels an in-flight streamed
+# one — the streaming speak checks it between sentences and bails if it's stale.
+_speak_gen = 0
+_speak_gen_lock = threading.Lock()
+
+
+def _next_speak_gen() -> int:
+    global _speak_gen
+    with _speak_gen_lock:
+        _speak_gen += 1
+        return _speak_gen
+
+
+def _split_sentences(text: str) -> list[str]:
+    """Break a reply into sentence-ish chunks for streaming. Keeps the delimiter so
+    prosody is natural; the FIRST chunk is kept short so she starts talking fast."""
+    import re as _re
+    parts = _re.split(r"(?<=[.!?…])\s+", text.strip())
+    out = [p.strip() for p in parts if p.strip()]
+    # if the first chunk is long, split it once more on a comma so the first words
+    # come out quickly (she starts within a breath, then flows).
+    if out and len(out[0]) > 90 and "," in out[0]:
+        head, _, tail = out[0].partition(",")
+        out = [head.strip() + ",", tail.strip()] + out[1:]
+    return out
+
+
+def _speak_streaming(text: str, synth) -> bool:
+    """Speak a reply with LOW first-word latency: synthesize the first sentence and
+    start playing it immediately, synthesizing the rest while it plays so there's no
+    big pause before she speaks and no gap between sentences. `synth(str)->wav bytes`
+    is the synthesizer (Kokoro). Returns True if anything was spoken. A newer
+    utterance or a stop supersedes this one (checked between sentences)."""
+    import subprocess as _sp
+    import tempfile as _tf
+    import os as _os
+    global _playback_proc
+
+    sentences = _split_sentences(text)
+    if not sentences:
+        return False
+    mygen = _next_speak_gen()
+
+    # pre-synthesize the first sentence BEFORE touching playback, so we fail fast
+    first = synth(sentences[0]) or synth(sentences[0])
+    if not first:
+        return False
+
+    spoke = False
+    # a small queue of ready WAV files; a player thread drains it gaplessly.
+    import queue as _q
+    wavq: "_q.Queue[str | None]" = _q.Queue()
+
+    def _writer():
+        # sentence 0 is already synthesized; write it, then do the rest in order.
+        for i, sent in enumerate(sentences):
+            with _speak_gen_lock:
+                if _speak_gen != mygen:        # superseded → stop producing
+                    break
+            wav = first if i == 0 else (synth(sent) or b"")
+            if not wav:
+                continue
+            f = _tf.NamedTemporaryFile(suffix=".wav", delete=False, dir="/tmp")
+            f.write(wav); f.flush(); f.close()
+            wavq.put(f.name)
+        wavq.put(None)                          # sentinel: done
+
+    def _player():
+        nonlocal spoke
+        global _playback_proc
+        while True:
+            path = wavq.get()
+            if path is None:
+                break
+            with _speak_gen_lock:
+                if _speak_gen != mygen:
+                    try: _os.unlink(path)
+                    except OSError: pass
+                    continue
+            try:
+                with _playback_lock:
+                    if _playback_proc and _playback_proc.poll() is None:
+                        try: _playback_proc.kill()
+                        except OSError: pass
+                    _playback_proc = _sp.Popen(["/usr/bin/afplay", path],
+                                               stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+                    proc = _playback_proc
+                proc.wait()                      # gapless: next plays right after
+                spoke = True
+            except Exception:
+                pass
+            finally:
+                try: _os.unlink(path)
+                except OSError: pass
+
+    tw = threading.Thread(target=_writer, daemon=True)
+    tp = threading.Thread(target=_player, daemon=True)
+    tw.start(); tp.start()
+    tp.join()                                    # block until she's done speaking
+    return spoke
+
+
 WEB_DIR = Path(__file__).resolve().parent / "web"
 # Bind to loopback by default (on-device, private). VERA_HOST can widen it —
 # e.g. the cross-platform `vera-app` launcher passes 0.0.0.0 with --host so the
@@ -1284,12 +1386,13 @@ class _Handler(BaseHTTPRequestHandler):
                         kokoro_up = kokoro_tts.is_available()
                         if kokoro_up:
                             kokoro_tts.warm()            # ensure warm so the 1st line is HER voice
-                            wav = kokoro_tts.synth_wav(text)
-                            if not wav:
-                                wav = kokoro_tts.synth_wav(text)   # retry after the cold load
-                            if wav:
-                                _play_wav_bytes(wav)
-                                ok = True
+                            # STREAM by sentence: start speaking the first sentence
+                            # immediately and synthesize the rest while it plays, so
+                            # the first word comes in ~0.3s instead of after the whole
+                            # reply renders (~1s+ on a long turn). Gapless + barge-in
+                            # aware (a new utterance/stop supersedes it).
+                            ok = _speak_streaming(text, kokoro_tts.synth_wav)
+                            if ok:
                                 spoke_with = "kokoro"
                     except Exception:
                         ok = False
@@ -1305,6 +1408,16 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/speak/stop":
             # barge-in: the user spoke over her — silence playback mid-word
             stopped = False
+            # supersede any in-flight STREAMED utterance (stops synth + the queue)
+            _next_speak_gen()
+            global _playback_proc
+            try:
+                with _playback_lock:
+                    if _playback_proc and _playback_proc.poll() is None:
+                        _playback_proc.kill()
+                        stopped = True
+            except Exception:
+                pass
             try:
                 from .. import voice_clone
                 stopped = voice_clone.stop_playback() or stopped
