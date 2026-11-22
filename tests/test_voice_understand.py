@@ -57,3 +57,20 @@ def test_understanding_confident_property():
     u = vu.understand("call Shweta", vocab=VOCAB)
     assert u.confident is True                     # clean → no question needed
     assert vu.clarify_question(u) == ""
+
+
+def test_recovers_word_from_recent_thread(monkeypatch, tmp_path):
+    # the live thread: a word you JUST used is recovered even if it's not in the
+    # static people/places lexicon — "RAG so good it understands".
+    monkeypatch.setenv("CTWIN_MEMORY_DIR", str(tmp_path))
+    from cognitive_twin import memory
+    memory.record("tell me about the Munger property", "It's co-owned...")
+    u = vu.understand("what about the mugger property")   # default vocab (reads memory)
+    assert "Munger" in u.text
+    assert ("mugger", "Munger") in u.repairs
+
+
+def test_vocabulary_is_crash_safe_when_empty(monkeypatch, tmp_path):
+    monkeypatch.setenv("CTWIN_MEMORY_DIR", str(tmp_path))
+    assert vu.vocabulary() == {}                    # nothing known → empty, no error
+    assert vu.recent_context_words("anything") == {}

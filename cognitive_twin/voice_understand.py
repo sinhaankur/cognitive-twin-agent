@@ -85,7 +85,40 @@ def vocabulary() -> dict[str, str]:
             add(str(place))
     except Exception:
         pass
+    # THE LIVE THREAD — distinctive words from what you were JUST talking about are
+    # the strongest cue for an ambiguous word (you said "Munger" two turns ago, so
+    # "mugger" now is almost certainly that). Pull proper-noun-ish words from recent
+    # turns + recalled memory; never common words.
+    try:
+        from . import memory
+        recent = memory.recent_prompts(6)
+        for line in recent:
+            for tok in _WORD.findall(str(line)):
+                # a Capitalized or long distinctive word → likely a name/topic
+                if (tok[:1].isupper() or len(tok) >= 6) and tok.lower() not in _STOP:
+                    add(tok)
+    except Exception:
+        pass
     return vocab
+
+
+def recent_context_words(query: str = "", k: int = 3) -> dict[str, str]:
+    """Distinctive words from memory RECALLED for this query — a richer 'what did
+    they mean' source than the static lexicon. Used to sharpen a 'did you mean?'.
+    Honest: only returns words that genuinely appear in your recalled memory."""
+    out: dict[str, str] = {}
+    try:
+        from . import memory
+        hits = memory.recall(query, k=k) if query else []
+        for h in hits:
+            txt = h.get("text", "") if isinstance(h, dict) else str(h)
+            for tok in _WORD.findall(txt):
+                if (tok[:1].isupper() or len(tok) >= 6) and tok.lower() not in _STOP \
+                        and len(tok) >= 3:
+                    out.setdefault(tok.lower(), tok)
+    except Exception:
+        pass
+    return out
 
 
 _WORD = re.compile(r"[A-Za-z][A-Za-z'\-]*")
